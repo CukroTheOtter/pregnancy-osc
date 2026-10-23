@@ -1,0 +1,62 @@
+# Flatpak manifest for Pregnancy OSC.
+#
+# Build the Linux binary first (on Linux):  npm ci && npx tauri build --bundles deb
+# Then:  flatpak-builder --user --install --force-clean build-dir packaging/flatpak/com.pregsys.companion.yml
+#
+# This packages the binary from the .deb that `tauri build` makes, so the
+# Flatpak build itself needs no network or Rust toolchain.
+app-id: com.pregsys.companion
+runtime: org.gnome.Platform
+runtime-version: "47"
+sdk: org.gnome.Sdk
+command: pregsys-companion
+
+finish-args:
+  # Display
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  - --device=dri
+  # OSC to VRChat (UDP on localhost) and OSCQuery (mDNS + local HTTP)
+  - --share=network
+  # Sounds (heartbeat, chime)
+  - --socket=pulseaudio
+  # Tray icon and notifications
+  - --talk-name=org.kde.StatusNotifierWatcher
+  - --talk-name=org.freedesktop.Notifications
+  # VRChat logs inside the Steam Proton prefix (read-only)
+  - --filesystem=~/.steam/steam/steamapps/compatdata/438100:ro
+  - --filesystem=~/.local/share/Steam/steamapps/compatdata/438100:ro
+  - --filesystem=~/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/compatdata/438100:ro
+  # "Start with SteamVR": read OpenVR paths, register our manifest in SteamVR's config
+  - --filesystem=xdg-config/openvr:ro
+  - --filesystem=~/.local/share/Steam/config
+  - --filesystem=~/.steam/steam/config
+  # "Start when I log in"
+  - --filesystem=xdg-config/autostart:create
+
+modules:
+  - name: pregsys-companion
+    buildsystem: simple
+    build-commands:
+      - ar x pregsys-companion.deb
+      - tar -xf data.tar.*
+      - install -Dm755 usr/bin/pregsys-companion /app/bin/pregsys-companion
+      - install -Dm644 com.pregsys.companion.desktop /app/share/applications/com.pregsys.companion.desktop
+      - install -Dm644 com.pregsys.companion.metainfo.xml /app/share/metainfo/com.pregsys.companion.metainfo.xml
+      - install -Dm644 icon.png /app/share/icons/hicolor/512x512/apps/com.pregsys.companion.png
+      - install -Dm644 icon-128.png /app/share/icons/hicolor/128x128/apps/com.pregsys.companion.png
+    sources:
+      - type: file
+        # Path written by `npx tauri build --bundles deb`; the version changes with releases.
+        path: ../../target/release/bundle/deb/Pregnancy OSC_0.1.0_amd64.deb
+        dest-filename: pregsys-companion.deb
+      - type: file
+        path: com.pregsys.companion.desktop
+      - type: file
+        path: com.pregsys.companion.metainfo.xml
+      - type: file
+        path: ../../src-tauri/icons/icon.png
+      - type: file
+        path: ../../src-tauri/icons/128x128.png
+        dest-filename: icon-128.png

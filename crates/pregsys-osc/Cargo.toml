@@ -1,0 +1,13 @@
+[package]
+name = "pregsys-osc"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+log = "0.4.34"
+mdns-sd = "0.21.6"
+pregsys-core = { version = "0.1.0", path = "../pregsys-core" }
+rosc = "0.11.4"
+serde_json = "1.0.154"
+tiny_http = "0.12.0"
+ureq = "3.4.2"

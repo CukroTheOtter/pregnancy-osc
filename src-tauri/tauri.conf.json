@@ -1,0 +1,62 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Pregnancy OSC",
+  "mainBinaryName": "pregsys-companion",
+  "version": "0.2.0",
+  "identifier": "com.pregsys.companion",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Pregnancy OSC",
+        "width": 560,
+        "height": 860,
+        "minWidth": 380,
+        "minHeight": 560,
+        "visible": false,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; media-src 'self' data: blob:; connect-src ipc: http://ipc.localhost"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZDMjNFQjgzNjlFQTlGQ0UKUldUT24rcHBnK3NqYk9ac2tPN3JKOHhFY3pZclZNSkkyV3VZaC92bzJ0WGZKS3FGRVZmS0lxZFQK",
+      "endpoints": ["https://github.com/CukroTheOtter/pregnancy-osc/releases/latest/download/latest.json"],
+      "windows": { "installMode": "passive" }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "createUpdaterArtifacts": true,
+    "targets": ["nsis", "deb", "appimage"],
+    "category": "Utility",
+    "shortDescription": "Pregnancy tracker that keeps your VRChat avatar in sync over OSC",
+    "longDescription": "Pregnancy OSC tracks a pregnancy from a start time and sends the belly size to VRChat over OSC. It reads VRChat logs locally (never uploaded) to guess the other parent.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    },
+    "linux": {
+      "deb": {
+        "depends": []
+      }
+    }
+  }
+}

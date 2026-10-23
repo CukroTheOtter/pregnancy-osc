@@ -1,0 +1,14 @@
+2025.03.01 20:58:12 Debug      -  [VRCApplication] VRChat build 1556, Windows
+2025.03.01 20:58:40 Debug      -  User Authenticated: Moonbun (usr_aaaaaaaa-1111-2222-3333-444444444444)
+2025.03.01 20:59:01 Debug      -  [Behaviour] Joining wrld_4cf554b4-430c-4f8f-b53e-1f294eed230b:84213~private(usr_aaaaaaaa-1111-2222-3333-444444444444)~region(eu)
+2025.03.01 20:59:05 Debug      -  [Behaviour] Entering Room: Cozy Cabin
+2025.03.01 20:59:06 Debug      -  [Behaviour] OnPlayerJoined Moonbun (usr_aaaaaaaa-1111-2222-3333-444444444444)
+2025.03.01 20:59:06 Debug      -  [Behaviour] Switching Moonbun to avatar Bunny Base v2
+2025.03.01 20:59:07 Warning    -  [Always] Some shader warning nobody cares about
+
+2025.03.01 21:02:30 Debug      -  [Behaviour] OnPlayerJoined Ember Fox (usr_bbbbbbbb-1111-2222-3333-444444444444)
+2025.03.01 21:02:31 Debug      -  [Behaviour] Switching Ember Fox to avatar Kitsune Deluxe (Quest)
+2025.03.01 21:05:00 Debug      -  [Behaviour] OnPlayerJoined Grey (usr_cccccccc-1111-2222-3333-444444444444)
+2025.03.01 21:05:20 Debug      -  [Behaviour] OnPlayerLeft Grey (usr_cccccccc-1111-2222-3333-444444444444)
+2025.03.01 21:05:21 Debug      -  [Behaviour] OnPlayerLeftRoom Grey
+2025.03.01 21:30:00 Error      -  [Network] Something odd: [Behaviour] but not an event we know

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.pregsys.companion</id>
+  <name>Pregnancy OSC</name>
+  <summary>Pregnancy tracker that keeps your VRChat avatar in sync over OSC</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <description>
+    <p>Tracks a pregnancy from its start time and sends the belly size to VRChat over OSC. It reads VRChat logs on your computer only (never uploaded) to guess the other parent, and has a cute x-ray belly, a Gene Lab and ultrasound keepsakes.</p>
+  </description>
+  <launchable type="desktop-id">com.pregsys.companion.desktop</launchable>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="0.1.0" date="2026-10-20" />
+  </releases>
+</component>

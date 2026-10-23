@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Pregnancy OSC
+Comment=Pregnancy tracker that keeps your VRChat avatar in sync over OSC
+Exec=pregsys-companion
+Icon=com.pregsys.companion
+Categories=Utility;Game;
+Terminal=false
+StartupWMClass=pregsys-companion

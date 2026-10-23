@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffd6e7"/>
+      <stop offset="1" stop-color="#c9b6ff"/>
+    </linearGradient>
+    <radialGradient id="heart" cx="0.4" cy="0.35" r="0.8">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#ffe9f2"/>
+    </radialGradient>
+  </defs>
+  <rect x="32" y="32" width="960" height="960" rx="220" fill="url(#bg)"/>
+  <path d="M512 850 C 300 700 170 580 170 420 C 170 300 260 220 365 220 C 430 220 485 255 512 305 C 539 255 594 220 659 220 C 764 220 854 300 854 420 C 854 580 724 700 512 850 Z" fill="url(#heart)" stroke="#f59ac0" stroke-width="22"/>
+  <circle cx="512" cy="500" r="150" fill="#ffe2c9" stroke="#f2a9a0" stroke-width="12"/>
+  <path d="M440 495 q 22 -24 44 0" fill="none" stroke="#6b4a5a" stroke-width="14" stroke-linecap="round"/>
+  <path d="M540 495 q 22 -24 44 0" fill="none" stroke="#6b4a5a" stroke-width="14" stroke-linecap="round"/>
+  <circle cx="430" cy="545" r="22" fill="#ffb3c7"/>
+  <circle cx="594" cy="545" r="22" fill="#ffb3c7"/>
+  <path d="M492 565 q 20 18 40 0" fill="none" stroke="#6b4a5a" stroke-width="12" stroke-linecap="round"/>
+  <path d="M505 352 q 20 -40 -5 -60" fill="none" stroke="#f2a9a0" stroke-width="12" stroke-linecap="round"/>
+</svg>

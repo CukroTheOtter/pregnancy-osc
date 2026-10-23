@@ -1,0 +1,14 @@
+2025.03.02 22:10:01 Log        -  [VRCApplication] VRChat build 1556, Proton
+0024:fixme:ntdll:NtQuerySystemInformation info_class SYSTEM_PERFORMANCE_INFORMATION
+2025.03.02 22:10:30 Log        -  User Authenticated: Moonbun (usr_aaaaaaaa-1111-2222-3333-444444444444)
+2025.03.02 22:11:00 Log        -  [Behaviour] Joining wrld_11111111-2222-3333-4444-555555555555:1~friends(usr_x)~region(us)
+2025.03.02 22:11:02 Log        -  [Behaviour] Entering Room: Neon Club
+2025.03.02 22:11:03 Log        -  [Behaviour] OnPlayerJoined Moonbun (usr_aaaaaaaa-1111-2222-3333-444444444444)
+2025.03.02 22:11:04 Log        -  [Behaviour] OnPlayerJoined Rex (usr_dddddddd-1111-2222-3333-444444444444)
+2025.03.02 22:11:04 Log        -  [Behaviour] OnPlayerJoined Scales (usr_eeeeeeee-1111-2222-3333-444444444444)
+2025.03.02 22:11:05 Log        -  [Behaviour] Switching Rex to avatar Wolf Pup
+2025.03.02 22:11:05 Log        -  [Behaviour] Switching Scales to avatar Dragon Kin v4
+2025.03.02 22:40:00 Log        -  [Behaviour] OnLeftRoom
+2025.03.02 22:40:05 Log        -  [Behaviour] Joining wrld_99999999-2222-3333-4444-555555555555:7~private(usr_aaaaaaaa-1111-2222-3333-444444444444)
+2025.03.02 22:40:07 Log        -  [Behaviour] Entering Room: Home
+2025.03.02 22:40:08 Log        -  [Behaviour] OnPlayerJoined Moonbun (usr_aaaaaaaa-1111-2222-3333-444444444444)

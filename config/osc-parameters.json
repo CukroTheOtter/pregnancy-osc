@@ -1,0 +1,115 @@
+{
+  "version": 6,
+  "comment": "App parameters: rename them to match your avatar, or set a name to \"\" to turn one off. Sync: parameters the app remembers and re-sends on every avatar. See docs/osc-parameters.md.",
+  "sendIntervalMs": 1000,
+  "minStageChange": 0.004,
+  "heartbeat": {
+    "intervalMs": 1000,
+    "timeoutMs": 5000
+  },
+  "overdue": {
+    "maxOverdueFraction": 0.05
+  },
+  "parameters": {
+    "stage": {
+      "name": "Pregnancy/Stage",
+      "type": "float",
+      "synced": true,
+      "required": true,
+      "aliases": [
+        "PregSys_Pregnancy_Stage"
+      ]
+    },
+    "bellyExtra": {
+      "name": "Pregnancy/BellyExtra",
+      "type": "float",
+      "synced": true,
+      "optional": true
+    },
+    "appActive": {
+      "name": "Pregnancy/AppActive",
+      "type": "bool",
+      "synced": false,
+      "aliases": [
+        "Pregnancy/Active",
+        "PregnancyOSC/Active"
+      ]
+    },
+    "appHeartbeat": {
+      "name": "Pregnancy/AppHeartbeat",
+      "type": "bool",
+      "synced": false,
+      "aliases": [
+        "Pregnancy/Heartbeat",
+        "PregnancyOSC/Heartbeat"
+      ]
+    },
+    "fertileLevel": {
+      "name": "Pregnancy/FertileLevel",
+      "type": "int",
+      "synced": true,
+      "optional": true,
+      "aliases": [
+        "PregnancyOSC/FertileLevel"
+      ]
+    },
+    "waiting": {
+      "name": "Pregnancy/Waiting",
+      "type": "bool",
+      "synced": true,
+      "optional": true,
+      "aliases": [
+        "PregnancyOSC/Waiting"
+      ]
+    },
+    "babyCount": {
+      "name": "Pregnancy/BabyCount",
+      "type": "int",
+      "synced": true,
+      "optional": true,
+      "aliases": [
+        "PregnancyOSC/BabyCount"
+      ]
+    },
+    "controlStart": {
+      "name": "Pregnancy/Control/Start",
+      "type": "bool",
+      "synced": false,
+      "optional": true
+    },
+    "controlPause": {
+      "name": "Pregnancy/Control/Pause",
+      "type": "bool",
+      "synced": false,
+      "optional": true
+    },
+    "controlStop": {
+      "name": "Pregnancy/Control/Stop",
+      "type": "bool",
+      "synced": false,
+      "optional": true
+    },
+    "fetalMovement": {
+      "name": "Pregnancy/FetalMovement",
+      "type": "int",
+      "synced": true,
+      "optional": true
+    }
+  },
+  "sync": [
+    {
+      "name": "Pregnancy/HideBelly",
+      "type": "bool"
+    },
+    {
+      "name": "Pregnancy/FetalSounds",
+      "type": "bool"
+    }
+  ],
+  "kicks": {
+    "weak": 1,
+    "strong": 2,
+    "extreme": 3,
+    "holdMs": 1500
+  }
+}
