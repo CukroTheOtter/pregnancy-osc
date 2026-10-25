@@ -96,6 +96,9 @@ pub struct Driver {
     change_ms: i64,
     prev_params: Option<Vec<String>>,
     loading: bool,
+    /// When loading started (the switch line or the change): it ends by
+    /// LOAD_CAP_MS even if no new parameter list ever shows up.
+    load_start_ms: i64,
     /// Sync values reported in-game, waiting to be remembered: name -> (value, when).
     held_sync: BTreeMap<String, (f64, i64)>,
     /// Held sync values dropped by an avatar change (for the debug note).
@@ -148,6 +151,7 @@ impl Driver {
             change_ms: 0,
             prev_params: None,
             loading: false,
+            load_start_ms: 0,
             held_sync: BTreeMap::new(),
             dropped_sync: Vec::new(),
             ready_sync: Vec::new(),
@@ -241,6 +245,7 @@ impl Driver {
             }
         }
         self.loading = true;
+        self.load_start_ms = now_ms;
         self.sync_ignore_until_ms = Some(now_ms + LOAD_CAP_MS);
         self.hide_until_ms = Some(now_ms + LOAD_CAP_MS);
     }
@@ -267,6 +272,7 @@ impl Driver {
         self.belly_up = false;
         self.change_ms = now_ms;
         self.loading = true;
+        self.load_start_ms = now_ms;
         self.resend_at_ms = Some(now_ms + RESEND_AFTER_MS);
         self.avatar_id = Some(id.to_string());
         self.prev_params = self.avatar_params.take().or(self.prev_params.take());
@@ -405,6 +411,11 @@ impl Driver {
 
     pub fn tick(&mut self, now_ms: i64, data: &AppData) -> Vec<Send> {
         let mut out = Vec::new();
+        // A switch with no new parameter list (the same avatar again, or a
+        // switch that didn't go through): stop waiting after the cap.
+        if self.loading && now_ms - self.load_start_ms >= LOAD_CAP_MS {
+            self.loading = false;
+        }
         if !self.connected {
             return out;
         }
@@ -900,6 +911,21 @@ mod tests {
             d.tick(t, &data);
         }
         assert_eq!(hide_of(&d.tick(60_000, &data)), None);
+    }
+
+    #[test]
+    fn loading_ends_by_the_cap_without_a_new_list() {
+        let mut d = Driver::new(Mapping::default());
+        let data = AppData::new();
+        d.on_avatar_change("avtr_a", 0);
+        d.set_avatar_params(vec![("Pregnancy/Stage".into(), Some(0.0))], 2_000);
+        assert!(!d.loading());
+        // The log says you're switching, but no avatar change or new list ever comes.
+        d.on_switch_start(10_000, 10_000);
+        d.tick(20_000, &data);
+        assert!(d.loading(), "still waiting");
+        d.tick(10_000 + LOAD_CAP_MS, &data);
+        assert!(!d.loading() && !d.sync_ignored(10_000 + LOAD_CAP_MS), "given up at the cap");
     }
 
     #[test]
