@@ -10,6 +10,56 @@ The app never hardcodes parameter names. Every name lives in the mapping file **
 
 ---
 
+## What each parameter does
+
+The short version. Details, sync costs and edge cases are further down.
+
+**Who sets it:** *App* = the app writes it, your avatar reacts. *Avatar* = you press it in your avatar's menu, the app reacts. *Both* = you set it in-game, the app remembers it.
+
+### Belly
+
+| Parameter | Type | Who sets it | What it does |
+|---|---|---|---|
+| `Pregnancy/Stage` | float, synced | App | **The belly size.** 0 = flat, 1 = full term. The app works it out from how far along you are and sends it about once a second. This is the only one your avatar must have. |
+| `Pregnancy/BellyExtra` | float, synced | App | **Extra size on top of full term.** 0 to 1. Used for twins (0.35), triplets (0.6), 4 or more (0.8), and grows to 1 when you go past the due date. Drives the SDK's Bigger Belly. |
+| `Pregnancy/HideBelly` | bool, synced | Both | **Hides the belly.** You toggle it in-game; the app remembers it and puts it back on every avatar you switch to, so the belly never pops up while a new avatar loads. |
+
+### App link (local, free)
+
+| Parameter | Type | Who sets it | What it does |
+|---|---|---|---|
+| `Pregnancy/AppActive` | bool, local | App | **"The app is running."** On while the app is open, off when it closes. Tells the avatar to pause its own timer, random kicks and fertility, so the app is in charge. |
+| `Pregnancy/AppHeartbeat` | bool, local | App | **"Still here."** Flips every second. If it stops flipping for 5 s (the app crashed), the avatar turns `AppActive` off itself and goes back to running on its own. |
+
+### Buttons in the avatar's menu (local, free)
+
+Found in the avatar's Settings > App Controls menu. These names can't be changed.
+
+| Parameter | Type | Who sets it | What it does |
+|---|---|---|---|
+| `Pregnancy/Control/Start` | bool, local | Avatar | **Start** a pregnancy with the length saved in the app. |
+| `Pregnancy/Control/Pause` | bool, local | Avatar | **Pause**, or resume if paused. |
+| `Pregnancy/Control/Stop` | bool, local | Avatar | **Stop** the pregnancy. Hold for 2 s. Ends it without a birth. |
+
+### Fertility, babies and kicks (all optional)
+
+| Parameter | Type | Who sets it | What it does |
+|---|---|---|---|
+| `Pregnancy/FertileLevel` | int, synced | App | **How fertile you are right now.** 0 low, 1 medium, 2 high, 3 peak. Always 0 while pregnant or waiting. Use it for a fertility indicator. |
+| `Pregnancy/Waiting` | bool, synced | App | **"Waiting to find out."** On during the grace period after a WooHoo, before the app reveals whether it took. |
+| `Pregnancy/BabyCount` | int, synced | App | **How many babies.** 0 until they can be seen (week 12), then 1 to 4. |
+| `Pregnancy/FetalMovement` | int, synced | App | **A kick.** 1 little, 2 strong, 3 big (editable in Settings > Advanced), then back to 0 after 1.5 s. Kicks start at week 16, strong from 24, big from 32. |
+| `Pregnancy/FetalSounds` | bool, synced | Both | **Heartbeat / womb sounds on or off.** You toggle it in-game; the app keeps it the same on every avatar. |
+
+### Read only: WooHoo detection
+
+| Parameter | Type | Who sets it | What it does |
+|---|---|---|---|
+| `OGB/Orf/<socket>/...` | float, local | VRChat (SPS) | **How deep another player is in a socket.** The app watches these to notice a WooHoo. Made by VRCFury SPS sockets with haptics on. See [SPS sockets](#2c-sps-sockets-read-only-for-detecting-woohoos). |
+| `OGB_ENABLED` | bool, local | App | Turns those socket values on (VRCFury keeps them at 0 until an app asks). |
+
+---
+
 ## 1. Ports and discovery
 
 | What | Value |
@@ -84,7 +134,7 @@ VRCFury SPS sockets with haptics on expose `OGB/Orf/<socket>/<channel>` floats (
 
 These are local parameters on the avatar, so they cost no synced bits.
 
-### 2c. Budget
+### 2d. Budget
 
 | Set | Synced bits |
 |---|---|
