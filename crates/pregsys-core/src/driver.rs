@@ -1,7 +1,7 @@
 //! Decides what to send to the avatar, tick by tick. Pure logic: the app
 //! feeds it what VRChat says and sends whatever it returns.
 
-use crate::mapping::{Mapping, ParamType};
+use crate::mapping::{Mapping, ParamType, SyncRole};
 use crate::fertility;
 use crate::movement::{self, KickStrength};
 use crate::model::AppData;
@@ -53,6 +53,10 @@ const SAME_LIST_MS: i64 = 5_000;
 /// when the switch starts) is the main guard; this hold is the backup for
 /// when the log isn't read. The default; Settings > Sync can change it.
 pub const SYNC_HOLD_MS: i64 = 2_000;
+/// While switching avatars, a saved Hide Belly is sent this often (from the
+/// log's "Switching" line until the new avatar has loaded), so the new
+/// avatar's belly isn't seen during the wait. Sent too early it's lost, so repeat.
+const HIDE_REPEAT_MS: i64 = 500;
 
 /// What happened to a reported parameter value (see [`Driver::on_sync_param`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -99,6 +103,9 @@ pub struct Driver {
     /// Held sync values from before a switch started: remembered right away.
     ready_sync: Vec<(String, f64)>,
     need_sync: bool,
+    /// While switching avatars: keep sending a saved Hide Belly until then.
+    hide_until_ms: Option<i64>,
+    last_hide_ms: i64,
     /// After an avatar change: when the second full send is due.
     resend_at_ms: Option<i64>,
     /// A belly above 0 was sent for a pregnancy (survives resyncs), so it's
@@ -145,6 +152,8 @@ impl Driver {
             dropped_sync: Vec::new(),
             ready_sync: Vec::new(),
             need_sync: true,
+            hide_until_ms: None,
+            last_hide_ms: i64::MIN / 2,
             resend_at_ms: None,
             belly_up: false,
             paused: false,
@@ -203,6 +212,12 @@ impl Driver {
         SyncReport::Held
     }
 
+    /// Forget an in-game change still held for this parameter (it was set in the app since).
+    pub fn drop_held_sync(&mut self, name: &str) {
+        self.held_sync.remove(name);
+        self.ready_sync.retain(|(n, _)| n != name);
+    }
+
     /// Held sync values old enough to be your choice: remember these.
     pub fn take_sync_saves(&mut self, now_ms: i64, hold_ms: i64) -> Vec<(String, f64)> {
         let ready: Vec<String> = self.held_sync.iter().filter(|(_, (_, t))| now_ms - t >= hold_ms).map(|(n, _)| n.clone()).collect();
@@ -227,6 +242,7 @@ impl Driver {
         }
         self.loading = true;
         self.sync_ignore_until_ms = Some(now_ms + LOAD_CAP_MS);
+        self.hide_until_ms = Some(now_ms + LOAD_CAP_MS);
     }
 
     /// Sync values dropped by the last avatar change (they were its values, not yours).
@@ -244,6 +260,7 @@ impl Driver {
     pub fn on_avatar_change(&mut self, id: &str, now_ms: i64) {
         self.sync_until_ms = Some(now_ms + SYNC_SETTLE_MS);
         self.sync_ignore_until_ms = Some(now_ms + LOAD_CAP_MS);
+        self.hide_until_ms = Some(now_ms + LOAD_CAP_MS);
         self.dropped_sync.extend(std::mem::take(&mut self.held_sync).into_keys());
         // The app never set a belly on this avatar, so there's nothing to flatten
         // (an avatar without a pregnancy keeps its own belly).
@@ -271,6 +288,7 @@ impl Driver {
             self.loading = false;
             let until = now_ms + SYNC_IGNORE_AFTER_LOAD_MS;
             self.sync_ignore_until_ms = Some(until);
+            self.hide_until_ms = Some(until);
             self.resend_at_ms = self.resend_at_ms.max(Some(until));
         }
         for (name, v) in &params {
@@ -367,6 +385,17 @@ impl Driver {
         }
     }
 
+    /// Sends Hide Belly = true, if that's the saved sync value.
+    fn push_hide(&self, out: &mut Vec<Send>, data: &AppData) {
+        let Some(def) = self.mapping.sync_role(SyncRole::HideBelly) else { return };
+        if self.mapping.is_app_param(&def.name) || self.overrides.values().any(|n| *n == def.name) {
+            return;
+        }
+        if data.sync_values.get(&def.name).is_some_and(|&v| v > 0.5) {
+            out.push(Send { key: format!("sync:{}", def.name), name: def.name.clone(), value: ParamValue::Bool(true) });
+        }
+    }
+
     fn stage_for(&self, data: &AppData, now_ms: i64) -> f32 {
         let aid = self.avatar_id.as_deref();
         let (_, scale, _) = data.belly_settings(aid);
@@ -378,6 +407,11 @@ impl Driver {
         let mut out = Vec::new();
         if !self.connected {
             return out;
+        }
+        // Switching avatars with the belly hidden: keep it hidden while it loads.
+        if self.hide_until_ms.is_some_and(|t| now_ms < t) && now_ms - self.last_hide_ms >= HIDE_REPEAT_MS {
+            self.last_hide_ms = now_ms;
+            self.push_hide(&mut out, data);
         }
         // A new avatar is still loading: wait, then send everything.
         if let Some(t) = self.sync_until_ms {
@@ -818,7 +852,7 @@ mod tests {
         // The new avatar reports its own default: ignored while it loads.
         assert_eq!(d.on_sync_param("Pregnancy/HideBelly", 0.0, now), SyncReport::Ignored);
         let sync = |out: &[Send]| out.iter().find(|s| s.name == "Pregnancy/HideBelly").map(|s| s.value);
-        assert_eq!(sync(&d.tick(now, &data)), None, "not yet");
+        assert_eq!(sync(&d.tick(now, &data)), Some(ParamValue::Bool(true)), "hidden: sent right away");
         assert_eq!(sync(&d.tick(now + SYNC_SETTLE_MS, &data)), Some(ParamValue::Bool(true)));
         assert_eq!(sync(&d.tick(now + SYNC_SETTLE_MS + 10, &data)), None, "sent once");
         // Still loading at 6 s: its default isn't your choice.
@@ -832,6 +866,51 @@ mod tests {
         assert!(d.take_sync_saves(after + 100, SYNC_HOLD_MS).is_empty(), "held");
         assert_eq!(d.take_sync_saves(after + SYNC_HOLD_MS, SYNC_HOLD_MS), vec![("Pregnancy/HideBelly".to_string(), 0.0)]);
         assert_eq!(d.on_sync_param("Not/Synced", 1.0, after), SyncReport::NotSync);
+    }
+
+    fn hide_of(out: &[Send]) -> Option<ParamValue> {
+        out.iter().find(|s| s.name == "Pregnancy/HideBelly").map(|s| s.value)
+    }
+
+    #[test]
+    fn a_hidden_belly_stays_hidden_while_switching() {
+        let mut data = AppData::new();
+        data.sync_values.insert("Pregnancy/HideBelly".into(), 1.0);
+        let mut d = Driver::new(Mapping::default());
+        d.on_avatar_change("avtr_a", 0);
+        d.set_avatar_params(vec![("Pregnancy/HideBelly".into(), Some(1.0))], 2_000);
+        for t in (0..15_000).step_by(100) {
+            d.tick(t, &data);
+        }
+        assert_eq!(hide_of(&d.tick(20_000, &data)), None, "settled: not repeated");
+        // The log says you're switching: sent right away, not 3 s after the change.
+        d.on_switch_start(30_000, 30_000);
+        assert_eq!(hide_of(&d.tick(30_000, &data)), Some(ParamValue::Bool(true)));
+        assert_eq!(hide_of(&d.tick(30_200, &data)), None, "every half second");
+        assert_eq!(hide_of(&d.tick(30_500, &data)), Some(ParamValue::Bool(true)));
+        // Still repeated in the 3 s after the change, while nothing else is sent.
+        d.on_avatar_change("avtr_b", 31_000);
+        let out = d.tick(31_000, &data);
+        assert_eq!(hide_of(&out), Some(ParamValue::Bool(true)));
+        assert_eq!(stage_of(&out), None);
+        // Loaded at 40 s: repeated until 1.5 s after, then stops.
+        d.set_avatar_params(vec![("Pregnancy/HideBelly".into(), Some(0.0))], 40_000);
+        assert_eq!(hide_of(&d.tick(41_400, &data)), Some(ParamValue::Bool(true)));
+        for t in (41_500..60_000).step_by(100) {
+            d.tick(t, &data);
+        }
+        assert_eq!(hide_of(&d.tick(60_000, &data)), None);
+    }
+
+    #[test]
+    fn a_shown_belly_isnt_sent_early() {
+        let mut data = AppData::new();
+        data.sync_values.insert("Pregnancy/HideBelly".into(), 0.0);
+        let mut d = Driver::new(Mapping::default());
+        d.on_avatar_change("avtr_a", 0);
+        d.on_switch_start(1_000, 1_000);
+        assert_eq!(hide_of(&d.tick(1_000, &data)), None);
+        assert_eq!(hide_of(&d.tick(SYNC_SETTLE_MS, &data)), Some(ParamValue::Bool(false)), "the usual send");
     }
 
     #[test]

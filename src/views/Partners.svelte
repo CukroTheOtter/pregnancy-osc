@@ -12,6 +12,10 @@
     kids: list.reduce((s, x) => s + x.kids, 0),
   });
   const dateFmt = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" });
+  /** The search box shows up once the list is this long. */
+  const SEARCH_FROM = 6;
+  let query = $state("");
+  const shown = $derived(query.trim() ? list.filter((x) => x.name.toLowerCase().includes(query.trim().toLowerCase())) : list);
 
   async function forget(name: string, userId: string | null) {
     if (await confirmAsk({ title: `Forget ${name}?`, text: "They're removed from your partners, WooHoo history and instance history. Pregnancies with them carry on with an unknown partner.", ok: "Forget", danger: true })) {
@@ -34,7 +38,12 @@
     </section>
   {/if}
 
-  {#each list as s (s.key)}
+  {#if list.length >= SEARCH_FROM}
+    <input class="search" type="search" bind:value={query} placeholder="🔍 Search {list.length} partners" aria-label="Search partners" />
+    {#if !shown.length}<p class="muted small none">No partner called "{query.trim()}".</p>{/if}
+  {/if}
+
+  {#each shown as s (s.key)}
     <section class="card partner">
       <div class="row">
         <PersonPic name={s.name} userId={s.userId} size={52} />
@@ -65,6 +74,13 @@
     display: flex;
     flex-direction: column;
     gap: 14px;
+  }
+  .search {
+    width: 100%;
+  }
+  .none {
+    margin: 0;
+    text-align: center;
   }
   .totals,
   .nums {

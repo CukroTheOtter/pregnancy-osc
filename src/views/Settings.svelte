@@ -8,7 +8,7 @@
   import { api, inTauri, pickFolder, pickTextFile, saveTextFile } from "../lib/api";
   import { MULTIPLES_LABEL } from "../lib/fertility";
   import { HOLE_TYPES } from "../lib/sps";
-  import { PARAM_INFO, PARAM_ORDER } from "../lib/params";
+  import { FEATURES, FIXED, PARAM_INFO, PARAM_ORDER, REQUIRED, SYNC_ROLES, hasParam, syncLabel } from "../lib/params";
   import { week as weekOf } from "../lib/timeline";
   import { pregnancyFor } from "../lib/scope";
   import type { MappingInfo, Multiples, ResetKind, Settings } from "../lib/types";
@@ -32,6 +32,16 @@
 
   let s = $state<Settings>(withChatRows(structuredClone($state.snapshot(app.data!.settings)) as Settings));
   let mapInfo = $state<MappingInfo | null>(null);
+  /** The avatar you're wearing (for "this avatar can't show …" hints). */
+  const worn = $derived(app.data?.currentAvatarId ? app.data.avatars[app.data.currentAvatarId] : null);
+  /** The worn avatar has been checked and lacks this parameter. */
+  const lacks = (key: string) => hasParam(mapInfo?.mapping, worn, key) === false;
+
+  function setSync(name: string, value: number) {
+    if (!Number.isFinite(value)) return;
+    app.data!.syncValues = { ...app.data!.syncValues, [name]: value };
+    api.setSyncValue(name, value).catch(errorToast);
+  }
   let names = $state<Record<string, string>>({});
   type SyncRow = MappingInfo["mapping"]["sync"][number];
   let syncList = $state<SyncRow[]>([]);
@@ -162,11 +172,11 @@
     }
     const m = $state.snapshot(mapInfo.mapping) as MappingInfo["mapping"];
     for (const [k, v] of Object.entries(names)) if (m.parameters[k]) m.parameters[k].name = v.trim();
-    // Keep only sync rows with a real name, and no duplicates.
-    const seen = new Set<string>();
-    m.sync = ($state.snapshot(syncList) as SyncRow[])
-      .map((x) => ({ ...x, name: x.name.trim() }))
-      .filter((x) => x.name && x.name !== "Pregnancy/" && !seen.has(x.name) && seen.add(x.name));
+    // Keep built-in rows (an empty name goes back to the default), then your own with a
+    // real name, and no duplicates.
+    const rows = ($state.snapshot(syncList) as SyncRow[]).map((x) => ({ ...x, name: x.name.trim() }));
+    const seen = new Set(rows.filter((x) => x.role).map((x) => x.name));
+    m.sync = rows.filter((x) => x.role || (x.name && x.name !== "Pregnancy/" && !seen.has(x.name) && seen.add(x.name)));
     try {
       await api.saveMapping(m);
       savedKicks = null;
@@ -264,6 +274,28 @@
 
 </script>
 
+{#snippet param(k: string, feature: string | null)}
+  {@const def = mapInfo!.mapping.parameters[k]}
+  <div class="param">
+    <div class="ptop">
+      <strong>{PARAM_INFO[k]?.label ?? k}</strong>
+      {#if feature}<span class="muted small">for {feature}</span>{/if}
+      <span class="grow"></span>
+      <span class="pill">{FIXED.includes(k) ? "fixed · " : ""}{def.type}{def.synced ? " · synced" : " · local"}</span>
+    </div>
+    <span class="muted small">{PARAM_INFO[k]?.text ?? ""}</span>
+    {#if FIXED.includes(k)}
+      <code class="fixed">{def.name}</code>
+    {:else}
+      <input bind:value={names[k]} placeholder="(off)" aria-label="{PARAM_INFO[k]?.label ?? k} name" />
+    {/if}
+  </div>
+{/snippet}
+
+{#snippet cantShow(what: string, param: string)}
+  <span class="small cant">⚠️ The avatar you're wearing can't show {what} (no {param} parameter). <button class="link-inline" onclick={() => (app.view = "avatars")}>Check it</button></span>
+{/snippet}
+
 <div class="page">
   <h3 class="cat">In VRChat</h3>
   <Section id="vrchat" title="🔗 VRChat" open>
@@ -289,6 +321,26 @@
       {#if status.note}<span class="muted small">{status.note}</span>{/if}
     {/if}
   </Section>
+
+  {#if mapInfo?.mapping.sync.length}
+    <Section id="follow" title="🔁 Follow you">
+      <p class="muted small">Your avatar's own toggles, carried onto every avatar you wear. Change them here or in-game.</p>
+      {#each mapInfo.mapping.sync as sp (sp.name)}
+        {@const v = app.data?.syncValues?.[sp.name]}
+        {@const missing = worn?.params.length ? !worn.params.includes(sp.name) : false}
+        {#if sp.type === "bool"}
+          <Toggle checked={(v ?? 0) > 0.5} label={syncLabel(sp)} hint={missing ? "Not on the avatar you're wearing" : ""} onchange={(on) => setSync(sp.name, on ? 1 : 0)} />
+        {:else}
+          <label class="field">{syncLabel(sp)}
+            <input type="number" step={sp.type === "int" ? 1 : 0.01} value={v ?? ""} placeholder="not set yet"
+              onchange={(e) => { const n = (e.target as HTMLInputElement).valueAsNumber; setSync(sp.name, sp.type === "int" ? Math.round(n) : n); }} />
+            {#if missing}<span class="hint">Not on the avatar you're wearing</span>{/if}
+          </label>
+        {/if}
+      {/each}
+      <span class="hint">Add or rename these under Advanced > Follow you (Sync).</span>
+    </Section>
+  {/if}
 
   <Section id="chatbox" title="💬 Chatbox">
     {#snippet extra()}<span class="pill" class:ok={s.chatbox.enabled} class:off={!s.chatbox.enabled}>{s.chatbox.enabled ? "on" : "off"}</span>{/snippet}
@@ -447,11 +499,13 @@
     <Toggle bind:checked={s.biggerForMultiples} label="Bigger for twins and more" hint="Twins a little bigger, triplets more" onchange={() => commit()} />
     <Toggle bind:checked={s.growWhenOverdue} label="Keep growing when overdue" hint="The belly grows a little more after the due date" onchange={() => commit()} />
     <span class="muted small">Both need Bigger Belly from the Pregnancy System SDK (<code>Pregnancy/BellyExtra</code>).</span>
+    {#if lacks("bellyExtra")}{@render cantShow("a bigger belly", "Extra size")}{/if}
   </Section>
 
   <Section id="movement" title="💓 Kicks">
     {#snippet extra()}<span class="pill" class:ok={s.kicks} class:off={!s.kicks}>{s.kicks ? s.kickFrequency : "off"}</span>{/snippet}
     <Toggle bind:checked={s.kicks} label="Kicks" hint="The app sends kicks to your avatar from week 16, even in the tray" onchange={() => commit()} />
+    {#if lacks("fetalMovement")}{@render cantShow("kicks", "Fetal movement")}{/if}
     {#if s.kicks}
       <div class="field">
         <strong>How often</strong>
@@ -524,37 +578,41 @@
     {#snippet extra()}{#if mapInfo}<span class="pill">{mapInfo.syncedBitsAll} synced bits</span>{/if}{/snippet}
     <p class="muted small">Only needed if your avatar uses its own parameter names, or you want other parameters to follow you between avatars.</p>
 
-    <h3 class="sub">🎛 App parameters</h3>
+
     <p class="muted small">What the app drives or reads on your avatar. Leave a name empty to turn one off. If one avatar uses different names, set them on its page under Avatars.</p>
     {#if mapInfo}
+      <h3 class="sub">✅ Required</h3>
+      <p class="muted small">The app can't work on an avatar without these.</p>
       <div class="params">
-        {#each PARAM_ORDER.filter((k) => mapInfo!.mapping.parameters[k]) as k}
-          {@const def = mapInfo.mapping.parameters[k]}
-          <div class="param">
-            <div class="ptop">
-              <strong>{PARAM_INFO[k]?.label ?? k}</strong>
-              <span class="pill">{def.type}{def.synced ? " · synced" : " · local"}</span>
-            </div>
-            <span class="muted small">{PARAM_INFO[k]?.text ?? ""}</span>
-            <input bind:value={names[k]} placeholder="(off)" aria-label="{PARAM_INFO[k]?.label ?? k} name" />
-          </div>
+        {#each REQUIRED.filter((k) => mapInfo!.mapping.parameters[k]) as k}{@render param(k, null)}{/each}
+      </div>
+      <h3 class="sub">✨ Features</h3>
+      <p class="muted small">Optional. Each one turns something on; without it, that feature just doesn't show. The menu buttons are made for this app, so their names are fixed.</p>
+      <div class="params">
+        {#each FEATURES as f}
+          {#each f.keys.filter((k) => mapInfo!.mapping.parameters[k]) as k}{@render param(k, PARAM_INFO[k]?.label === f.label ? null : f.label)}{/each}
         {/each}
       </div>
     {/if}
 
-    <h3 class="sub">🔁 Sync</h3>
-    <p class="muted small">Parameters that follow you onto every avatar. The app remembers the last value it sees in-game and sends it again whenever you switch avatars. Add anything you like.</p>
+    <h3 class="sub">🔁 Follow you (Sync)</h3>
+    <p class="muted small">Your own avatar's parameters that follow you onto every avatar. The app remembers the last value it sees in-game (or that you set in Settings > Follow you) and sends it again whenever you switch avatars. Hide belly and Fetal sounds are built in: rename them if your avatar uses other names, but they can't be removed. Add anything else you like.</p>
     <div class="params">
       {#each syncList as row, i}
         {@const why = clash(row)}
         <div class="syncrow" class:bad={!!why}>
-          <input class="grow" bind:value={row.name} placeholder="Pregnancy/Something" aria-label="Parameter name" />
-          <select bind:value={row.type} aria-label="Type">
-            <option value="bool">bool</option>
-            <option value="int">int</option>
-            <option value="float">float</option>
-          </select>
-          <button class="icon soft" onclick={() => removeSync(i)} aria-label="Remove {row.name}">✕</button>
+          {#if row.role}
+            <span class="builtin"><strong>{SYNC_ROLES[row.role]}</strong> <span class="pill">built-in · bool</span></span>
+            <input class="grow" bind:value={row.name} placeholder={row.role === "hideBelly" ? "Pregnancy/HideBelly" : "Pregnancy/FetalSounds"} aria-label="{SYNC_ROLES[row.role]} parameter name" />
+          {:else}
+            <input class="grow" bind:value={row.name} placeholder="Pregnancy/Something" aria-label="Parameter name" />
+            <select bind:value={row.type} aria-label="Type">
+              <option value="bool">bool</option>
+              <option value="int">int</option>
+              <option value="float">float</option>
+            </select>
+            <button class="icon soft" onclick={() => removeSync(i)} aria-label="Remove {row.name}">✕</button>
+          {/if}
           {#if why}
             <span class="small remembered warn-text">⛔ {why}</span>
           {:else}
@@ -776,11 +834,30 @@
   .syncrow select {
     width: 80px;
   }
-  .remembered {
+  .fixed {
+    padding: 8px 10px;
+    border-radius: var(--radius);
+    background: var(--bg-3);
+    font-size: 0.85rem;
+  }
+  .remembered,
+  .builtin {
     flex-basis: 100%;
   }
   .syncrow.bad {
     box-shadow: inset 0 0 0 2px var(--danger);
+  }
+  .cant {
+    padding: 6px 10px;
+    border-radius: var(--radius);
+    background: color-mix(in srgb, var(--warn) 18%, transparent);
+  }
+  .link-inline {
+    background: none;
+    padding: 0;
+    color: var(--accent);
+    font-size: inherit;
+    text-decoration: underline;
   }
   .warn-text {
     color: var(--danger);

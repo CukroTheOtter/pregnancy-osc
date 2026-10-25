@@ -61,6 +61,30 @@ pub struct SyncParam {
     pub name: String,
     #[serde(rename = "type")]
     pub kind: ParamType,
+    /// Built-in entries (the SDK's own toggles): always there, can be
+    /// renamed but not removed, and the app finds them by this, not by name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<SyncRole>,
+}
+
+/// What a built-in Sync entry is for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SyncRole {
+    HideBelly,
+    FetalSounds,
+}
+
+impl SyncRole {
+    pub const ALL: [SyncRole; 2] = [SyncRole::HideBelly, SyncRole::FetalSounds];
+
+    /// The end of its default name, used to spot a renamed one in older files.
+    fn suffix(self) -> &'static str {
+        match self {
+            SyncRole::HideBelly => "HideBelly",
+            SyncRole::FetalSounds => "FetalSounds",
+        }
+    }
 }
 
 /// Values sent to the FetalMovement parameter for each kick strength, and
@@ -92,6 +116,10 @@ impl KickValues {
 
 /// Current version of the parameter file layout.
 pub const MAPPING_VERSION: u32 = 6;
+
+/// The app's own menu buttons: made for this app by the SDK, so their names
+/// are fixed (no renaming, no per-avatar names).
+pub const FIXED_KEYS: [&str; 3] = ["controlStart", "controlPause", "controlStop"];
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -126,13 +154,70 @@ impl Default for Mapping {
     }
 }
 
+/// True if a name is an app parameter's name or backup name.
+fn is_app_name(params: &BTreeMap<String, ParamDef>, name: &str) -> bool {
+    params.values().any(|d| !d.name.is_empty() && (d.name == name || d.aliases.iter().any(|a| a == name)))
+}
+
 impl Mapping {
     pub fn from_json(json: &str) -> Result<Self, MappingError> {
         let mut m: Mapping = serde_json::from_str(json)?;
         m.upgrade();
         m.fill_missing();
         m.drop_protected_sync();
+        m.apply_locks();
         Ok(m)
+    }
+
+    /// What can't be changed: the built-in Sync entries stay, and the menu
+    /// buttons keep their names.
+    pub fn apply_locks(&mut self) {
+        self.ensure_builtin_sync();
+        let defaults = Mapping::default();
+        for key in FIXED_KEYS {
+            if let Some(d) = defaults.parameters.get(key) {
+                self.parameters.insert(key.to_string(), d.clone());
+            }
+        }
+    }
+
+    /// The built-in Sync entry for a role.
+    pub fn sync_role(&self, role: SyncRole) -> Option<&SyncParam> {
+        self.sync.iter().find(|s| s.role == Some(role))
+    }
+
+    /// The built-in Sync entries are always there, on/off, once each. One the
+    /// user renamed keeps its name; one that went missing comes back.
+    pub fn ensure_builtin_sync(&mut self) {
+        let defaults: Vec<SyncParam> = serde_json::from_str::<Mapping>(DEFAULT_MAPPING_JSON).expect("bundled mapping is valid").sync;
+        for (i, role) in SyncRole::ALL.into_iter().enumerate() {
+            let def = defaults.iter().find(|s| s.role == Some(role)).expect("bundled mapping has every role");
+            // Only the first entry with a role keeps it.
+            let mut seen = false;
+            for s in self.sync.iter_mut().filter(|s| s.role == Some(role)) {
+                if seen {
+                    s.role = None;
+                }
+                seen = true;
+            }
+            if !seen {
+                // An older file: the default name, else one renamed but ending the same.
+                let found = self.sync.iter().position(|s| s.role.is_none() && s.name == def.name).or_else(|| {
+                    self.sync.iter().position(|s| s.role.is_none() && s.kind == ParamType::Bool && s.name.ends_with(role.suffix()))
+                });
+                match found {
+                    Some(j) => self.sync[j].role = Some(role),
+                    None => self.sync.insert(i.min(self.sync.len()), def.clone()),
+                }
+            }
+            if let Some(s) = self.sync.iter_mut().find(|s| s.role == Some(role)) {
+                s.kind = ParamType::Bool;
+                s.name = s.name.trim().to_string();
+                if s.name.is_empty() || is_app_name(&self.parameters, &s.name) {
+                    s.name = def.name.clone();
+                }
+            }
+        }
     }
 
     /// True if a name belongs to an app parameter (its name or a backup name).
@@ -177,7 +262,8 @@ impl Mapping {
         if self.sync.is_empty() {
             for key in ["hideBelly", "fetalSounds"] {
                 if let Some(p) = self.parameters.get(key).filter(|p| !p.name.trim().is_empty()) {
-                    self.sync.push(SyncParam { name: p.name.clone(), kind: p.kind });
+                    let role = if key == "hideBelly" { SyncRole::HideBelly } else { SyncRole::FetalSounds };
+                    self.sync.push(SyncParam { name: p.name.clone(), kind: p.kind, role: Some(role) });
                 }
             }
         }
@@ -326,7 +412,9 @@ mod tests {
         assert_eq!(m.get("appActive").unwrap().name, "Pregnancy/AppActive");
         assert_eq!(m.get("babyCount").unwrap().name, "Pregnancy/BabyCount");
         assert!(m.parameters.get("hideBelly").is_none());
-        assert_eq!(m.sync, vec![SyncParam { name: "Custom/Hide".into(), kind: ParamType::Bool }]);
+        assert_eq!(m.sync_role(SyncRole::HideBelly).map(|s| s.name.as_str()), Some("Custom/Hide"), "renamed: kept, with its role");
+        assert_eq!(m.sync_role(SyncRole::FetalSounds).map(|s| s.name.as_str()), Some("Pregnancy/FetalSounds"), "off: put back");
+        assert_eq!(m.sync.len(), 2);
     }
 
     #[test]
@@ -382,5 +470,34 @@ mod tests {
         let m = Mapping::default();
         assert!(m.parameters.values().all(|p| p.name.starts_with("Pregnancy/")));
         assert!(m.sync.iter().all(|p| p.name.starts_with("Pregnancy/")));
+    }
+
+    #[test]
+    fn built_in_sync_can_be_renamed_not_removed() {
+        // Hide Belly renamed (an older file, no roles), Fetal Sounds removed, one of your own added.
+        let mut old = Mapping::default();
+        old.sync = vec![
+            SyncParam { name: "Custom/HideBelly".into(), kind: ParamType::Bool, role: None },
+            SyncParam { name: "Custom/Glasses".into(), kind: ParamType::Bool, role: None },
+        ];
+        let json = serde_json::to_string(&old).unwrap();
+        let mut m = Mapping::from_json(&json).unwrap();
+        assert_eq!(m.sync_role(SyncRole::HideBelly).unwrap().name, "Custom/HideBelly");
+        assert_eq!(m.sync_role(SyncRole::FetalSounds).unwrap().name, "Pregnancy/FetalSounds", "put back");
+        assert!(m.sync.iter().any(|s| s.name == "Custom/Glasses" && s.role.is_none()));
+        // Saving without them, or as a number, or with no name: they stay, on/off, named.
+        m.sync.retain(|s| s.role != Some(SyncRole::FetalSounds));
+        m.sync.iter_mut().filter(|s| s.role == Some(SyncRole::HideBelly)).for_each(|s| (s.kind, s.name) = (ParamType::Int, " ".into()));
+        m.apply_locks();
+        assert_eq!(m.sync_role(SyncRole::HideBelly).map(|s| (s.name.as_str(), s.kind)), Some(("Pregnancy/HideBelly", ParamType::Bool)));
+        assert!(m.sync_role(SyncRole::FetalSounds).is_some());
+        assert_eq!(m.sync.len(), 3);
+    }
+
+    #[test]
+    fn menu_buttons_keep_their_names() {
+        let json = DEFAULT_MAPPING_JSON.replace("Pregnancy/Control/Start", "Mine/Start");
+        let m = Mapping::from_json(&json).unwrap();
+        assert_eq!(m.get("controlStart").unwrap().name, "Pregnancy/Control/Start");
     }
 }

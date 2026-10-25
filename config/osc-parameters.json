@@ -99,11 +99,13 @@
   "sync": [
     {
       "name": "Pregnancy/HideBelly",
-      "type": "bool"
+      "type": "bool",
+      "role": "hideBelly"
     },
     {
       "name": "Pregnancy/FetalSounds",
-      "type": "bool"
+      "type": "bool",
+      "role": "fetalSounds"
     }
   ],
   "kicks": {

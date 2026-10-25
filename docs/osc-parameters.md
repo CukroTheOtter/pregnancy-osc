@@ -35,9 +35,9 @@ What the app drives or reads. Rename them in **Settings > Advanced** (or per ava
 |---|---|---|---|---|
 | `Pregnancy/Stage` | float | yes | 8 | **Belly size**, 0 to 1. Written by the app. **Required.** |
 | `Pregnancy/BellyExtra` | float | yes | 8 | Optional. **Extra size**, 0 to 1, for the SDK's Bigger Belly (adds Belly_Bigger on top, scaled by Stage). Twins 0.35, triplets 0.6, 4+ 0.8; past the due date it grows to 1. Each part can be turned off under Settings > Bigger belly. |
-| `Pregnancy/AppActive` | bool | **no** | 0 | True while the app runs. False on exit. |
-| `Pregnancy/AppHeartbeat` | bool | **no** | 0 | Flips every second while the app runs. |
-| `Pregnancy/Control/Start` | bool | **no** | 0 | Read. Button in the avatar's Settings > App Controls menu: starts a pregnancy with the saved length. |
+| `Pregnancy/AppActive` | bool | **no** | 0 | True while the app runs. False on exit. **Required.** |
+| `Pregnancy/AppHeartbeat` | bool | **no** | 0 | Flips every second while the app runs. **Required.** |
+| `Pregnancy/Control/Start` | bool | **no** | 0 | Optional, name fixed (Start, Pause and Stop are made for this app, so they can't be renamed or given per-avatar names). Read. Button in the avatar's Settings > App Controls menu: starts a pregnancy with the saved length. |
 | `Pregnancy/Control/Pause` | bool | **no** | 0 | Read. Button: pauses, or resumes if paused. |
 | `Pregnancy/Control/Stop` | bool | **no** | 0 | Read. Button: held for 2 seconds, ends the pregnancy (not a birth). |
 | `Pregnancy/FertileLevel` | int | yes | 8 | Optional. 0 low, 1 medium, 2 high, 3 peak. 0 while pregnant or waiting. |
@@ -58,14 +58,16 @@ If your avatar makes its own random kicks, have its kick layer pause while `AppA
 
 ### 2b. Sync
 
-Parameters that **follow you onto every avatar**. The app remembers the last value it sees in-game and sends it again whenever you switch avatars (after giving the new avatar about 3 seconds to load, again when it has loaded, and again at 10 seconds). Values the new avatar reports (its own saved values) are never remembered: VRChat reports them as it loads, a moment BEFORE it says the avatar changed. From the log's "Switching" line (written when the switch starts) until 1.5 s after the new avatar's parameters show up over OSCQuery, reported values are ignored, however long loading takes (30 s cap if they never show up). Other changes are held for "Wait before remembering a change" (Settings > Advanced > Sync, default 2 s) and dropped if the avatar changes in that time (the backup when log reading is off).. Add, rename or remove them in **Settings > Sync**.
+Parameters that **follow you onto every avatar**. The app remembers the last value it sees in-game and sends it again whenever you switch avatars (after giving the new avatar about 3 seconds to load, again when it has loaded, and again at 10 seconds). Values the new avatar reports (its own saved values) are never remembered: VRChat reports them as it loads, a moment BEFORE it says the avatar changed. From the log's "Switching" line (written when the switch starts) until 1.5 s after the new avatar's parameters show up over OSCQuery, reported values are ignored, however long loading takes (30 s cap if they never show up). Other changes are held for "Wait before remembering a change" (Settings > Advanced > Sync, default 2 s) and dropped if the avatar changes in that time (the backup when log reading is off). A saved Hide Belly that's on is sent every 0.5 s from the "Switching" line (or the avatar change) until 1.5 s after the new avatar loads, so its belly isn't seen while it loads. Values can also be set in the app (Settings > Follow you): saved and sent right away, replacing any in-game change still waiting. Add, rename or remove them in **Settings > Advanced > Follow you (Sync)**.
 
-| Default entries | Type |
+| Built-in entries | Type |
 |---|---|
-| `Pregnancy/HideBelly` | bool |
-| `Pregnancy/FetalSounds` | bool |
+| `Pregnancy/HideBelly` (role `hideBelly`) | bool |
+| `Pregnancy/FetalSounds` (role `fetalSounds`) | bool |
 
-Anything can go here (any name, as bool, int or float) **except app parameters**: their names, backup names and per-avatar names are blocked, because the app already controls them. Sync entries don't count toward the app's bits; they're parameters your avatar already has.
+The built-in entries are always there and always bool: rename them if an avatar uses other names, but they can't be removed (one missing from the file comes back on load). The app finds them by their `role`, not their name, so a renamed Hide Belly keeps its special handling. Older files without roles: the entry with the default name, or a bool one ending in `HideBelly` / `FetalSounds`, gets the role.
+
+Anything else can go here (any name, as bool, int or float) **except app parameters**: their names, backup names and per-avatar names are blocked, because the app already controls them. Sync entries don't count toward the app's bits; they're parameters your avatar already has.
 
 ### 2c. SPS sockets (read only, for detecting WooHoos)
 
@@ -77,7 +79,7 @@ VRCFury SPS sockets with haptics on expose `OGB/Orf/<socket>/<channel>` floats (
 - "Self" channels (your own touches) and plugs (`OGB/Pen/...`) are ignored.
 - **Hole types (global):** each socket gets a type from its name: Vaginal (vagina, pussy, womb…), Anal (anal, ass, butt…), Oral (mouth, throat…) or Other. Settings chooses which types count on every avatar (default: Vaginal only).
 - **Per avatar** (its page under Avatars): fix a socket's type if its name is unusual, or pick exactly which sockets count on that avatar (overrides the global types).
-- A WooHoo counts when a socket that counts is past the depth you set for the total time you set (default 30% for 20 s). One per session; a session ends after a quiet gap (default 2 min).
+- A WooHoo counts when a socket that counts is past the depth you set for the total time you set (default 30% for 20 s). One per session; a session ends after a quiet gap (default 2 min), or when a WooHoo's result is revealed. A socket value that hasn't changed for a whole gap doesn't count (VRChat only sends changes, so a lost 0 can't keep a session open).
 - Settings > Detecting WooHoos shows each socket with a live meter.
 
 These are local parameters on the avatar, so they cost no synced bits.

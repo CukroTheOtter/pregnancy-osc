@@ -31,6 +31,15 @@ pub fn get_status(s: S) -> Status {
     s.status.lock().unwrap().clone()
 }
 
+/// Sets a Sync value from the app (like changing it in-game): saved and sent now.
+#[tauri::command]
+pub fn set_sync_value(app: AppHandle, s: S, name: String, value: f64) {
+    s.data.lock().unwrap().sync_values.insert(name.clone(), value);
+    s.mark_dirty();
+    s.send(EngineCmd::SyncSet(name));
+    let _ = app.emit("data-changed", ());
+}
+
 #[tauri::command]
 pub fn take_load_warning(s: S) -> Option<String> {
     s.load_warning.lock().unwrap().take()
@@ -269,11 +278,13 @@ pub fn get_mapping(s: S) -> MappingInfo {
 }
 
 #[tauri::command]
-pub fn save_mapping(s: S, mapping: Mapping) -> R<()> {
+pub fn save_mapping(s: S, mut mapping: Mapping) -> R<()> {
     let bad = mapping.protected_sync();
     if !bad.is_empty() {
         return Err(format!("{} is an app parameter, so it can't be in Sync.", bad.join(", ")));
     }
+    // Hide Belly and Fetal Sounds can be renamed, never removed; menu buttons keep their names.
+    mapping.apply_locks();
     let json = serde_json::to_string_pretty(&mapping).map_err(|e| e.to_string())?;
     std::fs::write(&s.mapping_path, json).map_err(|e| e.to_string())?;
     s.send(EngineCmd::Restart);
@@ -296,6 +307,15 @@ pub fn reload_mapping(s: S) {
 pub fn open_path(app: AppHandle, path: String) -> R<()> {
     use tauri_plugin_opener::OpenerExt;
     app.opener().open_path(path, None::<&str>).map_err(|e| e.to_string())
+}
+
+/// The avatar system that works with the app (Home's "not set up" note).
+const SYSTEM_PAGE: &str = "https://jinxxy.com/CukroTheOtt/VRChatPregnancySystem";
+
+#[tauri::command]
+pub fn open_system_page(app: AppHandle) -> R<()> {
+    use tauri_plugin_opener::OpenerExt;
+    app.opener().open_url(SYSTEM_PAGE, None::<&str>).map_err(|e| e.to_string())
 }
 
 /// Debug: pretend a WooHoo happened. `outcome`: None = roll with your

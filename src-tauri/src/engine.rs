@@ -111,6 +111,10 @@ impl Engine {
         loop {
             match rx.recv_timeout(TICK) {
                 Ok(EngineCmd::Resync) => self.driver.resync(),
+                Ok(EngineCmd::SyncSet(name)) => {
+                    self.driver.drop_held_sync(&name);
+                    self.driver.resync();
+                }
                 Ok(EngineCmd::Restart) => self.restart(),
                 Ok(EngineCmd::Pulse(key, ms)) => self.driver.pulse(&key, now_ms(), ms),
                 Ok(EngineCmd::DebugWoohoo(roll)) => self.woohoo(now_ms(), roll),
@@ -206,6 +210,7 @@ impl Engine {
             self.last_log = Instant::now();
             self.read_logs(now);
             self.check_reveal(now);
+            self.check_due(now);
         }
         if self.last_save.elapsed() >= Duration::from_secs(2) {
             self.check_achievements(now);
@@ -652,6 +657,8 @@ impl Engine {
     fn check_reveal(&mut self, now: i64) {
         let result = actions::resolve_due(&mut self.shared.data.lock().unwrap(), now);
         let Some(positive) = result else { return };
+        // A new try: the next WooHoo counts even without a quiet gap first.
+        self.sps.end_session();
         self.shared.mark_dirty();
         self.driver.resync();
         let _ = self.app.emit("data-changed", ());
@@ -661,6 +668,24 @@ impl Engine {
         } else {
             crate::notify(&self.app, "Not this time", "No little one from that WooHoo.");
             self.chat("notPregnant", Vars::default());
+        }
+    }
+
+    /// A notification when a pregnancy reaches its due date.
+    fn check_due(&mut self, now: i64) {
+        let due = actions::take_due(&mut self.shared.data.lock().unwrap(), now);
+        if due.is_empty() {
+            return;
+        }
+        self.shared.mark_dirty();
+        let _ = self.app.emit("data-changed", ());
+        for babies in due {
+            let (title, body) = if babies > 1 {
+                ("Your babies are due! 🍼", "Open the app to welcome them.")
+            } else {
+                ("Your baby is due! 🍼", "Open the app to welcome them.")
+            };
+            crate::notify(&self.app, title, body);
         }
     }
 
@@ -787,6 +812,8 @@ impl Engine {
         st.osc_active = self.bridge.is_some() && self.vrchat;
         st.avatar_id = self.driver.avatar_id().map(str::to_string);
         st.avatar_params = self.driver.avatar_param_names().map(|p| p.to_vec());
+        st.avatar_loading = self.vrchat && (self.driver.loading() || self.driver.sync_ignored(pregsys_core::now_ms()));
+        st.hide_belly = self.driver.mapping().sync_role(pregsys_core::mapping::SyncRole::HideBelly).map(|s| s.name.clone());
         st.tray_available = self.shared.tray_available.load(std::sync::atomic::Ordering::SeqCst);
         {
             let (sps_settings, avatar_sps) = {

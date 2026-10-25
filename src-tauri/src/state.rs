@@ -14,6 +14,9 @@ use std::sync::Mutex;
 pub enum EngineCmd {
     /// Settings or data changed: re-send everything.
     Resync,
+    /// A Sync value was set in the app: drop any in-game change still held
+    /// for it (it's older), then re-send.
+    SyncSet(String),
     /// Mapping file or OSC settings changed: restart the connection.
     Restart,
     /// Short true/false pulse on an event parameter.
@@ -46,6 +49,10 @@ pub struct Status {
     pub last_heard_ms: Option<i64>,
     pub avatar_id: Option<String>,
     pub avatar_params: Option<Vec<String>>,
+    /// Switching avatars: the new one is still loading.
+    pub avatar_loading: bool,
+    /// The Hide Belly Sync parameter's name (it can be renamed).
+    pub hide_belly: Option<String>,
     pub last_stage: Option<f32>,
     pub last_extra: Option<f32>,
     pub log_dir: Option<String>,

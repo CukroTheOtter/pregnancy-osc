@@ -7,7 +7,7 @@
   import { avatarName, groupMembers, pendingFor, pregnancyFor } from "../lib/scope";
   import { matches, seenText, shelfOf } from "../lib/avatars";
   import { progress, TERM_WEEKS } from "../lib/timeline";
-  import { PARAM_INFO, PARAM_ORDER } from "../lib/params";
+  import { FEATURES, FIXED, PARAM_INFO, REQUIRED, hasParam, syncLabel } from "../lib/params";
   import { HOLE_TYPES, socketCounts, socketsFrom, typeOf } from "../lib/sps";
   import type { HoleType } from "../lib/types";
   import type { AvatarGroup, AvatarProfile, Mapping, Settings } from "../lib/types";
@@ -208,7 +208,7 @@
   }
 
   async function saveNames(p: AvatarProfile) {
-    const clean = Object.fromEntries(Object.entries(draftNames).filter(([, v]) => v.trim()).map(([k, v]) => [k, v.trim()]));
+    const clean = Object.fromEntries(Object.entries(draftNames).filter(([k, v]) => !FIXED.includes(k) && v.trim()).map(([k, v]) => [k, v.trim()]));
     await save(p, (x) => (x.paramNames = clean));
     toast("Saved", "This avatar now uses its own parameter names.", "success");
   }
@@ -220,13 +220,16 @@
     }
   }
 
-  function has(p: AvatarProfile, key: string): boolean | null {
-    if (!mapping || p.params.length === 0) return null;
-    const custom = p.paramNames?.[key];
-    const def = mapping.parameters[key];
-    const names = custom ? [custom] : def?.name ? [def.name, ...(def.aliases ?? [])] : [];
-    if (!names.length) return null;
-    return names.some((n) => p.params.includes(n));
+  const on = (k: string) => !!mapping?.parameters[k];
+
+  /** One line under the "What this avatar can do" heading. */
+  function canDo(p: AvatarProfile): string {
+    if (!p.params.length) return "not checked yet";
+    const missing = REQUIRED.filter((k) => on(k) && hasParam(mapping, p, k) === false);
+    if (missing.length) return `missing ${missing.map((k) => PARAM_INFO[k]?.label ?? k).join(", ")}`;
+    const feats = FEATURES.filter((f) => f.keys.some((k) => on(k)));
+    const has = feats.filter((f) => f.keys.filter(on).every((k) => hasParam(mapping, p, k) === true));
+    return `ready · ${has.length} of ${feats.length} features`;
   }
 
   function openHome(id: string) {
@@ -234,6 +237,24 @@
     app.view = "home";
   }
 </script>
+
+{#snippet mark(h: boolean | null)}
+  {#if h === true}<span class="ok-mark">✓</span>{:else if h === false}<span class="no-mark">–</span>{:else}<span class="muted">·</span>{/if}
+{/snippet}
+
+{#snippet prow(p: AvatarProfile, k: string, label: string, tag: string | null)}
+  <label class="prow">
+    <span class="pname">
+      {@render mark(hasParam(mapping, p, k))}
+      {label}{#if tag}<span class="muted small tag">{tag}</span>{/if}
+    </span>
+    {#if FIXED.includes(k)}
+      <span class="muted small">{mapping?.parameters[k]?.name} (fixed)</span>
+    {:else}
+      <input bind:value={draftNames[k]} placeholder={mapping?.parameters[k]?.name || "(off)"} />
+    {/if}
+  </label>
+{/snippet}
 
 {#snippet row(p: AvatarProfile, showStatus: boolean)}
   <div class="avatar" class:open={open === p.id}>
@@ -301,21 +322,35 @@
         {/if}
 
         <details class="field fold">
-          <summary><strong>Parameters</strong> <span class="muted small">{p.params.length ? `${PARAM_ORDER.filter((k) => mapping?.parameters[k] && has(p, k) === true).length} found` : "not checked yet"}</span></summary>
-          <span class="hint">{p.params.length ? "What this avatar has (✓) and doesn't (–)." : "Wear it in VRChat once to check its parameters."} Leave a name empty to use the shared one from Settings.</span>
+          <summary><strong>What this avatar can do</strong> <span class="muted small">{canDo(p)}</span></summary>
+          <span class="hint">{p.params.length ? "What this avatar has (✓) and doesn't (–)." : "Wear it in VRChat once to check its parameters."} If it uses its own parameter names, type them here; leave a name empty to use the shared one from Settings.</span>
+          <h4 class="pgroup">Required <span class="muted small">the app can't work without these</span></h4>
           <div class="params">
-            {#each PARAM_ORDER.filter((k) => mapping?.parameters[k]) as k}
-              {@const h = has(p, k)}
-              <label class="prow">
-                <span class="pname">
-                  {#if h === true}<span class="ok-mark">✓</span>{:else if h === false}<span class="no-mark">–</span>{:else}<span class="muted">·</span>{/if}
-                  {PARAM_INFO[k]?.label ?? k}
-                </span>
-                <input bind:value={draftNames[k]} placeholder={mapping?.parameters[k]?.name || "(off)"} />
-              </label>
+            {#each REQUIRED.filter(on) as k}{@render prow(p, k, PARAM_INFO[k]?.label ?? k, null)}{/each}
+          </div>
+          <h4 class="pgroup">Features <span class="muted small">optional, each turns something on</span></h4>
+          <div class="params">
+            {#each FEATURES.filter((f) => f.keys.some(on)) as f}
+              {#if f.keys.length === 1}
+                {@const k = f.keys[0]}
+                {@render prow(p, k, f.label, PARAM_INFO[k]?.label !== f.label ? PARAM_INFO[k]?.label ?? k : null)}
+              {:else}
+                <span class="fname">{f.label}</span>
+                {#each f.keys.filter(on) as k}{@render prow(p, k, PARAM_INFO[k]?.label ?? k, null)}{/each}
+              {/if}
             {/each}
           </div>
           <button class="small soft" style="align-self:flex-start" onclick={() => saveNames(p)}>Save names</button>
+          {#if mapping?.sync.length}
+            <h4 class="pgroup">Follow you <span class="muted small">your Sync list, carried between avatars</span></h4>
+            <div class="params">
+              {#each mapping.sync as sp}
+                <div class="prow">
+                  <span class="pname">{@render mark(p.params.length ? p.params.includes(sp.name) : null)} {syncLabel(sp)}</span>
+                </div>
+              {/each}
+            </div>
+          {/if}
         </details>
 
         <div class="row">
@@ -596,6 +631,21 @@
     align-items: center;
     font-weight: 600;
     font-size: 0.88rem;
+  }
+  .pgroup {
+    margin: 10px 0 0;
+    font-size: 0.9rem;
+  }
+  .pgroup .small {
+    font-weight: 600;
+  }
+  .fname {
+    font-weight: 700;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  .tag {
+    margin-left: 6px;
   }
   .ok-mark {
     color: var(--ok);

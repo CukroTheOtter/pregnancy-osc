@@ -58,6 +58,8 @@
 
   const status = $derived(app.status);
   const wearing = $derived(app.data?.currentAvatarId ? avatarName(app.data, app.data.currentAvatarId) : null);
+  // Switching avatars: the app is waiting for the new one (and keeps a hidden belly hidden).
+  const hidden = $derived(!!status?.hideBelly && (app.data?.syncValues?.[status.hideBelly] ?? 0) > 0.5);
 </script>
 
 <div class="shell">
@@ -71,6 +73,9 @@
           {#if app.data?.settings.showPictures && app.data.currentAvatarId}<AvatarPic id={app.data.currentAvatarId} size={16} />{:else}👗{/if}
           {wearing}
         </button>
+      {/if}
+      {#if status?.avatarLoading}
+        <span class="switching">⏳ {hidden ? "Loading avatar · keeping your belly hidden 🙈" : "Loading avatar…"}</span>
       {/if}
     </div>
     <span class="grow"></span>
@@ -189,6 +194,10 @@
     white-space: normal;
     text-align: left;
     overflow-wrap: anywhere;
+  }
+  .switching {
+    color: var(--muted);
+    font-size: 0.75rem;
   }
   .wearing:hover {
     color: var(--accent);

@@ -160,7 +160,8 @@ pub struct SocketLive {
 
 #[derive(Debug, Default)]
 pub struct Detector {
-    values: BTreeMap<String, (String, f32)>,
+    /// socket -> (channel, value, when it last changed; None = since the last tick).
+    values: BTreeMap<String, (String, f32, Option<i64>)>,
     last_ms: Option<i64>,
     inside_ms: i64,
     last_inside_ms: Option<i64>,
@@ -173,6 +174,13 @@ impl Detector {
         *self = Detector::default();
     }
 
+    /// End the current session, so the next WooHoo counts again (after a reveal).
+    pub fn end_session(&mut self) {
+        self.inside_ms = 0;
+        self.last_inside_ms = None;
+        self.fired = false;
+    }
+
     /// A socket value from VRChat. Returns true if this name was an SPS channel.
     pub fn on_param(&mut self, name: &str, v: f32) -> bool {
         let Some((socket, channel)) = split(name) else { return false };
@@ -180,11 +188,11 @@ impl Detector {
             return true;
         }
         // Keep the best channel per socket.
-        let keep = self.values.get(socket).is_none_or(|(cur, _)| {
+        let keep = self.values.get(socket).is_none_or(|(cur, _, _)| {
             OTHERS_CHANNELS.iter().position(|c| c == cur) >= OTHERS_CHANNELS.iter().position(|c| *c == channel)
         });
         if keep {
-            self.values.insert(socket.to_string(), (channel.to_string(), v));
+            self.values.insert(socket.to_string(), (channel.to_string(), v, None));
         }
         true
     }
@@ -196,7 +204,15 @@ impl Detector {
         if !s.enabled {
             return false;
         }
-        let inside = self.values.iter().any(|(sock, (_, v))| socket_counts(s, avatar, sock) && *v as f64 >= s.depth);
+        for (_, _, t) in self.values.values_mut() {
+            t.get_or_insert(now_ms);
+        }
+        // VRChat only sends changes: a value stuck for a whole gap (its 0 got
+        // lost, or the partner left) doesn't count, so the session can end.
+        let gap_ms = s.gap_seconds as i64 * 1000;
+        let inside = self.values.iter().any(|(sock, (_, v, t))| {
+            socket_counts(s, avatar, sock) && *v as f64 >= s.depth && t.is_some_and(|t| now_ms - t < gap_ms)
+        });
         if inside {
             self.inside_ms += dt;
             self.last_inside_ms = Some(now_ms);
@@ -224,7 +240,7 @@ impl Detector {
     pub fn live(&self, s: &SpsSettings, avatar: Option<&AvatarSps>) -> Vec<SocketLive> {
         self.values
             .iter()
-            .map(|(name, (channel, value))| SocketLive {
+            .map(|(name, (channel, value, _))| SocketLive {
                 name: name.clone(),
                 channel: channel.clone(),
                 value: *value,
@@ -280,6 +296,34 @@ mod tests {
         }
         d.on_param("OGB/Orf/Vagina/PenOthersNewRoot", 0.9);
         assert!((96..=110).any(|t| d.tick(t * 1000, &s, None)));
+    }
+
+    #[test]
+    fn a_stuck_value_ends_the_session() {
+        let s = SpsSettings { seconds: 10, gap_seconds: 60, ..Default::default() };
+        let mut d = Detector::default();
+        d.tick(0, &s, None);
+        // The last value VRChat sent stays high (its 0 never came).
+        d.on_param("OGB/Orf/Vagina/PenOthersNewRoot", 0.8);
+        assert!((1..=30).any(|t| d.tick(t * 1000, &s, None)));
+        for t in 31..=200 {
+            assert!(!d.tick(t * 1000, &s, None));
+        }
+        assert_eq!(d.progress(&s), 0.0, "session over");
+        d.on_param("OGB/Orf/Vagina/PenOthersNewRoot", 0.9);
+        assert!((201..=215).any(|t| d.tick(t * 1000, &s, None)), "the next one counts");
+    }
+
+    #[test]
+    fn a_reveal_ends_the_session() {
+        let s = SpsSettings { seconds: 10, gap_seconds: 60, ..Default::default() };
+        let mut d = Detector::default();
+        d.tick(0, &s, None);
+        d.on_param("OGB/Orf/Vagina/PenOthersNewRoot", 0.8);
+        assert!((1..=15).any(|t| d.tick(t * 1000, &s, None)));
+        d.end_session();
+        d.on_param("OGB/Orf/Vagina/PenOthersNewRoot", 0.7);
+        assert!((16..=30).any(|t| d.tick(t * 1000, &s, None)), "counts again without a gap");
     }
 
     #[test]

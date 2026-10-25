@@ -10,6 +10,7 @@
   import { app, currentPregnancy, currentPending, homeAvatarId, updatePregnancy, errorToast, toast, confirmAsk } from "../lib/app.svelte";
   import { api } from "../lib/api";
   import { avatarName, linkedGroup } from "../lib/scope";
+  import { hasSystem } from "../lib/avatars";
   import { BABY_REVEAL_WEEK, GENDER_REVEAL_WEEK, babyWord, genderEmoji, genderText } from "../lib/fertility";
   import { dueMs, humanDuration, pause, progress, resume, retime, setProgress, TERM_WEEKS } from "../lib/timeline";
   import type { Settings } from "../lib/types";
@@ -28,7 +29,12 @@
   const reveal = $derived(app.data?.lastReveal && !app.data.lastReveal.seen ? app.data.lastReveal : null);
   const viewingOther = $derived(!!app.viewAvatarId && app.viewAvatarId !== app.data?.currentAvatarId);
   // Hide Belly is on in-game (the app re-applies it on every avatar, so it's easy to forget).
-  const bellyHidden = $derived(Object.entries(app.data?.syncValues ?? {}).some(([n, v]) => n.endsWith("HideBelly") && v > 0.5));
+  const bellyHidden = $derived(!!status?.hideBelly && (app.data?.syncValues?.[status.hideBelly] ?? 0) > 0.5);
+  // The avatar shown (worn or picked) has no Pregnancy System parameters (checked; the worn one not loading).
+  const noSystem = $derived.by(() => {
+    const a = aid ? app.data?.avatars[aid] : undefined;
+    return !!a && !(status?.avatarLoading && !viewingOther) && hasSystem(a) === false;
+  });
   const shared = $derived.by(() => {
     const d = app.data;
     if (!d || d.settings.syncScope !== "perAvatar" || !aid) return [];
@@ -114,6 +120,17 @@
       <span>Viewing <strong>{avatarName(app.data!, aid)}</strong></span>
       <button class="small soft" onclick={() => (app.viewAvatarId = null)}>Back to the one you're wearing</button>
     </div>
+  {/if}
+
+  {#if noSystem}
+    <section class="card no-system">
+      <strong>🧩 This avatar doesn't have the Pregnancy System</strong>
+      <p class="muted small">The app can't show a belly on it. Add the Pregnancy System in Unity to use it here.</p>
+      <div class="row">
+        <button class="small" onclick={() => api.openSystemPage().catch(errorToast)}>Get the Pregnancy System</button>
+        <button class="small soft" onclick={() => (app.view = "avatars")}>Avatars</button>
+      </div>
+    </section>
   {/if}
 
   {#if reveal}
@@ -232,6 +249,18 @@
 </div>
 
 <style>
+  .no-system {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .no-system p {
+    margin: 0;
+  }
+  .no-system .row {
+    gap: 8px;
+    flex-wrap: wrap;
+  }
   .hidden-note {
     display: flex;
     gap: 8px;

@@ -185,6 +185,20 @@ pub fn resolve_due(data: &mut AppData, now_ms: i64) -> Option<bool> {
     Some(p.positive)
 }
 
+/// Pregnancies that just reached their due date (each only once, kept in
+/// its milestones): their baby counts, for the notification.
+pub fn take_due(data: &mut AppData, now_ms: i64) -> Vec<u32> {
+    let mut out = Vec::new();
+    for p in data.pregnancies.iter_mut() {
+        if p.ended_ms.is_some() || p.timeline.is_paused() || p.timeline.progress(now_ms) < 1.0 || p.milestones.iter().any(|m| m == "due") {
+            continue;
+        }
+        p.milestones.push("due".into());
+        out.push(p.baby_count);
+    }
+    out
+}
+
 pub fn start_pregnancy(data: &mut AppData, np: NewPregnancy, now_ms: i64) -> String {
     let s = &data.settings;
     let avatar_id = np.avatar_id.clone().or_else(|| data.current_avatar_id.clone());
@@ -544,6 +558,16 @@ mod tests {
     }
 
     const LATER: i64 = 60 * 60_000;
+
+    #[test]
+    fn due_is_announced_once() {
+        let mut d = AppData::new();
+        let id = start_pregnancy(&mut d, NewPregnancy { mode: Some(DurationMode::Custom), custom_ms: Some(LATER), ..Default::default() }, 0);
+        assert!(take_due(&mut d, LATER / 2).is_empty());
+        let n = d.pregnancy(&id).unwrap().baby_count;
+        assert_eq!(take_due(&mut d, LATER), vec![n]);
+        assert!(take_due(&mut d, LATER * 2).is_empty(), "only once");
+    }
 
     #[test]
     fn start_with_one_other_guesses_partner() {

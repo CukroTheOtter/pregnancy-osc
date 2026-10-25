@@ -275,6 +275,10 @@ export interface Status {
   lastHeardMs: number | null;
   avatarId: string | null;
   avatarParams: string[] | null;
+  /** Switching avatars: the new one is still loading. */
+  avatarLoading: boolean;
+  /** The Hide Belly Sync parameter's name (it can be renamed). */
+  hideBelly: string | null;
   lastStage: number | null;
   lastExtra: number | null;
   logDir: string | null;
@@ -313,6 +317,8 @@ export interface ParamDef {
   aliases?: string[];
 }
 
+export type SyncRole = "hideBelly" | "fetalSounds";
+
 export interface Mapping {
   version: number;
   comment?: string;
@@ -321,7 +327,8 @@ export interface Mapping {
   heartbeat: { intervalMs: number; timeoutMs: number };
   overdue: { maxOverdueFraction: number };
   parameters: Record<string, ParamDef>;
-  sync: { name: string; type: "float" | "int" | "bool" }[];
+  /** `role`: a built-in entry (renamable, never removed, always on/off). */
+  sync: { name: string; type: "float" | "int" | "bool"; role?: SyncRole }[];
   kicks: { weak: number; strong: number; extreme: number; holdMs: number };
 }
 

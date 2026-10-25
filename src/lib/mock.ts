@@ -7,6 +7,7 @@ import { newTimeline, progress } from "./timeline";
 import { chance, cycleDay, cycleMs, graceMs } from "./fertility";
 import { groupMembers, owner, pendingFor, pregnancyFor, pregnancyIdOf } from "./scope";
 import { socketCounts, typeOf } from "./sps";
+import { FIXED } from "./params";
 
 const KEY = "pregsys-mock-data";
 type Listener = (payload: unknown) => void;
@@ -103,6 +104,8 @@ function status(): Status {
     lastHeardMs: Date.now() - 3000,
     avatarId: data.currentAvatarId,
     avatarParams: data.currentAvatarId ? data.avatars[data.currentAvatarId]?.params ?? null : null,
+    avatarLoading: false,
+    hideBelly: mapping ? (mapping.sync.find((s) => s.role === "hideBelly")?.name ?? null) : "Pregnancy/HideBelly",
     lastStage: p ? Math.min(1, progress(p.timeline, Date.now())) : pendingFor(data, data.currentAvatarId) ? 0 : null,
     lastExtra: p ? (data.settings.biggerForMultiples ? ([0, 0, 0.35, 0.6][p.babyCount] ?? 0.8) : 0) : null,
     logDir: "(browser preview)",
@@ -408,6 +411,14 @@ export const mock = {
     const app = new Set(Object.values(m.parameters).flatMap((p) => [p.name, ...(p.aliases ?? [])]).filter(Boolean));
     const bad = m.sync.filter((s) => app.has(s.name)).map((s) => s.name);
     if (bad.length) throw new Error(`${bad.join(", ")} is an app parameter, so it can't be in Sync.`);
+    // Same locks as the app: built-in Sync entries stay (on/off, named), menu buttons keep their names.
+    const def = (await import("../../config/osc-parameters.json")).default as unknown as Mapping;
+    def.sync.forEach((d, i) => {
+      const row = m.sync.find((s) => s.role === d.role);
+      if (!row) m.sync.splice(Math.min(i, m.sync.length), 0, structuredClone(d));
+      else Object.assign(row, { type: "bool", name: row.name.trim() || d.name });
+    });
+    for (const k of FIXED) if (def.parameters[k]) m.parameters[k] = structuredClone(def.parameters[k]);
     mapping = m;
   },
   async reset_mapping() {
@@ -415,6 +426,13 @@ export const mock = {
   },
   async reload_mapping() {},
   async open_path() {},
+  async set_sync_value({ name, value }: { name: string; value: number }) {
+    data.syncValues = { ...data.syncValues, [name]: value };
+    changed();
+  },
+  async open_system_page() {
+    window.open("https://jinxxy.com/CukroTheOtt/VRChatPregnancySystem", "_blank");
+  },
   async default_log_dirs() {
     return [];
   },

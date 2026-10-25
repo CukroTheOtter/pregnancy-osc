@@ -9,6 +9,9 @@
   const d = $derived(app.data!);
   const shown = $derived(currentPregnancy());
   let showPast = $state(false);
+  let showAllPast = $state(false);
+  /** Past pregnancies shown before "Show all". */
+  const PAST_SHOWN = 5;
 
   /** Avatars a pregnancy is on (the ones linked to it, or all in global mode). */
   function avatarsOf(p: Pregnancy): string[] {
@@ -74,10 +77,10 @@
     </ul>
 
     {#if past.length}
-      <button class="link small" onclick={() => (showPast = !showPast)}>{showPast ? "Hide" : "Show"} past pregnancies ({past.length})</button>
+      <button class="link small" onclick={() => { showPast = !showPast; showAllPast = false; }}>{showPast ? "Hide" : "Show"} past pregnancies ({past.length})</button>
       {#if showPast}
         <ul class="list past">
-          {#each past as p (p.id)}
+          {#each showAllPast ? past : past.slice(0, PAST_SHOWN) as p (p.id)}
             <li>
               <span class="dot-pic" aria-hidden="true">{p.born ? "🍼" : "🤍"}</span>
               <div class="grow">
@@ -89,6 +92,9 @@
             </li>
           {/each}
         </ul>
+        {#if !showAllPast && past.length > PAST_SHOWN}
+          <button class="link small" onclick={() => (showAllPast = true)}>Show all ({past.length})</button>
+        {/if}
       {/if}
     {/if}
   </section>

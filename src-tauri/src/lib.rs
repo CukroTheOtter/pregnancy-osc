@@ -199,6 +199,8 @@ pub fn run() {
             commands::reset_mapping,
             commands::reload_mapping,
             commands::open_path,
+            commands::set_sync_value,
+            commands::open_system_page,
             commands::default_log_dirs,
             commands::write_file,
             commands::partner_picture,
