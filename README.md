@@ -89,7 +89,7 @@ The manifest grants: network (OSC/OSCQuery), read-only access to the VRChat fold
 | Avatar switch | Snaps the belly on the new avatar. |
 | Pregnancy paused | Lets go of the belly and extra size, so you can set them in-game. |
 | Chatbox on (Settings) | Shows your own message in the chatbox when a pregnancy starts, pauses, resumes, stops, and more, then clears it. Can also always show your pregnancy status (and partner). |
-| A WooHoo (SPS sockets, see Settings) | Starts the grace period (or a pregnancy right away with Fertility off) and guesses the partner from the log. |
+| A WooHoo (SPS sockets, see Settings) | Starts the grace period (or a pregnancy right away with Fertility off) and guesses the partner from the log. With 2+ others around you pick who it was (or 🎲 Random); once you've WooHoo'd as many times in one instance as there are other people in it, it picks at random for you. |
 | Exactly one other person in the instance, nobody came or went for 10 min | Partner shown as **Guessed**, with confirm or change. |
 | More people, or joins/leaves | Partner **Unknown**, with a list of who was in that instance to pick from. |
 | App closes | Sends the final belly value and releases the app-active flag. |

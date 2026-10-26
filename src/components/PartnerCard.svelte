@@ -14,9 +14,9 @@
   // The list is open when nobody is chosen yet, or when changing.
   const showList = $derived(changing || !partner.name);
 
-  async function choose(person: Person | null, name: string | null = null) {
+  async function choose(person: Person | null, name: string | null = null, random = false) {
     try {
-      await api.setPartner(p.id, person, name);
+      await api.setPartner(p.id, person, name, random);
       changing = false;
     } catch (e) {
       errorToast(e);
@@ -61,6 +61,7 @@
         <div class="muted small">
           {#if partner.status === "guessed"}Guessed: you two were alone in the instance
           {:else if partner.status === "manual"}Typed in by you
+          {:else if partner.status === "random"}🎲 Picked at random from {partner.candidates.length} people
           {:else}Confirmed{/if}
         </div>
         {#if stats}
@@ -88,6 +89,7 @@
       <p class="muted small">No one else was seen in the instance{app.data?.settings.readLogs ? "" : " (VRChat log reading is off in Settings)"}.</p>
     {/if}
     <div class="row">
+      {#if partner.candidates.length > 1}<button class="soft small" onclick={() => choose(null, null, true)}>🎲 Random</button>{/if}
       {#if changing}<button class="ghost small" onclick={() => (changing = false)}>Cancel</button>{/if}
       {#if partner.name}<button class="ghost small" onclick={() => choose(null, null)}>Set to unknown</button>{/if}
     </div>

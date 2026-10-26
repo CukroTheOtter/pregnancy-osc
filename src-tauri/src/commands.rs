@@ -119,9 +119,28 @@ pub fn set_current_pregnancy(app: AppHandle, s: S, avatar_id: Option<String>, id
 }
 
 #[tauri::command]
-pub fn set_partner(app: AppHandle, s: S, pregnancy_id: String, person: Option<Person>, name: Option<String>) {
-    actions::set_partner(&mut s.data.lock().unwrap(), &pregnancy_id, person, name);
+pub fn set_partner(app: AppHandle, s: S, pregnancy_id: String, person: Option<Person>, name: Option<String>, random: Option<bool>) {
+    let mut d = s.data.lock().unwrap();
+    if random == Some(true) {
+        actions::random_partner(&mut d, &pregnancy_id, pregsys_core::fertility::roll());
+    } else {
+        actions::set_partner(&mut d, &pregnancy_id, person, name);
+    }
+    drop(d);
     changed(&app, &s, true);
+}
+
+/// Who it was, while waiting to find out (the WooHoo by its time).
+#[tauri::command]
+pub fn set_waiting_partner(app: AppHandle, s: S, time_ms: i64, person: Option<Person>, name: Option<String>, random: Option<bool>) {
+    let mut d = s.data.lock().unwrap();
+    if random == Some(true) {
+        actions::random_waiting_partner(&mut d, time_ms, pregsys_core::fertility::roll());
+    } else {
+        actions::set_waiting_partner(&mut d, time_ms, person, name);
+    }
+    drop(d);
+    changed(&app, &s, false);
 }
 
 #[tauri::command]

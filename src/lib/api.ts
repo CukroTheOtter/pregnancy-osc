@@ -36,7 +36,9 @@ export const api = {
   endPregnancy: (id: string) => call<void>("end_pregnancy", { id }),
   deletePregnancy: (id: string) => call<void>("delete_pregnancy", { id }),
   setCurrentPregnancy: (avatarId: string | null, id: string | null) => call<void>("set_current_pregnancy", { avatarId, id }),
-  setPartner: (pregnancyId: string, person: Person | null, name: string | null) => call<void>("set_partner", { pregnancyId, person, name }),
+  setPartner: (pregnancyId: string, person: Person | null, name: string | null, random = false) => call<void>("set_partner", { pregnancyId, person, name, random }),
+  setWaitingPartner: (timeMs: number, person: Person | null, name: string | null, random = false) =>
+    call<void>("set_waiting_partner", { timeMs, person, name, random }),
   saveAvatar: (profile: AvatarProfile) => call<void>("save_avatar", { profile }),
   deleteAvatar: (id: string) => call<void>("delete_avatar", { id }),
   createGroup: (name: string, avatarIds: string[]) => call<string>("create_group", { name, avatarIds }),

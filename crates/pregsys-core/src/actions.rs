@@ -94,20 +94,43 @@ pub enum FunOutcome {
     Ignored,
 }
 
+/// Someone from `candidates` at random. `roll` is a random number in [0, 1).
+fn pick(candidates: &[Person], roll: f64) -> Option<&Person> {
+    let i = (roll * candidates.len() as f64) as usize;
+    candidates.get(i.min(candidates.len().saturating_sub(1)))
+}
+
+/// The partner for a WooHoo: the guess, or someone here picked at random
+/// once you've WooHoo'd in this instance as many times as there are other
+/// people (2 or more) in it.
+fn fun_partner(data: &AppData, now_ms: i64, roll: f64) -> Partner {
+    let partner = guess_partner_now(data, now_ms);
+    let here = data.instance.others().len();
+    let woohoos = 1 + data.instance.joined_ms.map_or(0, |j| data.fun_log.iter().filter(|f| f.time_ms >= j).count());
+    if partner.name.is_some() || here < 2 || woohoos < here {
+        return partner;
+    }
+    // The candidate list starts with the people still here.
+    match pick(&partner.candidates[..here.min(partner.candidates.len())], roll).cloned() {
+        Some(person) => partner_from(data, &person, PartnerStatus::Random, partner.candidates),
+        None => partner,
+    }
+}
+
 /// In-game fun was detected. `roll` is a random number in [0, 1).
 pub fn record_fun(data: &mut AppData, now_ms: i64, roll: f64) -> FunOutcome {
     if data.current_pregnancy(data.current_avatar_id.as_deref()).is_some() {
         return FunOutcome::Ignored;
     }
+    let partner = fun_partner(data, now_ms, fertility::roll());
+    data.fun_log.push(FunEvent {
+        time_ms: now_ms,
+        partner_name: partner.name.clone(),
+        partner_user_id: partner.user_id.clone(),
+        avatar_id: data.current_avatar_id.clone(),
+        world_name: data.instance.world_name.clone(),
+    });
     if !data.settings.fertility {
-        let partner = guess_partner_now(data, now_ms);
-        data.fun_log.push(FunEvent {
-            time_ms: now_ms,
-            partner_name: partner.name.clone(),
-            partner_user_id: partner.user_id.clone(),
-            avatar_id: data.current_avatar_id.clone(),
-            world_name: data.instance.world_name.clone(),
-        });
         start_pregnancy(data, NewPregnancy { source: PregnancySource::Conception, partner: Some(partner), ..Default::default() }, now_ms);
         return FunOutcome::Started;
     }
@@ -116,14 +139,6 @@ pub fn record_fun(data: &mut AppData, now_ms: i64, roll: f64) -> FunOutcome {
     let day = fertility::cycle_day(now_ms, s.cycle_anchor_ms.unwrap_or(now_ms), fertility::cycle_ms(s));
     let chance = fertility::chance(day, s.fertility_peak);
     let positive = roll < chance;
-    let partner = guess_partner_now(data, now_ms);
-    data.fun_log.push(FunEvent {
-        time_ms: now_ms,
-        partner_name: partner.name.clone(),
-        partner_user_id: partner.user_id.clone(),
-        avatar_id: data.current_avatar_id.clone(),
-        world_name: data.instance.world_name.clone(),
-    });
     let babies = fertility::roll_babies(s.multiples, fertility::roll());
     let owner = data.owner(data.current_avatar_id.as_deref());
     let global = data.settings.sync_scope == SyncScope::Global;
@@ -251,33 +266,10 @@ pub fn start_pregnancy(data: &mut AppData, np: NewPregnancy, now_ms: i64) -> Str
     id
 }
 
-/// Picks the other parent from the candidate list or by name.
-pub fn set_partner(data: &mut AppData, preg_id: &str, person: Option<Person>, manual_name: Option<String>) {
-    let species = person.as_ref().and_then(|p| remembered_species(data, p.user_id.as_deref(), p.avatar_name.as_deref()));
-    // A pregnancy from in-game fun: credit that moment to whoever is chosen.
-    if let Some(start) = data.pregnancy(preg_id).and_then(|p| p.conceived_ms) {
-        let (name, uid) = match (&person, &manual_name) {
-            (Some(x), _) => (Some(x.name.clone()), x.user_id.clone()),
-            (None, Some(n)) if !n.trim().is_empty() => (Some(n.trim().to_string()), None),
-            _ => (None, None),
-        };
-        if let Some(f) = data.fun_log.iter_mut().find(|f| f.time_ms == start) {
-            f.partner_name = name;
-            f.partner_user_id = uid;
-        }
-    }
-    let Some(p) = data.pregnancy_mut(preg_id) else { return };
-    let candidates = std::mem::take(&mut p.partner.candidates);
-    p.partner = match (person, manual_name) {
-        (Some(person), _) => Partner {
-            status: PartnerStatus::Confirmed,
-            name: Some(person.name),
-            user_id: person.user_id,
-            avatar_name: person.avatar_name,
-            species_source: if species.is_some() { SpeciesSource::Confirmed } else { SpeciesSource::Guess },
-            species,
-            candidates,
-        },
+/// The partner chosen from the candidate list or typed in by name.
+fn chosen(data: &AppData, person: Option<Person>, manual_name: Option<String>, candidates: Vec<Person>) -> Partner {
+    match (person, manual_name) {
+        (Some(person), _) => partner_from(data, &person, PartnerStatus::Confirmed, candidates),
         (None, Some(name)) if !name.trim().is_empty() => Partner {
             status: PartnerStatus::Manual,
             name: Some(name.trim().to_string()),
@@ -285,7 +277,67 @@ pub fn set_partner(data: &mut AppData, preg_id: &str, person: Option<Person>, ma
             ..Default::default()
         },
         _ => Partner { candidates, ..Default::default() },
-    };
+    }
+}
+
+/// Credits the WooHoo at `time_ms` to `partner` (for the Partners list).
+fn credit_fun(data: &mut AppData, time_ms: i64, partner: &Partner) {
+    if let Some(f) = data.fun_log.iter_mut().find(|f| f.time_ms == time_ms) {
+        f.partner_name = partner.name.clone();
+        f.partner_user_id = partner.user_id.clone();
+    }
+}
+
+/// Picks the other parent from the candidate list or by name.
+pub fn set_partner(data: &mut AppData, preg_id: &str, person: Option<Person>, manual_name: Option<String>) {
+    let Some(p) = data.pregnancy_mut(preg_id) else { return };
+    let candidates = std::mem::take(&mut p.partner.candidates);
+    let partner = chosen(data, person, manual_name, candidates);
+    put_partner(data, preg_id, partner);
+}
+
+/// Picks the other parent at random from the candidate list.
+pub fn random_partner(data: &mut AppData, preg_id: &str, roll: f64) {
+    let Some(p) = data.pregnancy(preg_id) else { return };
+    let Some(person) = pick(&p.partner.candidates, roll).cloned() else { return };
+    let candidates = p.partner.candidates.clone();
+    let partner = partner_from(data, &person, PartnerStatus::Random, candidates);
+    put_partner(data, preg_id, partner);
+}
+
+fn put_partner(data: &mut AppData, preg_id: &str, partner: Partner) {
+    // A pregnancy from in-game fun: credit that moment to whoever is chosen.
+    if let Some(start) = data.pregnancy(preg_id).and_then(|p| p.conceived_ms) {
+        credit_fun(data, start, &partner);
+    }
+    if let Some(p) = data.pregnancy_mut(preg_id) {
+        p.partner = partner;
+    }
+}
+
+/// Picks who it was while waiting to find out (by the WooHoo's time). It
+/// counts for them even if nothing comes of it.
+pub fn set_waiting_partner(data: &mut AppData, time_ms: i64, person: Option<Person>, manual_name: Option<String>) {
+    let Some(w) = data.waiting.iter_mut().find(|w| w.time_ms == time_ms) else { return };
+    let candidates = std::mem::take(&mut w.partner.candidates);
+    let partner = chosen(data, person, manual_name, candidates);
+    put_waiting_partner(data, time_ms, partner);
+}
+
+/// Picks who it was at random while waiting to find out.
+pub fn random_waiting_partner(data: &mut AppData, time_ms: i64, roll: f64) {
+    let Some(w) = data.waiting.iter().find(|w| w.time_ms == time_ms) else { return };
+    let Some(person) = pick(&w.partner.candidates, roll).cloned() else { return };
+    let candidates = w.partner.candidates.clone();
+    let partner = partner_from(data, &person, PartnerStatus::Random, candidates);
+    put_waiting_partner(data, time_ms, partner);
+}
+
+fn put_waiting_partner(data: &mut AppData, time_ms: i64, partner: Partner) {
+    credit_fun(data, time_ms, &partner);
+    if let Some(w) = data.waiting.iter_mut().find(|w| w.time_ms == time_ms) {
+        w.partner = partner;
+    }
 }
 
 pub fn end_pregnancy(data: &mut AppData, preg_id: &str, now_ms: i64) {
@@ -704,6 +756,62 @@ mod tests {
         let wolf = d.pregnancy(&id).unwrap().partner.candidates.iter().find(|c| c.name == "Wolf").cloned();
         set_partner(&mut d, &id, wolf, None);
         assert_eq!(d.fun_log[0].partner_name.as_deref(), Some("Wolf"));
+    }
+
+    #[test]
+    fn random_partner_picks_someone_there() {
+        let mut d = with_instance(&["Fox", "Wolf"]);
+        d.settings.fertility = false;
+        record_fun(&mut d, LATER, 0.0);
+        let id = d.current_pregnancy(None).unwrap().id.clone();
+        random_partner(&mut d, &id, 0.99);
+        let p = d.pregnancy(&id).unwrap();
+        assert_eq!(p.partner.status, PartnerStatus::Random);
+        assert_eq!(p.partner.name.as_deref(), Some("Wolf"));
+        assert_eq!(p.partner.candidates.len(), 2, "list kept for another go");
+        assert_eq!(d.fun_log[0].partner_name.as_deref(), Some("Wolf"));
+    }
+
+    #[test]
+    fn picking_while_waiting_counts_even_if_not_pregnant() {
+        let mut d = with_instance(&["Fox", "Wolf"]);
+        record_fun(&mut d, LATER, 0.999);
+        let fox = d.waiting[0].partner.candidates.iter().find(|c| c.name == "Fox").cloned();
+        set_waiting_partner(&mut d, LATER, fox, None);
+        assert_eq!(d.waiting[0].partner.status, PartnerStatus::Confirmed);
+        let reveal = d.waiting[0].reveal_ms;
+        assert_eq!(resolve_due(&mut d, reveal), Some(false));
+        assert_eq!(d.fun_log[0].partner_name.as_deref(), Some("Fox"));
+        // And at random.
+        record_fun(&mut d, reveal + 1, 0.999);
+        random_waiting_partner(&mut d, reveal + 1, 0.0);
+        assert_eq!(d.waiting[0].partner.status, PartnerStatus::Random);
+        assert_eq!(d.fun_log[1].partner_name.as_deref(), Some("Fox"));
+    }
+
+    #[test]
+    fn as_many_woohoos_as_people_picks_at_random() {
+        let mut d = with_instance(&["Fox", "Wolf", "Bun"]);
+        d.settings.fertility = false;
+        for i in 0..2 {
+            record_fun(&mut d, LATER + i, 0.0);
+            let id = d.current_pregnancy(None).unwrap().id.clone();
+            end_pregnancy(&mut d, &id, LATER + i);
+        }
+        assert!(d.fun_log.iter().all(|f| f.partner_name.is_none()), "fewer WooHoos than people: unknown");
+        record_fun(&mut d, LATER + 5, 0.0);
+        let p = d.current_pregnancy(None).unwrap();
+        assert_eq!(p.partner.status, PartnerStatus::Random);
+        assert!(["Fox", "Wolf", "Bun"].contains(&p.partner.name.as_deref().unwrap()));
+        assert!(d.fun_log[2].partner_name.is_some());
+    }
+
+    #[test]
+    fn woohoos_from_another_instance_dont_count() {
+        let mut d = with_instance(&["Fox", "Wolf"]);
+        d.fun_log.push(FunEvent { time_ms: -1, ..Default::default() });
+        record_fun(&mut d, LATER, 0.999);
+        assert!(d.waiting[0].partner.name.is_none());
     }
 
     #[test]

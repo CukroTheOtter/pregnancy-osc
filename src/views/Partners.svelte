@@ -7,7 +7,8 @@
 
   const list = $derived(app.data ? partnerStats(app.data) : []);
   const totals = $derived({
-    fun: list.reduce((s, x) => s + x.fun, 0),
+    // Every WooHoo, also the ones where nobody knows who it was.
+    fun: app.data?.funLog.length ?? 0,
     pregnancies: list.reduce((s, x) => s + x.pregnancies, 0),
     kids: list.reduce((s, x) => s + x.kids, 0),
   });

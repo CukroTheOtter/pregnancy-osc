@@ -178,6 +178,7 @@ pub fn run() {
             commands::delete_pregnancy,
             commands::set_current_pregnancy,
             commands::set_partner,
+            commands::set_waiting_partner,
             commands::save_avatar,
             commands::delete_avatar,
             commands::create_group,

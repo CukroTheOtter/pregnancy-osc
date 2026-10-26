@@ -135,6 +135,31 @@ function guessPartner(): Partner {
     : unknownPartner([...others]);
 }
 
+const partnerOf = (p: Person, status: Partner["status"], candidates: Person[]): Partner => ({ status, name: p.name, userId: p.userId, avatarName: p.avatarName, species: null, speciesSource: "guess", candidates });
+
+/** Who it was: someone from the list, a typed name, or at random. */
+function chosenPartner(candidates: Person[], person: Person | null, name: string | null, random?: boolean): Partner {
+  const r = random && candidates.length ? candidates[Math.floor(Math.random() * candidates.length)] : null;
+  if (r) return partnerOf(r, "random", candidates);
+  if (person) return partnerOf(person, "confirmed", candidates);
+  if (name?.trim()) return { status: "manual", name: name.trim(), userId: null, avatarName: null, species: null, speciesSource: "fallback", candidates };
+  return unknownPartner(candidates);
+}
+
+/** The guess, or at random once you've WooHoo'd here as many times as there are other people (2+). */
+function funPartner(now: number): Partner {
+  const partner = guessPartner();
+  const here = partner.candidates.length;
+  const joined = data.instance.joinedMs ?? now;
+  const woohoos = 1 + data.funLog.filter((f) => f.timeMs >= joined).length;
+  return !partner.name && here >= 2 && woohoos >= here ? chosenPartner(partner.candidates, null, null, true) : partner;
+}
+
+function creditFun(timeMs: number, partner: Partner) {
+  const f = data.funLog.find((x) => x.timeMs === timeMs);
+  if (f) Object.assign(f, { partnerName: partner.name, partnerUserId: partner.userId });
+}
+
 function rollBabies(): number {
   const r = Math.random();
   const [q, t, w] = data.settings.multiples === "realistic" ? [0, 0.001, 0.031] : data.settings.multiples === "lots" ? [0.02, 0.1, 0.35] : [0.002, 0.022, 0.122];
@@ -296,19 +321,19 @@ export const mock = {
     setCurrent(avatarId, id);
     changed();
   },
-  async set_partner({ pregnancyId, person, name }: { pregnancyId: string; person: Person | null; name: string | null }) {
+  async set_partner({ pregnancyId, person, name, random }: { pregnancyId: string; person: Person | null; name: string | null; random?: boolean }) {
     const p = data.pregnancies.find((x) => x.id === pregnancyId);
     if (!p) return;
-    const candidates = p.partner.candidates;
+    p.partner = chosenPartner(p.partner.candidates, person, name, random);
     // A pregnancy from in-game fun: credit that moment to whoever is chosen.
-    const f = p.conceivedMs != null ? data.funLog.find((x) => x.timeMs === p.conceivedMs) : undefined;
-    if (f) {
-      f.partnerName = person?.name ?? (name?.trim() || null);
-      f.partnerUserId = person?.userId ?? null;
-    }
-    if (person) p.partner = { status: "confirmed", name: person.name, userId: person.userId, avatarName: person.avatarName, species: null, speciesSource: "guess", candidates };
-    else if (name?.trim()) p.partner = { status: "manual", name: name.trim(), userId: null, avatarName: null, species: null, speciesSource: "fallback", candidates };
-    else p.partner = unknownPartner(candidates);
+    if (p.conceivedMs != null) creditFun(p.conceivedMs, p.partner);
+    changed();
+  },
+  async set_waiting_partner({ timeMs, person, name, random }: { timeMs: number; person: Person | null; name: string | null; random?: boolean }) {
+    const w = data.waiting.find((x) => x.timeMs === timeMs);
+    if (!w) return;
+    w.partner = chosenPartner(w.partner.candidates, person, name, random);
+    creditFun(timeMs, w.partner);
     changed();
   },
   async save_avatar({ profile }: { profile: AvatarProfile }) {
@@ -521,7 +546,7 @@ async function woohoo(forced: boolean | null) {
     const now = Date.now();
     const s = data.settings;
     if (pregnancyFor(data, data.currentAvatarId)) return;
-    const partner = guessPartner();
+    const partner = funPartner(now);
     data.funLog.push({ timeMs: now, partnerName: partner.name, partnerUserId: partner.userId, avatarId: data.currentAvatarId, worldName: data.instance.worldName });
     if (!s.fertility) {
       createPregnancy({ source: "conception", partner });

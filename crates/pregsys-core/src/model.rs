@@ -223,6 +223,8 @@ pub enum PartnerStatus {
     Unknown,
     /// Typed in by hand.
     Manual,
+    /// Picked at random from the people in the instance.
+    Random,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
