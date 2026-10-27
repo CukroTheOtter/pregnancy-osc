@@ -34,10 +34,10 @@ struct Args {
     /// Use a different mapping file (default: the bundled one).
     #[arg(long)]
     mapping: Option<PathBuf>,
-    /// Send to this host when OSCQuery can't find VRChat.
+    /// Fixed ports (--no-oscquery): send to this host.
     #[arg(long, default_value = "127.0.0.1")]
     host: String,
-    /// Send to this port when OSCQuery can't find VRChat.
+    /// Fixed ports (--no-oscquery): send to this port.
     #[arg(long, default_value_t = 9000)]
     port: u16,
     /// Skip OSCQuery and use plain ports only.

@@ -3142,11 +3142,13 @@ dependencies = [
 name = "pregsys-osc"
 version = "0.1.0"
 dependencies = [
+ "if-addrs",
  "log",
  "mdns-sd",
  "pregsys-core",
  "rosc",
  "serde_json",
+ "socket2",
  "tiny_http",
  "ureq",
 ]

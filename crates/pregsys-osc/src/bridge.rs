@@ -2,7 +2,7 @@
 //! and OSCQuery discovery with a plain-port fallback.
 
 use crate::osc::{Incoming, OscReceiver, OscSender, OscValue};
-use crate::oscquery::{self, OscQueryService, VrcEndpoints};
+use crate::oscquery::{self, OscQueryService, VrcEndpoints, VrcWatch};
 use mdns_sd::ServiceDaemon;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::mpsc::TryRecvError;
@@ -10,6 +10,8 @@ use std::sync::{Arc, Mutex};
 
 /// VRChat always sends here, whoever else it has found.
 pub const VRCHAT_OUT_PORT: u16 = 9001;
+/// VRChat's usual input port, for when OSCQuery hasn't found it.
+pub const VRCHAT_IN_PORT: u16 = 9000;
 
 #[derive(Debug, Clone)]
 pub struct BridgeConfig {
@@ -42,6 +44,9 @@ impl Default for BridgeConfig {
 pub struct BridgeStatus {
     pub oscquery: bool,
     pub vrchat_found: bool,
+    /// VRChat's OSC looks on: its OSCQuery answers (or, with no mDNS at all,
+    /// there's no way to tell, so yes).
+    pub linked: bool,
     pub send_target: String,
     pub recv_port: u16,
     pub backup_port: Option<u16>,
@@ -60,7 +65,7 @@ pub struct Bridge {
     /// OSC is toggled in its menu).
     backup: Option<OscReceiver>,
     fallback: SocketAddr,
-    vrc: Option<Arc<Mutex<VrcEndpoints>>>,
+    vrc: Option<Arc<Mutex<VrcWatch>>>,
     _service: Option<OscQueryService>,
     _daemon: Option<ServiceDaemon>,
     note: Option<String>,
@@ -76,7 +81,8 @@ fn resolve(host: &str, port: u16) -> SocketAddr {
 
 impl Bridge {
     pub fn start(cfg: &BridgeConfig) -> Result<Self, String> {
-        let fallback = resolve(&cfg.send_host, cfg.send_port);
+        // Automatic mode: VRChat's own port, not the (hidden) fixed send port.
+        let fallback = if cfg.use_oscquery { SocketAddr::from(([127, 0, 0, 1], VRCHAT_IN_PORT)) } else { resolve(&cfg.send_host, cfg.send_port) };
         let sender = OscSender::new(fallback).map_err(|e| format!("cannot open OSC send socket: {e}"))?;
         let mut note = None;
 
@@ -102,10 +108,10 @@ impl Bridge {
     }
 
     #[allow(clippy::type_complexity)]
-    fn start_oscquery(cfg: &BridgeConfig) -> Result<(OscReceiver, OscQueryService, ServiceDaemon, Arc<Mutex<VrcEndpoints>>), String> {
+    fn start_oscquery(cfg: &BridgeConfig) -> Result<(OscReceiver, OscQueryService, ServiceDaemon, Arc<Mutex<VrcWatch>>), String> {
         let daemon = ServiceDaemon::new().map_err(|e| e.to_string())?;
         let receiver = OscReceiver::bind("127.0.0.1", 0).map_err(|e| e.to_string())?;
-        let service = OscQueryService::start(&daemon, &cfg.app_name, receiver.port, cfg.listen_addresses.clone())?;
+        let service = OscQueryService::start(&cfg.app_name, receiver.port, cfg.listen_addresses.clone())?;
         let vrc = oscquery::watch_vrchat(&daemon)?;
         Ok((receiver, service, daemon, vrc))
     }
@@ -118,7 +124,7 @@ impl Bridge {
     }
 
     fn endpoints(&self) -> VrcEndpoints {
-        self.vrc.as_ref().map(|v| v.lock().unwrap().clone()).unwrap_or_default()
+        self.vrc.as_ref().map(|v| v.lock().unwrap().endpoints.clone()).unwrap_or_default()
     }
 
     /// Points the sender at VRChat if OSCQuery found it, else the fallback.
@@ -162,14 +168,30 @@ impl Bridge {
     /// The avatar you're wearing and its parameters, via OSCQuery, if VRChat was found.
     pub fn avatar_info(&self) -> Option<oscquery::AvatarInfo> {
         let q = self.endpoints().query?;
-        oscquery::fetch_avatar(q).ok()
+        // With OSC off VRChat still answers, but with an empty tree (no
+        // avatar, no values), and says nothing over mDNS.
+        let info = oscquery::fetch_avatar(q).ok().filter(|i| i.avatar_id.is_some() || !i.params.is_empty());
+        if let Some(v) = &self.vrc {
+            let mut g = v.lock().unwrap();
+            if g.endpoints.query == Some(q) {
+                g.alive = info.is_some();
+            }
+        }
+        info
+    }
+
+    /// VRChat's OSC looks on (see `BridgeStatus::linked`).
+    pub fn linked(&self) -> bool {
+        self.vrc.as_ref().is_none_or(|v| v.lock().unwrap().alive)
     }
 
     pub fn status(&self) -> BridgeStatus {
         let ep = self.endpoints();
+        let found = ep.osc.is_some() || ep.query.is_some();
         BridgeStatus {
             oscquery: self._service.is_some(),
-            vrchat_found: ep.osc.is_some() || ep.query.is_some(),
+            vrchat_found: found,
+            linked: self.linked(),
             send_target: self.sender.target().to_string(),
             recv_port: self.receiver.port,
             backup_port: self.backup.as_ref().map(|b| b.port),

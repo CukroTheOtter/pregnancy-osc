@@ -61,6 +61,8 @@ struct Engine {
     chat_screen: pregsys_core::chatbox::Screen,
     /// When anything last arrived from VRChat (shown with the link details).
     last_heard_ms: Option<i64>,
+    /// VRChat is running with its OSC on, and the bridge is up.
+    linked: bool,
     /// Debug chatbox: when the last "belly put back" note was shown.
     last_snap_note: Option<Instant>,
 }
@@ -103,6 +105,7 @@ impl Engine {
             chat_watch: Default::default(),
             chat_screen: Default::default(),
             last_heard_ms: None,
+            linked: false,
             last_snap_note: None,
         }
     }
@@ -167,6 +170,7 @@ impl Engine {
             self.check_processes();
         }
         self.ensure_bridge();
+        self.check_link();
         self.drain_osc(now);
         self.save_held_sync(now);
         if let Some(c) = self.controls.tick(now) {
@@ -295,6 +299,22 @@ impl Engine {
                 self.bridge_error = Some(e);
                 self.bridge_error_at = Instant::now();
             }
+        }
+    }
+
+    /// Notices VRChat's OSC going off and on (Action Menu toggle).
+    fn check_link(&mut self) {
+        let linked = self.vrchat && self.bridge.as_ref().is_some_and(|b| b.linked());
+        if linked == self.linked {
+            return;
+        }
+        self.linked = linked;
+        if linked {
+            // Whatever was sent while OSC was off never arrived: send it all again.
+            self.driver.resync();
+            self.debug_chat("heard", "OSC is back on".into());
+        } else {
+            self.chat_screen.reset();
         }
     }
 
@@ -430,9 +450,10 @@ impl Engine {
         }
         self.pending_params_fetch = None;
         let Some(info) = self.bridge.as_ref().and_then(|b| b.avatar_info()) else {
-            // VRChat not found yet (it can take a few seconds): try again soon.
-            if self.bridge.is_some() && self.driver.avatar_param_names().is_none() {
-                self.pending_params_fetch = Some(Instant::now() + Duration::from_secs(5));
+            // VRChat not found yet (it can take a few seconds), or its OSC is
+            // off: keep checking, so the link comes back when it's on again.
+            if self.bridge.is_some() {
+                self.pending_params_fetch = Some(Instant::now() + Duration::from_secs(2));
             }
             return;
         };
@@ -691,7 +712,7 @@ impl Engine {
 
     /// Queues a chatbox message for an event (if the chatbox and that event are on).
     fn chat(&mut self, event: &str, vars: Vars) {
-        if self.bridge.is_none() || !self.vrchat {
+        if !self.linked {
             return;
         }
         let msg = self.shared.data.lock().unwrap().settings.chatbox.message(event, &vars);
@@ -703,7 +724,7 @@ impl Engine {
     /// Debug mode: a testing note in the chatbox, if that one is on (works
     /// even with the chatbox off).
     fn debug_chat(&mut self, key: &str, text: String) {
-        if self.bridge.is_none() || !self.vrchat {
+        if !self.linked {
             return;
         }
         let on = {
@@ -725,7 +746,7 @@ impl Engine {
         for (e, v) in events {
             self.chat(e, v);
         }
-        let Some(b) = self.bridge.as_ref().filter(|_| self.vrchat) else {
+        let Some(b) = self.bridge.as_ref().filter(|_| self.linked) else {
             self.chat_screen.reset();
             return;
         };
@@ -809,7 +830,7 @@ impl Engine {
         st.vrchat_running = self.vrchat;
         st.last_heard_ms = self.last_heard_ms;
         st.steamvr_running = self.steamvr;
-        st.osc_active = self.bridge.is_some() && self.vrchat;
+        st.osc_active = self.linked;
         st.avatar_id = self.driver.avatar_id().map(str::to_string);
         st.avatar_params = self.driver.avatar_param_names().map(|p| p.to_vec());
         st.avatar_loading = self.vrchat && (self.driver.loading() || self.driver.sync_ignored(pregsys_core::now_ms()));

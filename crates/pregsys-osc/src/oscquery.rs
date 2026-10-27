@@ -2,7 +2,8 @@
 //! fixed ports, find VRChat, and read the current avatar's parameters.
 
 use crate::osc::OscValue;
-use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
+use crate::announce::{Announcer, Service};
+use mdns_sd::{ServiceDaemon, ServiceEvent};
 use serde_json::{json, Map, Value};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -74,17 +75,16 @@ pub fn host_info(name: &str, osc_port: u16) -> Value {
     })
 }
 
-/// Our advertised OSCQuery service. Unregisters on drop.
+/// Our advertised OSCQuery service. Says goodbye on drop.
 pub struct OscQueryService {
-    daemon: ServiceDaemon,
-    names: Vec<String>,
+    _announcer: Announcer,
     tree: Arc<Mutex<Value>>,
     pub http_port: u16,
 }
 
 impl OscQueryService {
     /// Starts the HTTP server and advertises `_oscjson._tcp` and `_osc._udp`.
-    pub fn start(daemon: &ServiceDaemon, app_name: &str, osc_port: u16, addresses: Vec<String>) -> Result<Self, String> {
+    pub fn start(app_name: &str, osc_port: u16, addresses: Vec<String>) -> Result<Self, String> {
         // Loopback only: VRChat runs on this PC, and the firewall never blocks loopback.
         let server = tiny_http::Server::http("127.0.0.1:0").map_err(|e| e.to_string())?;
         let http_port = server.server_addr().to_ip().map(|a| a.port()).ok_or("no http port")?;
@@ -112,17 +112,15 @@ impl OscQueryService {
             .map_err(|e| e.to_string())?;
 
         let instance = format!("{app_name}-{}", std::process::id());
-        let mut names = Vec::new();
-        for (ty, port, kind) in [(OSCJSON_TCP, http_port, "oscjson"), (OSC_UDP, osc_port, "osc")] {
-            // One host name per service type, like VRChat's own library uses.
-            let host = format!("{instance}.{kind}.local.");
-            // Announced at 127.0.0.1: with the PC's network addresses VRChat may try (and fail) to reach us over the LAN.
-            let si = ServiceInfo::new(ty, &instance, &host, "127.0.0.1", port, None::<std::collections::HashMap<String, String>>)
-                .map_err(|e| e.to_string())?;
-            names.push(si.get_fullname().to_string());
-            daemon.register(si).map_err(|e| e.to_string())?;
-        }
-        Ok(Self { daemon: daemon.clone(), names, tree, http_port })
+        // One host name per service type, like VRChat's own library uses.
+        // Announced at 127.0.0.1: with the PC's network addresses VRChat may
+        // try (and fail) to reach us over the LAN.
+        let services = [(OSCJSON_TCP, http_port, "oscjson"), (OSC_UDP, osc_port, "osc")]
+            .into_iter()
+            .map(|(ty, port, kind)| Service { ty: ty.into(), instance: instance.clone(), host: format!("{instance}.{kind}.local."), port })
+            .collect();
+        let announcer = Announcer::start(services)?;
+        Ok(Self { _announcer: announcer, tree, http_port })
     }
 
     /// Changes the addresses we ask VRChat for, keeping the same ports (VRChat
@@ -132,41 +130,75 @@ impl OscQueryService {
     }
 }
 
-impl Drop for OscQueryService {
-    fn drop(&mut self) {
-        for n in &self.names {
-            let _ = self.daemon.unregister(n);
-        }
-    }
+/// The VRChat on this PC, as found over mDNS.
+#[derive(Debug, Default)]
+pub struct VrcWatch {
+    /// Its mDNS instance name (e.g. "VRChat-Client-82867A").
+    instance: Option<String>,
+    pub endpoints: VrcEndpoints,
+    /// Its OSCQuery showed an avatar the last time we asked (set by
+    /// `Bridge::avatar_info`; false while its OSC is off).
+    pub alive: bool,
 }
 
-/// Watches mDNS for VRChat and keeps `VrcEndpoints` up to date.
-pub fn watch_vrchat(daemon: &ServiceDaemon) -> Result<Arc<Mutex<VrcEndpoints>>, String> {
-    let state = Arc::new(Mutex::new(VrcEndpoints::default()));
-    for ty in [OSCJSON_TCP, OSC_UDP] {
-        let rx = daemon.browse(ty).map_err(|e| e.to_string())?;
-        let st = state.clone();
-        thread::Builder::new()
-            .name(format!("mdns-{ty}"))
-            .spawn(move || {
-                while let Ok(ev) = rx.recv() {
-                    match ev {
-                        ServiceEvent::ServiceResolved(s) if s.fullname.starts_with(VRCHAT_PREFIX) => {
-                            // VRChat runs on this machine; talk to it over loopback.
-                            let addr = SocketAddr::from(([127, 0, 0, 1], s.port));
-                            let mut g = st.lock().unwrap();
-                            if s.ty_domain.starts_with("_oscjson") { g.query = Some(addr) } else { g.osc = Some(addr) }
-                        }
-                        ServiceEvent::ServiceRemoved(t, name) if name.starts_with(VRCHAT_PREFIX) => {
-                            let mut g = st.lock().unwrap();
-                            if t.starts_with("_oscjson") { g.query = None } else { g.osc = None }
-                        }
-                        _ => {}
-                    }
-                }
-            })
-            .map_err(|e| e.to_string())?;
+/// Asks the OSCQuery server at `port` on this PC who it is. Returns its OSC
+/// port when it's `instance`. VRChat on other PCs in the house shows up over
+/// mDNS too, with ports that mean nothing here.
+fn local_osc_port(instance: &str, port: u16) -> Option<u16> {
+    let agent: ureq::Agent = ureq::Agent::config_builder().timeout_global(Some(Duration::from_secs(2))).build().into();
+    let body = agent.get(&format!("http://127.0.0.1:{port}/?HOST_INFO")).call().ok()?.body_mut().read_to_string().ok()?;
+    let info: Value = serde_json::from_str(&body).ok()?;
+    if info.get("NAME").and_then(Value::as_str) != Some(instance) {
+        return None;
     }
+    info.get("OSC_PORT").and_then(Value::as_u64).and_then(|p| u16::try_from(p).ok())
+}
+
+fn instance_of(fullname: &str) -> &str {
+    fullname.strip_suffix(OSCJSON_TCP).map(|s| s.trim_end_matches('.')).unwrap_or(fullname)
+}
+
+/// Watches mDNS for the VRChat on this PC and keeps its endpoints up to date.
+pub fn watch_vrchat(daemon: &ServiceDaemon) -> Result<Arc<Mutex<VrcWatch>>, String> {
+    let state = Arc::new(Mutex::new(VrcWatch::default()));
+    // HOST_INFO has the OSC port too, so only the OSCQuery service is needed.
+    let rx = daemon.browse(OSCJSON_TCP).map_err(|e| e.to_string())?;
+    let st = state.clone();
+    thread::Builder::new()
+        .name("mdns-vrchat".into())
+        .spawn(move || {
+            while let Ok(ev) = rx.recv() {
+                match ev {
+                    ServiceEvent::ServiceResolved(s) if s.fullname.starts_with(VRCHAT_PREFIX) => {
+                        let instance = instance_of(&s.fullname).to_string();
+                        // Its web server can lag the announcement a little.
+                        let osc = (0..3).find_map(|i| {
+                            if i > 0 {
+                                thread::sleep(Duration::from_secs(1));
+                            }
+                            local_osc_port(&instance, s.port)
+                        });
+                        let Some(osc) = osc else { continue }; // another PC's VRChat
+                        let mut g = st.lock().unwrap();
+                        g.instance = Some(instance);
+                        g.endpoints = VrcEndpoints {
+                            osc: Some(SocketAddr::from(([127, 0, 0, 1], osc))),
+                            query: Some(SocketAddr::from(([127, 0, 0, 1], s.port))),
+                        };
+                        g.alive = false; // until it shows an avatar
+                    }
+                    ServiceEvent::ServiceRemoved(_, name) => {
+                        let mut g = st.lock().unwrap();
+                        // Only ours: another PC's VRChat going away changes nothing here.
+                        if g.instance.as_deref() == Some(instance_of(&name)) {
+                            *g = VrcWatch::default();
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        })
+        .map_err(|e| e.to_string())?;
     Ok(state)
 }
 
@@ -243,6 +275,11 @@ mod tests {
         assert_eq!(stage["ACCESS"], 2);
         assert_eq!(find_node(&t, "/avatar/change").unwrap()["TYPE"], "s");
         assert_eq!(find_node(&t, "/avatar/parameters").unwrap()["FULL_PATH"], "/avatar/parameters");
+    }
+
+    #[test]
+    fn instance_name_from_full_name() {
+        assert_eq!(instance_of("VRChat-Client-82867A._oscjson._tcp.local."), "VRChat-Client-82867A");
     }
 
     #[test]
