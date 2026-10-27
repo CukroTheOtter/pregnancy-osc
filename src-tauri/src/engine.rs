@@ -32,6 +32,8 @@ struct Engine {
     shared: Arc<Shared>,
     driver: Driver,
     bridge: Option<Bridge>,
+    /// The OSC settings the bridge was started with.
+    bridge_osc: Option<pregsys_core::model::OscSettings>,
     bridge_error: Option<String>,
     bridge_error_at: Instant,
     procs: Procs,
@@ -84,6 +86,7 @@ impl Engine {
             shared,
             driver: Driver::new(mapping),
             bridge: None,
+            bridge_osc: None,
             bridge_error: None,
             bridge_error_at: past,
             procs: Procs::new(),
@@ -135,16 +138,20 @@ impl Engine {
         }
     }
 
+    /// Picks up new parameter names (and settings). The OSCQuery service stays
+    /// up, with the new names updated in place: to VRChat it's the same app.
+    /// `ensure_bridge` rebuilds it only if the OSC settings really changed.
     fn restart(&mut self) {
         if let Ok(m) = Mapping::load_or_create(&self.shared.mapping_path) {
             *self.shared.mapping.lock().unwrap() = m.clone();
             self.driver.set_mapping(m);
         }
-        self.handoff();
-        self.bridge = None;
+        if let Some(b) = &self.bridge {
+            b.set_listen_addresses(&self.listen_addresses());
+        }
         self.bridge_error = None;
         self.logs = None;
-        self.driver.set_connected(false);
+        self.driver.resync();
     }
 
     fn handoff(&mut self) {
@@ -262,15 +269,14 @@ impl Engine {
         // Started even before VRChat runs: VRChat only looks for OSCQuery apps
         // at its start-up, so the app must already be there (e.g. VRCX
         // launching both at once).
-        if !osc.enabled {
-            if self.bridge.is_some() {
-                self.handoff();
-                self.bridge = None;
-                self.driver.set_connected(false);
-            }
-            return;
+        // Rebuilt only when the OSC settings change (on/off, mode, ports).
+        if self.bridge.is_some() && (!osc.enabled || self.bridge_osc.as_ref() != Some(&osc)) {
+            self.handoff();
+            self.bridge = None;
+            self.bridge_osc = None;
+            self.driver.set_connected(false);
         }
-        if self.bridge.is_some() {
+        if !osc.enabled || self.bridge.is_some() {
             return;
         }
         // After a failure (e.g. port in use), retry every 15 seconds.
@@ -280,7 +286,7 @@ impl Engine {
         let listen = self.listen_addresses();
         let cfg = BridgeConfig {
             use_oscquery: osc.use_oscquery,
-            send_host: osc.send_host,
+            send_host: osc.send_host.clone(),
             send_port: osc.send_port,
             recv_port: osc.recv_port,
             listen_addresses: listen,
@@ -289,6 +295,7 @@ impl Engine {
         match Bridge::start(&cfg) {
             Ok(b) => {
                 self.bridge = Some(b);
+                self.bridge_osc = Some(osc);
                 self.bridge_error = None;
                 self.driver.set_connected(self.vrchat);
                 if self.vrchat {

@@ -12,6 +12,11 @@ use std::sync::{Arc, Mutex};
 pub const VRCHAT_OUT_PORT: u16 = 9001;
 /// VRChat's usual input port, for when OSCQuery hasn't found it.
 pub const VRCHAT_IN_PORT: u16 = 9000;
+/// Our OSCQuery port (web and OSC on the same number), the first free one
+/// from here. The same port every run, with the same name, means VRChat
+/// sees the same app after a restart (OGB does this too, from 33776).
+pub const OSCQUERY_PORT: u16 = 33790;
+const OSCQUERY_PORT_TRIES: u16 = 40;
 
 #[derive(Debug, Clone)]
 pub struct BridgeConfig {
@@ -30,7 +35,7 @@ pub struct BridgeConfig {
 impl Default for BridgeConfig {
     fn default() -> Self {
         Self {
-            app_name: "PregnancyOSC".into(),
+            app_name: "PregnancyOSC".into(), // one app, one name: never per process
             use_oscquery: true,
             send_host: "127.0.0.1".into(),
             send_port: 9000,
@@ -69,6 +74,15 @@ pub struct Bridge {
     _service: Option<OscQueryService>,
     _daemon: Option<ServiceDaemon>,
     note: Option<String>,
+}
+
+impl Drop for Bridge {
+    fn drop(&mut self) {
+        // The mDNS daemon runs its own thread until told to stop.
+        if let Some(d) = &self._daemon {
+            let _ = d.shutdown();
+        }
+    }
 }
 
 fn resolve(host: &str, port: u16) -> SocketAddr {
@@ -110,10 +124,31 @@ impl Bridge {
     #[allow(clippy::type_complexity)]
     fn start_oscquery(cfg: &BridgeConfig) -> Result<(OscReceiver, OscQueryService, ServiceDaemon, Arc<Mutex<VrcWatch>>), String> {
         let daemon = ServiceDaemon::new().map_err(|e| e.to_string())?;
-        let receiver = OscReceiver::bind("127.0.0.1", 0).map_err(|e| e.to_string())?;
-        let service = OscQueryService::start(&cfg.app_name, receiver.port, cfg.listen_addresses.clone())?;
-        let vrc = oscquery::watch_vrchat(&daemon)?;
+        let (receiver, server) = Self::bind_oscquery_port()?;
+        // VRChat remembers an app's port by its name: on any other port, use another name.
+        let name = if receiver.port == OSCQUERY_PORT { cfg.app_name.clone() } else { format!("{}-{}", cfg.app_name, receiver.port) };
+        let service = OscQueryService::start(server, &name, receiver.port, cfg.listen_addresses.clone())?;
+        let vrc = match oscquery::watch_vrchat(&daemon) {
+            Ok(v) => v,
+            Err(e) => {
+                let _ = daemon.shutdown();
+                return Err(e);
+            }
+        };
         Ok((receiver, service, daemon, vrc))
+    }
+
+    /// The OSC receiver and web server, on one port: ours if free, else the
+    /// next free one, else any. Loopback only: VRChat runs on this PC, and the
+    /// firewall never blocks loopback.
+    fn bind_oscquery_port() -> Result<(OscReceiver, tiny_http::Server), String> {
+        for port in (OSCQUERY_PORT..OSCQUERY_PORT + OSCQUERY_PORT_TRIES).chain([0]) {
+            let Ok(receiver) = OscReceiver::bind("127.0.0.1", port) else { continue };
+            if let Ok(server) = tiny_http::Server::http(("127.0.0.1", receiver.port)) {
+                return Ok((receiver, server));
+            }
+        }
+        Err("no free port for OSCQuery".into())
     }
 
     /// Changes the addresses advertised to VRChat, without restarting anything.
@@ -199,5 +234,21 @@ impl Bridge {
             vrchat_query: ep.query.map(|a| a.to_string()),
             note: self.note.clone(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn oscquery_port_is_the_same_after_a_rebuild() {
+        let (r, s) = Bridge::bind_oscquery_port().unwrap();
+        let port = r.port;
+        assert_eq!(s.server_addr().to_ip().unwrap().port(), port, "web and OSC share the port");
+        assert!((OSCQUERY_PORT..OSCQUERY_PORT + OSCQUERY_PORT_TRIES).contains(&port));
+        drop((r, s));
+        let (r2, _s2) = Bridge::bind_oscquery_port().unwrap();
+        assert_eq!(r2.port, port, "freed right away, so the same port again");
     }
 }

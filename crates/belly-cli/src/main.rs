@@ -59,6 +59,7 @@ fn main() {
         send_port: args.port,
         // Only claim VRChat's output port when we actually listen.
         recv_port: if args.listen.is_some() { 9001 } else { 0 },
+        app_name: "PregnancyOSC-cli".into(), // not the app's name: VRChat would mix them up
         ..Default::default()
     };
     cfg.listen_addresses.extend(mapping.parameters.values().filter(|p| !p.name.is_empty()).map(|p| format!("/avatar/parameters/{}", p.name)));

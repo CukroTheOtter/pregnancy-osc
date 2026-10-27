@@ -122,17 +122,26 @@ impl OscSender {
     }
 }
 
-/// Listens for OSC on a UDP port. Port 0 picks a free port. The socket
-/// closes when this is dropped.
+/// Listens for OSC on a UDP port. Port 0 picks a free port. The port is
+/// free again as soon as this is dropped.
 pub struct OscReceiver {
     pub port: u16,
     pub rx: Receiver<Incoming>,
     stop: Arc<AtomicBool>,
+    thread: Option<thread::JoinHandle<()>>,
 }
 
 impl Drop for OscReceiver {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::SeqCst);
+        // Wake the thread (it may be waiting for a packet) and wait for it,
+        // so the socket is closed when this returns.
+        if let Ok(s) = UdpSocket::bind(("127.0.0.1", 0)) {
+            let _ = s.send_to(&[], ("127.0.0.1", self.port));
+        }
+        if let Some(t) = self.thread.take() {
+            let _ = t.join();
+        }
     }
 }
 
@@ -144,7 +153,7 @@ impl OscReceiver {
         let (tx, rx) = mpsc::channel();
         let stop = Arc::new(AtomicBool::new(false));
         let stopped = stop.clone();
-        thread::Builder::new().name("osc-recv".into()).spawn(move || {
+        let thread = thread::Builder::new().name("osc-recv".into()).spawn(move || {
             let mut buf = [0u8; 8192];
             // Checked every read timeout (0.5 s), so the socket is freed soon after drop.
             while !stopped.load(Ordering::SeqCst) {
@@ -162,7 +171,7 @@ impl OscReceiver {
                 }
             }
         })?;
-        Ok(Self { port, rx, stop })
+        Ok(Self { port, rx, stop, thread: Some(thread) })
     }
 }
 
@@ -188,8 +197,7 @@ mod tests {
         let r = OscReceiver::bind("127.0.0.1", 0).unwrap();
         let port = r.port;
         drop(r);
-        std::thread::sleep(Duration::from_millis(800));
-        assert!(OscReceiver::bind("127.0.0.1", port).is_ok(), "port is free again");
+        assert!(OscReceiver::bind("127.0.0.1", port).is_ok(), "port is free again right away");
     }
 
     #[test]

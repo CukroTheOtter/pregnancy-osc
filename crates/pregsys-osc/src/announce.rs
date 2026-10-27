@@ -1,10 +1,10 @@
-//! A tiny mDNS responder for the app's two services (OSCQuery and OSC).
+//! A tiny mDNS announcer for the app's OSCQuery service.
 //!
 //! mdns-sd only announces an address on the network adapter whose subnet
 //! holds it, so 127.0.0.1 only ever went out on loopback, where VRChat
 //! doesn't listen: VRChat never found the app. This announces 127.0.0.1 on
-//! every adapter (like VRChat's own library does) and answers VRChat's
-//! searches with everything in one packet (VRChat needs the SRV record there).
+//! the real adapters every few seconds (like OGB) and answers this PC's
+//! searches, laid out like VRChat's own answers. Nothing leaves this PC.
 
 use socket2::{Domain, Protocol, SockRef, Socket, Type};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, UdpSocket};
@@ -17,6 +17,9 @@ const GROUP: Ipv4Addr = Ipv4Addr::new(224, 0, 0, 251);
 const PORT: u16 = 5353;
 const TTL_PTR: u32 = 4500;
 const TTL_HOST: u32 = 120;
+/// Announced this often, like OGB: VRChat matches apps by name, so repeats
+/// don't add us twice, and a VRChat that missed us finds us within seconds.
+const REANNOUNCE: Duration = Duration::from_secs(5);
 
 /// One advertised service, e.g. `_oscjson._tcp.local.` on `port`.
 #[derive(Debug, Clone)]
@@ -38,7 +41,7 @@ pub struct Announcer {
     stop: Arc<AtomicBool>,
 }
 
-/// This PC's IPv4 adapters (loopback too, for apps that browse there).
+/// This PC's IPv4 addresses (loopback included).
 fn adapters() -> Vec<Ipv4Addr> {
     let mut ips: Vec<Ipv4Addr> = if_addrs::get_if_addrs()
         .unwrap_or_default()
@@ -53,8 +56,15 @@ fn adapters() -> Vec<Ipv4Addr> {
     ips
 }
 
-/// Sends `pkt` to the mDNS group out of each adapter.
-fn send_everywhere(sock: &UdpSocket, pkt: &[u8], ips: &[Ipv4Addr]) {
+/// Where to send: the real adapters (VRChat listens there, not on
+/// loopback), or loopback when there are none.
+fn send_ifs(ips: &[Ipv4Addr]) -> Vec<Ipv4Addr> {
+    let real: Vec<Ipv4Addr> = ips.iter().copied().filter(|ip| !ip.is_loopback()).collect();
+    if real.is_empty() { vec![Ipv4Addr::LOCALHOST] } else { real }
+}
+
+/// Sends `pkt` to the mDNS group out of each of `ips`.
+fn send_on(sock: &UdpSocket, pkt: &[u8], ips: &[Ipv4Addr]) {
     let to = SocketAddr::V4(SocketAddrV4::new(GROUP, PORT));
     for ip in ips {
         if SockRef::from(sock).set_multicast_if_v4(ip).is_ok() {
@@ -70,6 +80,9 @@ impl Announcer {
         sock.set_reuse_address(true).map_err(|e| e.to_string())?;
         sock.bind(&SocketAddr::from(([0, 0, 0, 0], PORT)).into()).map_err(|e| e.to_string())?;
         sock.set_multicast_loop_v4(true).map_err(|e| e.to_string())?;
+        // TTL 0: our packets never leave this PC. 127.0.0.1 means nothing to
+        // other PCs, and their VRChat would keep trying (and failing) to connect.
+        sock.set_multicast_ttl_v4(0).map_err(|e| e.to_string())?;
         sock.set_read_timeout(Some(Duration::from_millis(500))).map_err(|e| e.to_string())?;
         let sock: UdpSocket = sock.into();
 
@@ -81,9 +94,10 @@ impl Announcer {
             .spawn(move || {
                 let mut joined: Vec<Ipv4Addr> = Vec::new();
                 let mut last_scan: Option<Instant> = None;
-                let all = packet(&list.iter().collect::<Vec<_>>(), false);
-                // A few announcements at start, in case a query is missed.
-                let mut announce_at = vec![Instant::now(), Instant::now() + Duration::from_secs(1), Instant::now() + Duration::from_secs(3)];
+                let mut last_hello: Option<Instant> = None;
+                // One service per packet: VRChat only reads the first SRV in each.
+                let each = |goodbye: bool| list.iter().map(|s| packet(&[s], goodbye)).collect::<Vec<_>>();
+                let hello = each(false);
                 let mut buf = [0u8; 9000];
                 while !stopped.load(Ordering::SeqCst) {
                     // Adapters can come and go (Wi-Fi, VPN): check now and then.
@@ -93,36 +107,43 @@ impl Announcer {
                         for ip in &now {
                             if !joined.contains(ip) {
                                 let _ = sock.join_multicast_v4(&GROUP, ip);
-                                // New adapter: tell it about us.
-                                send_everywhere(&sock, &all, std::slice::from_ref(ip));
                             }
                         }
                         joined = now;
                     }
-                    if announce_at.first().is_some_and(|t| Instant::now() >= *t) {
-                        announce_at.remove(0);
-                        send_everywhere(&sock, &all, &joined);
+                    if last_hello.is_none_or(|t| t.elapsed() >= REANNOUNCE) {
+                        last_hello = Some(Instant::now());
+                        for p in &hello {
+                            send_on(&sock, p, &send_ifs(&joined));
+                        }
                     }
                     let Ok((n, from)) = sock.recv_from(&mut buf) else { continue };
-                    let Some(asked) = parse_query(&buf[..n]) else { continue };
-                    let hits: Vec<&Service> = list.iter().filter(|s| asked.iter().any(|q| wanted(s, q))).collect();
-                    if hits.is_empty() {
+                    // Only searches from this PC: other PCs can't reach 127.0.0.1.
+                    let local = match from.ip() {
+                        std::net::IpAddr::V4(ip) => ip.is_loopback() || joined.contains(&ip),
+                        _ => false,
+                    };
+                    if !local {
                         continue;
                     }
-                    let pkt = packet(&hits, false);
-                    send_everywhere(&sock, &pkt, &joined);
-                    // A one-shot query (not from port 5353) wants the answer back directly.
-                    if from.port() != PORT {
-                        let _ = sock.send_to(&pkt, from);
+                    let Some(asked) = parse_query(&buf[..n]) else { continue };
+                    for s in list.iter().filter(|s| asked.iter().any(|q| wanted(s, q))) {
+                        let pkt = packet(&[s], false);
+                        send_on(&sock, &pkt, &send_ifs(&joined));
+                        // A one-shot query (not from port 5353) wants the answer back directly.
+                        if from.port() != PORT {
+                            let _ = sock.send_to(&pkt, from);
+                        }
                     }
                 }
-                // Goodbye: TTL 0 tells everyone the services are gone.
-                send_everywhere(&sock, &packet(&list.iter().collect::<Vec<_>>(), true), &joined);
+                // Goodbye: TTL 0 records tell everyone the services are gone.
+                for p in each(true) {
+                    send_on(&sock, &p, &send_ifs(&joined));
+                }
             })
             .map_err(|e| e.to_string())?;
         Ok(Self { stop })
     }
-
 }
 
 impl Drop for Announcer {

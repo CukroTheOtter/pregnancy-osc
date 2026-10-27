@@ -11,7 +11,6 @@ use std::thread;
 use std::time::Duration;
 
 pub const OSCJSON_TCP: &str = "_oscjson._tcp.local.";
-pub const OSC_UDP: &str = "_osc._udp.local.";
 const VRCHAT_PREFIX: &str = "VRChat-Client";
 
 /// Where VRChat is, as found over mDNS.
@@ -75,26 +74,30 @@ pub fn host_info(name: &str, osc_port: u16) -> Value {
     })
 }
 
-/// Our advertised OSCQuery service. Says goodbye on drop.
+/// Our advertised OSCQuery service. Says goodbye and stops its web server on drop.
 pub struct OscQueryService {
     _announcer: Announcer,
+    server: Arc<tiny_http::Server>,
+    thread: Option<thread::JoinHandle<()>>,
     tree: Arc<Mutex<Value>>,
     pub http_port: u16,
 }
 
 impl OscQueryService {
-    /// Starts the HTTP server and advertises `_oscjson._tcp` and `_osc._udp`.
-    pub fn start(app_name: &str, osc_port: u16, addresses: Vec<String>) -> Result<Self, String> {
-        // Loopback only: VRChat runs on this PC, and the firewall never blocks loopback.
-        let server = tiny_http::Server::http("127.0.0.1:0").map_err(|e| e.to_string())?;
+    /// Starts the web server on `server` and advertises it as `_oscjson._tcp`
+    /// under `app_name` (VRChat reads our OSC port from HOST_INFO, like OGB).
+    /// The same name every time, so VRChat sees the same app after a restart.
+    pub fn start(server: tiny_http::Server, app_name: &str, osc_port: u16, addresses: Vec<String>) -> Result<Self, String> {
         let http_port = server.server_addr().to_ip().map(|a| a.port()).ok_or("no http port")?;
+        let server = Arc::new(server);
+        let serving = server.clone();
         let tree = Arc::new(Mutex::new(build_tree(&addresses)));
         let served = tree.clone();
         let info = host_info(app_name, osc_port);
-        thread::Builder::new()
+        let thread = thread::Builder::new()
             .name("oscquery-http".into())
             .spawn(move || {
-                for req in server.incoming_requests() {
+                for req in serving.incoming_requests() {
                     let url = req.url().to_string();
                     let (path, query) = url.split_once('?').unwrap_or((&url, ""));
                     let body = if query.contains("HOST_INFO") {
@@ -111,22 +114,27 @@ impl OscQueryService {
             })
             .map_err(|e| e.to_string())?;
 
-        let instance = format!("{app_name}-{}", std::process::id());
-        // One host name per service type, like VRChat's own library uses.
         // Announced at 127.0.0.1: with the PC's network addresses VRChat may
         // try (and fail) to reach us over the LAN.
-        let services = [(OSCJSON_TCP, http_port, "oscjson"), (OSC_UDP, osc_port, "osc")]
-            .into_iter()
-            .map(|(ty, port, kind)| Service { ty: ty.into(), instance: instance.clone(), host: format!("{instance}.{kind}.local."), port })
-            .collect();
-        let announcer = Announcer::start(services)?;
-        Ok(Self { _announcer: announcer, tree, http_port })
+        let service = Service { ty: OSCJSON_TCP.into(), instance: app_name.into(), host: format!("{app_name}.oscjson.local."), port: http_port };
+        let announcer = Announcer::start(vec![service])?;
+        Ok(Self { _announcer: announcer, server, thread: Some(thread), tree, http_port })
     }
 
     /// Changes the addresses we ask VRChat for, keeping the same ports (VRChat
     /// only looks for apps at start-up, so a restart would lose it).
     pub fn set_addresses(&self, addresses: &[String]) {
         *self.tree.lock().unwrap() = build_tree(addresses);
+    }
+}
+
+impl Drop for OscQueryService {
+    fn drop(&mut self) {
+        // End the web server's thread and wait, so the port is free when this returns.
+        self.server.unblock();
+        if let Some(t) = self.thread.take() {
+            let _ = t.join();
+        }
     }
 }
 
