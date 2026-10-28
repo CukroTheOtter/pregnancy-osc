@@ -4,6 +4,7 @@
   import { cycleDay, cycleMs } from "../lib/fertility";
   import { setProgress, progress, TERM_WEEKS } from "../lib/timeline";
   import type { Settings } from "../lib/types";
+  import { hipWarning } from "../lib/posture";
 
   const d = $derived(app.data!);
   const st = $derived(app.status);
@@ -183,6 +184,18 @@
   </div>
 
   <div class="group">
+    <strong>👶 How many babies</strong>
+    <span class="muted small">
+      {#if p}This pregnancy has {p.babyCount}. The Home card shows them from week 12.{:else if w}Waiting to find out: sets how many there will be.{:else}Not pregnant or waiting on this avatar.{/if}
+    </span>
+    <div class="segmented" style="align-self:flex-start">
+      {#each [1, 2, 3, 4] as n}
+        <button class:on={(p?.babyCount ?? w?.babyCount) === n} disabled={!p && !w} onclick={() => run(n === 1 ? "One baby" : `${n} babies`, () => api.debugSetBabies(n))}>{n}</button>
+      {/each}
+    </div>
+  </div>
+
+  <div class="group">
     <strong>⏩ Labor</strong>
     <span class="muted small">
       {#if !p}Not pregnant on this avatar.{:else if p.labor}In labor: {p.labor.phase === "early" ? "early" : p.labor.phase === "active" ? "water broke" : "pushing"}. Skips play out within a second, with the real events.{:else}Not in labor yet. Starting it here skips the week and avatar checks.{/if}
@@ -198,8 +211,10 @@
 
   <div class="group">
     <strong>🧍 Posture</strong>
-    <span class="muted small">For "Resting holds off labor". Standing counts from Upright 0.7, unless you're in a seat.</span>
-    <span class="small">Upright {st?.upright != null ? st.upright.toFixed(2) : "not heard yet"} · {st?.up === false ? "🛋️ resting" : "🚶 up"}{st?.afk ? " · 💤 AFK" : ""}</span>
+    <span class="muted small">For "Resting holds off labor". In VR with SteamVR: resting when your headset is 0.45 m below its highest, or your waist tracker says you're lying down. Otherwise: VRChat's Upright 0.7 or more, not in a seat.</span>
+    <span class="small">{st?.up === false ? "🛋️ resting" : "🚶 up"} · by {st?.postureSource === "steamvr" ? "SteamVR" : "VRChat"}{st?.afk ? " · 💤 AFK" : ""}</span>
+    <span class="small muted">Upright {st?.upright != null ? st.upright.toFixed(2) : "not heard yet"}{#if st?.vrDropM != null} · headset {st.vrDropM.toFixed(2)} m below its highest{/if}{#if st?.vrLying != null} · hip tracker: {st.vrLying ? "lying down" : "upright"}{/if}{#if st?.vrTrackers} · {st.vrTrackers} trackers, waist {st.vrWaist ? (st.vrHipTracked ? "✓" : "lost") : "not set"}{/if}</span>
+    {#if hipWarning(st)}<span class="small warn-text">⚠️ {hipWarning(st)}</span>{/if}
   </div>
 
   <div class="group">

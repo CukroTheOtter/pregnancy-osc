@@ -3,6 +3,7 @@
   import Toggle from "../components/Toggle.svelte";
   import Section from "../components/Section.svelte";
   import AccentPicker from "../components/AccentPicker.svelte";
+  import { hipWarning } from "../lib/posture";
   import DebugPanel from "../components/DebugPanel.svelte";
   import LinkInfo from "../components/LinkInfo.svelte";
   import { app, checkForUpdate, confirmAsk, errorToast, toast } from "../lib/app.svelte";
@@ -603,6 +604,10 @@
       <span class="hint">{s.labor.quietEarly ? "Early labor shows nothing on your avatar (kicks carry on), so the water breaking is the first sign." : "Contractions show from the start of labor, getting closer until the water breaks."}</span>
     </div>
     <Toggle bind:checked={s.labor.restingHolds} label="Resting holds off labor" hint="Labor only starts, and the water only breaks, while you're standing. Sitting or lying down holds it off (Induce at still starts it)." onchange={() => commit()} />
+    {#if s.labor.restingHolds}
+      <span class="hint">{status?.postureSource === "steamvr" ? "In VR, SteamVR's tracking tells if you're up (playspace movers can't fool it)." : "Goes by VRChat's Upright and seats. In VR with SteamVR running, SteamVR's tracking is used instead."}</span>
+      {#if hipWarning(status)}<span class="small cant">⚠️ {hipWarning(status)}</span>{/if}
+    {/if}
     <Toggle bind:checked={s.labor.woohooStarts} label="A WooHoo can start labor" hint="From week 37: a 25% chance, rising to 75% from week 40" onchange={() => commit()} />
     <Toggle bind:checked={s.labor.waitsForPartner} disabled={!s.readLogs} label="Labor waits for your partner" hint={s.readLogs ? "Labor doesn't start until the partner is in the instance. Once it starts, it keeps going." : "Needs log reading (Logs and pictures)"} onchange={() => commit()} />
     <span class="muted small">Labor only moves while you're in VRChat on an avatar with <code>Pregnancy/Labor</code>. On other avatars, "Welcome your baby" skips straight to the birth. Holding Start in the avatar's menu (from week 37) starts labor too.</span>
@@ -613,10 +618,6 @@
   <Section id="steamvr" title="🥽 SteamVR">
     {#snippet extra()}{#if status}<span class="pill" class:ok={status.steamvrRunning} class:off={!status.steamvrRunning}>{status.steamvrRunning ? "running" : "not running"}</span>{/if}{/snippet}
     <Toggle bind:checked={s.startWithSteamvr} label="Start with SteamVR" onchange={() => commit(true)} />
-    <Toggle bind:checked={s.steamvrDashboard} label="Show in the SteamVR dashboard" hint="The app gets its own tab in the dashboard" onchange={() => commit()} />
-    {#if s.steamvrDashboard}
-      <Toggle bind:checked={s.hideWindowInVr} label="Hide the window while in VR" hint="Open it from the dashboard tab or the tray" onchange={() => commit()} />
-    {/if}
     <div class="field">
       <strong>When SteamVR closes</strong>
       <div class="segmented">
@@ -626,7 +627,7 @@
     </div>
     {#if status}
       <span class="hint">
-        {#if !status.steamvrRunning}SteamVR isn't running.{:else if s.steamvrDashboard}SteamVR is running · {status.steamvrDashboard ? "In the dashboard ✓" : "Joining the dashboard…"}{:else}SteamVR is running.{/if}
+        {status.steamvrRunning ? "SteamVR is running." : "SteamVR isn't running."}
       </span>
     {/if}
   </Section>

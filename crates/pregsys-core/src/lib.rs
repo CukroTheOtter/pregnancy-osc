@@ -13,6 +13,7 @@ pub mod logwatch;
 pub mod mapping;
 pub mod model;
 pub mod movement;
+pub mod posture;
 pub mod sps;
 pub mod stage;
 pub mod storage;

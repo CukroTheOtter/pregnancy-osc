@@ -101,10 +101,6 @@ export interface Settings {
   autoAddAvatars: boolean;
   /** Closing the window keeps the app running in the tray. */
   closeToTray: boolean;
-  /** A tab in the SteamVR dashboard. */
-  steamvrDashboard: boolean;
-  /** While in VR (dashboard on), the desktop window stays hidden. */
-  hideWindowInVr: boolean;
   heartbeatSound: boolean;
   soundVolume: number;
   revealPulse: boolean;
@@ -334,14 +330,21 @@ export interface Status {
   spsFound: string[];
   spsLive: { name: string; channel: string; value: number; holeType: HoleType; counts: boolean }[];
   spsProgress: number;
-  /** The app's tab is in the SteamVR dashboard. */
-  steamvrDashboard: boolean;
   /** VRChat says you're AFK (labor waits). */
   afk?: boolean;
   /** Standing up (not seated or lying down). */
   up?: boolean;
   /** VRChat's Upright value (debug). */
   upright?: number | null;
+  /** Where "up or resting" comes from. */
+  postureSource?: "steamvr" | "vrchat";
+  /** SteamVR: headset below its highest (m), and lying down by the hip tracker. */
+  vrDropM?: number | null;
+  vrLying?: boolean | null;
+  /** SteamVR: full-body trackers, whether one is set as your waist, and whether it's tracked now. */
+  vrTrackers?: number;
+  vrWaist?: boolean;
+  vrHipTracked?: boolean;
   /** The worn avatar can show labor. */
   laborSupported: boolean;
   /** Another avatar sharing this pregnancy that can show labor. */

@@ -5,6 +5,7 @@
   import { api } from "../lib/api";
   import { BABY_REVEAL_WEEK } from "../lib/fertility";
   import type { Labor, Pregnancy } from "../lib/types";
+  import { hipWarning } from "../lib/posture";
 
   let { p, week, isDue, viewingOther, onbirth }: { p: Pregnancy; week: number; isDue: boolean; viewingOther: boolean; onbirth: () => void } = $props();
 
@@ -70,7 +71,7 @@
     {#if paused}
       <span class="small">⏸ Labor paused. {pausedWhy}</span>
     {:else if resting && labor.phase === "early"}
-      <span class="small">🛋️ Resting: your water won't break until you're up.</span>
+      <span class="rest small">🛋️ Resting: your water won't break until you're up</span>
     {:else if settings}
       <span class="small muted">Contractions about every {Math.round(gapMinutes(labor, settings.labor.minutes) * 10) / 10} min</span>
     {/if}
@@ -92,7 +93,8 @@
   <button class="big" onclick={onbirth}>{welcome}</button>
 {:else if week >= LABOR_WEEK && canShow}
   {#if settings?.labor.restingHolds}
-    <span class="small muted">{resting ? "🛋️ Resting, labor is holding off" : "🚶 Up and about: labor can start while you're on your feet"}</span>
+    <span class="rest small" class:up={!resting}>{resting ? "🛋️ Resting: labor is holding off" : "🚶 Up and about: labor can start any time"}</span>
+    {#if hipWarning(status)}<span class="small warn">⚠️ {hipWarning(status)}</span>{/if}
   {/if}
   {#if isDue && settings?.labor.waitsForPartner && partner && status?.partnerHere === false}
     <span class="small muted">Ready when {partner} is here 💞</span>
@@ -114,6 +116,23 @@
     padding: 10px 12px;
     border-radius: var(--radius);
     background: color-mix(in srgb, var(--accent) 16%, transparent);
+  }
+  /* Resting status ("Resting holds off labor"), when it decides anything. */
+  .rest {
+    align-self: center;
+    padding: 4px 12px;
+    border-radius: 999px;
+    background: var(--bg-3);
+    font-weight: 700;
+  }
+  .warn {
+    padding: 6px 10px;
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--warn) 18%, transparent);
+    text-align: left;
+  }
+  .rest.up {
+    background: color-mix(in srgb, var(--ok) 20%, var(--bg-3));
   }
   .bar {
     position: relative;

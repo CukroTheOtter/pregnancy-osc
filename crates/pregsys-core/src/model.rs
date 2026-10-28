@@ -119,10 +119,6 @@ pub struct Settings {
     pub auto_add_avatars: bool,
     /// Closing the window keeps the app running in the tray (else it quits).
     pub close_to_tray: bool,
-    /// A tab in the SteamVR dashboard showing the app.
-    pub steamvr_dashboard: bool,
-    /// While in VR with the dashboard tab on, the desktop window stays hidden.
-    pub hide_window_in_vr: bool,
     pub heartbeat_sound: bool,
     pub sound_volume: f64,
     pub reveal_pulse: bool,
@@ -189,8 +185,6 @@ impl Default for Settings {
             exit_with_steamvr: false,
             auto_add_avatars: true,
             close_to_tray: true,
-            steamvr_dashboard: false,
-            hide_window_in_vr: true,
             heartbeat_sound: false,
             sound_volume: 0.5,
             reveal_pulse: true,

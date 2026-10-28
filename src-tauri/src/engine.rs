@@ -20,7 +20,9 @@ const TICK: Duration = Duration::from_millis(200);
 /// VRChat's built-in "you're AFK" parameter.
 const AFK_PARAM: &str = "AFK";
 /// VRChat's built-in posture and movement parameters (for "resting holds off labor").
-const POSTURE_PARAMS: [&str; 4] = ["Upright", "Seated", "InStation", "VelocityMagnitude"];
+const POSTURE_PARAMS: [&str; 5] = ["Upright", "Seated", "InStation", "VelocityMagnitude", "VRMode"];
+/// SteamVR posture older than this isn't used (SteamVR stopped answering).
+const VR_POSTURE_FRESH_MS: i64 = 3_000;
 /// `Upright` at or above this counts as standing (1 = fully upright).
 const UPRIGHT_STANDING: f32 = 0.7;
 /// Moving at least this fast (m/s) counts as walking around.
@@ -95,6 +97,8 @@ struct Posture {
     seated: bool,
     in_station: bool,
     velocity: f32,
+    /// VRChat is in VR mode (VRMode = 1).
+    vr: bool,
 }
 
 impl Posture {
@@ -105,14 +109,21 @@ impl Posture {
             "Seated" => self.seated = v > 0.5,
             "InStation" => self.in_station = v > 0.5,
             "VelocityMagnitude" => self.velocity = v,
+            "VRMode" => self.vr = v > 0.5,
             _ => return false,
         }
         true
     }
 
-    /// Standing: not in a seat or station, and upright (counts as up until VRChat says otherwise).
-    fn up(&self) -> bool {
-        !self.seated && !self.in_station && self.upright.is_none_or(|u| u >= UPRIGHT_STANDING)
+    /// Standing: not in a seat or station, and upright. In VR with SteamVR, its
+    /// tracking decides (playspace movers can't fool it); otherwise VRChat's
+    /// Upright (counts as up until VRChat says otherwise).
+    fn up(&self, steamvr_resting: Option<bool>) -> bool {
+        let upright = match steamvr_resting.filter(|_| self.vr) {
+            Some(resting) => !resting,
+            None => self.upright.is_none_or(|u| u >= UPRIGHT_STANDING),
+        };
+        !self.seated && !self.in_station && upright
     }
 }
 
@@ -857,6 +868,11 @@ impl Engine {
         self.labor_events(events, now);
     }
 
+    /// Resting by SteamVR's tracking, when it's reading and recent.
+    fn steamvr_resting(&self) -> Option<bool> {
+        self.shared.vr_posture.lock().unwrap().filter(|v| now_ms() - v.at_ms < VR_POSTURE_FRESH_MS).map(|v| v.reading.resting)
+    }
+
     /// What the engine knows about VRChat, for labor.
     fn labor_ctx(&self) -> pregsys_core::labor::Ctx {
         pregsys_core::labor::Ctx {
@@ -865,7 +881,7 @@ impl Engine {
             avatar_ready: self.driver.avatar_id().is_some() && !self.driver.loading(),
             supports: self.driver.knows_param("labor"),
             afk: self.afk,
-            up: self.posture.up(),
+            up: self.posture.up(self.steamvr_resting()),
             moving: self.posture.velocity >= WALKING_SPEED,
         }
     }
@@ -1067,8 +1083,15 @@ impl Engine {
         }
         st.labor_supported = self.driver.knows_param("labor");
         st.afk = self.afk;
-        st.up = self.posture.up();
+        st.up = self.posture.up(self.steamvr_resting());
         st.upright = self.posture.upright;
+        let vr = self.shared.vr_posture.lock().unwrap().filter(|v| now_ms() - v.at_ms < VR_POSTURE_FRESH_MS);
+        st.posture_source = if self.steamvr_resting().is_some() && self.posture.vr { "steamvr" } else { "vrchat" }.into();
+        st.vr_drop_m = vr.map(|v| v.reading.drop_m);
+        st.vr_lying = vr.and_then(|v| v.reading.lying);
+        st.vr_trackers = vr.map_or(0, |v| v.trackers);
+        st.vr_waist = vr.is_some_and(|v| v.waist);
+        st.vr_hip_tracked = vr.is_some_and(|v| v.hip_tracked);
         {
             let d = self.shared.data.lock().unwrap();
             let aid = self.driver.avatar_id();

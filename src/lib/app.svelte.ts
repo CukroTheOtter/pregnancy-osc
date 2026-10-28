@@ -96,6 +96,14 @@ export async function updatePregnancy(id: string, change: (p: Pregnancy) => void
   }
 }
 
+/** Shows Home after something happened in-game, unless you're testing in the
+ * Debug panel (Settings with debug mode on): then you stay where you are. */
+function showHome() {
+  if (app.view === "settings" && app.data?.settings.debug) return;
+  app.view = "home";
+  app.viewAvatarId = null;
+}
+
 export async function init() {
   await refresh();
   try {
@@ -109,14 +117,12 @@ export async function init() {
   await listen("data-changed", () => refresh());
   await listen("instance-changed", () => refresh());
   await listen("conception", () => {
-    app.view = "home";
-    app.viewAvatarId = null;
+    showHome();
     toast("A new little bean! 💕", "Conception was detected in-game, so the pregnancy has started.", "success", 10000);
     refresh();
   });
   await listen("fun", () => {
-    app.view = "home";
-    app.viewAvatarId = null;
+    showHome();
     refresh();
   });
   await listen<string[]>("achievements", (ids) => {
@@ -125,7 +131,7 @@ export async function init() {
     refresh();
   });
   await listen("reveal", () => {
-    app.view = "home";
+    showHome();
     refresh();
   });
   setInterval(() => (app.now = Date.now()), 1000);

@@ -65,14 +65,22 @@ pub struct Status {
     pub sps_found: Vec<String>,
     pub sps_live: Vec<SocketLive>,
     pub sps_progress: f64,
-    /// The app's tab is in the SteamVR dashboard.
-    pub steamvr_dashboard: bool,
     /// VRChat says you're AFK (labor waits).
     pub afk: bool,
     /// Standing up (not seated or lying down), for "resting holds off labor".
     pub up: bool,
     /// VRChat's Upright value, for tuning (debug).
     pub upright: Option<f32>,
+    /// Where "up or resting" comes from: "steamvr" or "vrchat".
+    pub posture_source: String,
+    /// SteamVR: headset below its highest (m), and lying down by the hip tracker.
+    pub vr_drop_m: Option<f32>,
+    pub vr_lying: Option<bool>,
+    /// SteamVR: full-body trackers, and whether one is set as your waist.
+    pub vr_trackers: u32,
+    pub vr_waist: bool,
+    /// SteamVR: the waist tracker is being tracked right now.
+    pub vr_hip_tracked: bool,
     /// The worn avatar can show labor (it has the labor parameter).
     pub labor_supported: bool,
     /// Another avatar sharing this pregnancy that can show labor (when this one can't).
@@ -87,6 +95,19 @@ pub struct Status {
     pub data_dir: String,
 }
 
+/// Your posture from SteamVR's tracking (see `steamvr_posture`).
+#[derive(Debug, Clone, Copy)]
+pub struct VrPosture {
+    pub reading: pregsys_core::posture::Reading,
+    /// Full-body trackers SteamVR has.
+    pub trackers: u32,
+    /// One of them is set as your waist (SteamVR > Manage Trackers).
+    pub waist: bool,
+    /// The waist tracker is being tracked right now.
+    pub hip_tracked: bool,
+    pub at_ms: i64,
+}
+
 pub struct Shared {
     pub data: Mutex<AppData>,
     pub store: Store,
@@ -99,6 +120,8 @@ pub struct Shared {
     pub load_warning: Mutex<Option<String>>,
     pub tray_available: AtomicBool,
     pub quitting: AtomicBool,
+    /// Posture from SteamVR, while "Resting holds off labor" is on and SteamVR runs.
+    pub vr_posture: Mutex<Option<VrPosture>>,
 }
 
 impl Shared {

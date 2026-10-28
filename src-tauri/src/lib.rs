@@ -4,7 +4,7 @@ mod commands;
 mod engine;
 mod pictures;
 mod state;
-mod steamvr_overlay;
+mod steamvr_posture;
 mod system;
 mod updates;
 
@@ -19,8 +19,6 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
 
 pub fn show_main(app: &AppHandle) {
-    // Parked off-screen for the SteamVR dashboard: bring it back first.
-    steamvr_overlay::unpark(app);
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.unminimize();
         let _ = w.show();
@@ -134,6 +132,7 @@ pub fn run() {
                 load_warning: Mutex::new(warning),
                 tray_available: AtomicBool::new(false),
                 quitting: AtomicBool::new(false),
+                vr_posture: Mutex::new(None),
             });
             app.manage(shared.clone());
 
@@ -142,7 +141,7 @@ pub fn run() {
             shared.tray_available.store(tray_ok, Ordering::SeqCst);
 
             engine::spawn(handle.clone(), shared.clone());
-            steamvr_overlay::spawn(handle.clone(), shared.clone());
+            steamvr_posture::spawn(handle.clone(), shared.clone());
 
             let start_in_tray = shared.data.lock().unwrap().settings.start_in_tray;
             let hide = tray_arg || (autostart_arg && start_in_tray);
@@ -220,6 +219,7 @@ pub fn run() {
             commands::debug_add_person,
             commands::debug_test_buddy,
             commands::debug_labor,
+            commands::debug_set_babies,
             commands::debug_remove_person,
             commands::debug_picture,
             commands::debug_kick,

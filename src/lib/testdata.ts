@@ -66,8 +66,6 @@ export function defaultSettings(): Settings {
     kicksWithPartner: false,
     autoAddAvatars: true,
     closeToTray: true,
-    steamvrDashboard: false,
-    hideWindowInVr: true,
     labor: { start: "random", induceWeek: null, minutes: 20, waitsForPartner: false, woohooStarts: false, quietEarly: false, restingHolds: false },
     sps: { enabled: true, types: { vaginal: true, anal: false, oral: false, other: false }, depth: 0.3, seconds: 20, gapSeconds: 120 },
     onboarded: false,

@@ -121,9 +121,14 @@ function status(): Status {
       return { name, channel: "PenOthersNewRoot", value: 0, holeType: typeOf(a, name), counts: socketCounts(data.settings, a, name) };
     }),
     spsProgress: 0,
-    steamvrDashboard: false,
     up: true,
     upright: null,
+    postureSource: "vrchat",
+    vrDropM: null,
+    vrLying: null,
+    vrTrackers: 0,
+    vrWaist: false,
+    vrHipTracked: false,
     laborSupported: true,
     laborAvatar: null,
     partnerHere: p && p.partner.name ? data.instance.present.some((x) => x.name === p.partner.name) : null,
@@ -574,6 +579,20 @@ export const mock = {
         endPregnancy(p.id);
         p.born = true;
       }
+    }
+    changed();
+  },
+  async debug_set_babies({ count }: { count: number }) {
+    const n = Math.min(4, Math.max(1, Math.round(count)));
+    const p = pregnancyFor(data, data.currentAvatarId);
+    if (p) {
+      p.babyCount = n;
+      p.babies = Array.from({ length: n }, (_, i) => p.babies[i] ?? baby(i));
+      p.genders = Array.from({ length: n }, (_, i) => p.genders[i] ?? (Math.random() < 0.5 ? "girl" : "boy"));
+    } else {
+      const w = pendingFor(data, data.currentAvatarId);
+      if (!w) throw new Error("Not pregnant or waiting on this avatar.");
+      w.babyCount = n;
     }
     changed();
   },

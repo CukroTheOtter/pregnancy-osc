@@ -434,6 +434,30 @@ pub fn debug_labor(app: AppHandle, s: S, skip: Option<pregsys_core::labor::Skip>
     Ok(())
 }
 
+/// Debug: how many babies (1 to 4), on the pregnancy you're wearing, or on
+/// the grace period if you're still waiting to find out.
+#[tauri::command]
+pub fn debug_set_babies(app: AppHandle, s: S, count: u32) -> R<()> {
+    let count = count.clamp(1, 4);
+    {
+        let mut d = s.data.lock().unwrap();
+        let aid = d.current_avatar_id.clone();
+        if let Some(id) = d.current_pregnancy_id(aid.as_deref()) {
+            let p = d.pregnancy_mut(&id).ok_or("Pregnancy not found.")?;
+            p.baby_count = count;
+            p.sync_babies();
+            actions::ensure_genders(p);
+        } else {
+            let global = d.settings.sync_scope == pregsys_core::model::SyncScope::Global;
+            let owner = d.owner(aid.as_deref());
+            let w = d.waiting.iter_mut().find(|w| global || w.avatar_id == owner).ok_or("Not pregnant or waiting on this avatar.")?;
+            w.baby_count = count;
+        }
+    }
+    changed(&app, &s, true);
+    Ok(())
+}
+
 /// Debug: someone leaves the instance.
 #[tauri::command]
 pub fn debug_remove_person(app: AppHandle, s: S, name: String, user_id: Option<String>) {

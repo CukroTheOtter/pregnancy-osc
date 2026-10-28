@@ -79,6 +79,8 @@ export const api = {
   debugTestBuddy: (on: boolean) => call<void>("debug_test_buddy", { on }),
   /** Debug: start labor (null) or move it along. */
   debugLabor: (skip: "minute" | "nextPhase" | "birth" | null) => call<void>("debug_labor", { skip }),
+  /** Debug: how many babies (1 to 4) on this pregnancy or grace period. */
+  debugSetBabies: (count: number) => call<void>("debug_set_babies", { count }),
   debugKick: (strength: import("./types").KickStrength) => call<void>("debug_kick", { strength }),
   debugAddPerson: (name: string, userId: string | null) => call<void>("debug_add_person", { name, userId }),
   debugRemovePerson: (name: string, userId: string | null) => call<void>("debug_remove_person", { name, userId }),
