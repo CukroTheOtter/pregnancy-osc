@@ -43,19 +43,29 @@ pub fn find_log_dir() -> Option<PathBuf> {
 /// next to the logs). VRChat writes it when the avatar loads with OSC on, so
 /// it matches the ID exactly, unlike the log, which only has the name.
 pub fn osc_avatar_name(vrchat_dir: &Path, avatar_id: &str) -> Option<String> {
+    osc_avatar_files(vrchat_dir, avatar_id)
+        .find_map(|json| json.get("name").and_then(|n| n.as_str()).map(str::trim).filter(|n| !n.is_empty()).map(str::to_string))
+}
+
+/// The avatar's parameter names from the same file (built-ins like AFK
+/// included), for avatars the app hasn't read over OSCQuery yet.
+pub fn osc_avatar_params(vrchat_dir: &Path, avatar_id: &str) -> Option<Vec<String>> {
+    osc_avatar_files(vrchat_dir, avatar_id).find_map(|json| {
+        let list = json.get("parameters")?.as_array()?;
+        let names: Vec<String> = list.iter().filter_map(|p| p.get("name")?.as_str().map(str::to_string)).collect();
+        (!names.is_empty()).then_some(names)
+    })
+}
+
+/// VRChat's OSC files for an avatar (one per VRChat account that wore it).
+fn osc_avatar_files(vrchat_dir: &Path, avatar_id: &str) -> impl Iterator<Item = serde_json::Value> {
     let valid = avatar_id.starts_with("avtr_") && avatar_id[5..].chars().all(|c| c.is_ascii_hexdigit() || c == '-');
-    if !valid {
-        return None;
-    }
-    for user in std::fs::read_dir(vrchat_dir.join("OSC")).ok()?.flatten() {
-        let path = user.path().join("Avatars").join(format!("{avatar_id}.json"));
-        let Ok(text) = std::fs::read_to_string(&path) else { continue };
-        let json: serde_json::Value = serde_json::from_str(text.trim_start_matches('\u{feff}')).ok()?;
-        if let Some(name) = json.get("name").and_then(|n| n.as_str()).map(str::trim).filter(|n| !n.is_empty()) {
-            return Some(name.to_string());
-        }
-    }
-    None
+    let users = if valid { std::fs::read_dir(vrchat_dir.join("OSC")).ok() } else { None };
+    let file = format!("{avatar_id}.json");
+    users.into_iter().flatten().flatten().filter_map(move |user| {
+        let text = std::fs::read_to_string(user.path().join("Avatars").join(&file)).ok()?;
+        serde_json::from_str(text.trim_start_matches('\u{feff}')).ok()
+    })
 }
 
 /// Newest `output_log_*.txt` in a folder.
@@ -150,6 +160,9 @@ mod tests {
         assert_eq!(osc_avatar_name(&dir, "avtr_ab-12").as_deref(), Some("Fox （OwO Edition）"));
         assert_eq!(osc_avatar_name(&dir, "avtr_ff"), None);
         assert_eq!(osc_avatar_name(&dir, "../avtr_ab-12"), None, "only real avatar IDs");
+        assert_eq!(osc_avatar_params(&dir, "avtr_ab-12"), None, "no parameters listed");
+        std::fs::write(avatars.join("avtr_cd.json"), r#"{"id":"avtr_cd","name":"Cat","parameters":[{"name":"AFK"},{"name":"Pregnancy/Stage"}]}"#).unwrap();
+        assert_eq!(osc_avatar_params(&dir, "avtr_cd"), Some(vec!["AFK".to_string(), "Pregnancy/Stage".to_string()]));
         let _ = std::fs::remove_dir_all(&dir);
     }
     use crate::logparse::LogEvent;

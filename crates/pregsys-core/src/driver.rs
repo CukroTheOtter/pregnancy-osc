@@ -3,6 +3,7 @@
 
 use crate::mapping::{Mapping, ParamType, SyncRole};
 use crate::fertility;
+use crate::labor;
 use crate::movement::{self, KickStrength};
 use crate::model::AppData;
 use crate::timeline::TERM_WEEKS;
@@ -57,6 +58,10 @@ pub const SYNC_HOLD_MS: i64 = 2_000;
 /// log's "Switching" line until the new avatar has loaded), so the new
 /// avatar's belly isn't seen during the wait. Sent too early it's lost, so repeat.
 const HIDE_REPEAT_MS: i64 = 500;
+/// After a birth the belly goes down over this long (instead of in one go).
+const BIRTH_SHRINK_MS: i64 = 10_000;
+/// A pregnancy that ended with a birth this recently gets the slow shrink.
+const JUST_BORN_MS: i64 = 15_000;
 
 /// What happened to a reported parameter value (see [`Driver::on_sync_param`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -126,6 +131,12 @@ pub struct Driver {
     kicks_sent: Vec<KickStrength>,
     /// Debug: a kick to send on the next tick.
     forced_kick: Option<KickStrength>,
+    /// Labor: when the next contraction is due.
+    next_contraction_ms: Option<i64>,
+    /// The partner was here last tick (their arrival gets a kick).
+    partner_was_here: bool,
+    /// Just born: the belly goes down from (when, belly, extra size).
+    birth: Option<(i64, f32, f32)>,
     /// Sends produced by helpers during a tick.
     extra: Vec<Send>,
 }
@@ -166,6 +177,9 @@ impl Driver {
             kick_reset_ms: None,
             kicks_sent: Vec::new(),
             forced_kick: None,
+            next_contraction_ms: None,
+            partner_was_here: false,
+            birth: None,
             extra: Vec::new(),
         }
     }
@@ -316,6 +330,16 @@ impl Driver {
     /// In-game sync values are being ignored right now (a new avatar is loading).
     pub fn sync_ignored(&self, now_ms: i64) -> bool {
         self.sync_until_ms.is_some_and(|t| now_ms < t) || self.sync_ignore_until_ms.is_some_and(|t| now_ms < t)
+    }
+
+    /// The worn avatar has this parameter (or its list isn't known yet).
+    pub fn has_param(&self, key: &str) -> bool {
+        self.name_for(key).is_some()
+    }
+
+    /// The worn avatar is known to have this parameter (its list has been read).
+    pub fn knows_param(&self, key: &str) -> bool {
+        self.avatar_params.is_some() && self.name_for(key).is_some()
     }
 
     pub fn avatar_param_names(&self) -> Option<&[String]> {
@@ -476,8 +500,23 @@ impl Driver {
             }
         }
 
+        // The baby was just born: the belly goes down over a few seconds.
+        if preg.is_none() && self.birth.is_none() && self.belly_up && just_born(data, now_ms) {
+            let last_f = |k: &str| match self.last_sent.get(k) {
+                Some(ParamValue::Float(f)) => Some(*f),
+                _ => None,
+            };
+            self.birth = Some((now_ms, last_f("stage").unwrap_or(1.0), last_f("bellyExtra").unwrap_or(0.0)));
+        }
+
         // Optional extras: only sent when changed.
         let force = self.need_profile;
+        let labor = match (self.birth, preg.and_then(|p| p.labor.as_ref())) {
+            (Some(_), _) => labor::BORN_VALUE,
+            (None, Some(l)) if labor::shown(l, &data.settings.labor) => l.phase.value(),
+            _ => 0,
+        };
+        self.push(&mut out, "labor", ParamValue::Int(labor), force);
         // Babies are only shown once they could be seen on a scan.
         let count = match preg {
             Some(p) if p.timeline.progress(now_ms) * TERM_WEEKS >= fertility::BABY_REVEAL_WEEK => p.baby_count as i32,
@@ -502,8 +541,8 @@ impl Driver {
             Some(ParamValue::Float(f)) => Some(*f),
             _ => None,
         };
-        if paused {
-            // Paused: leave the extra size alone.
+        if paused || self.birth.is_some() {
+            // Paused: leave the extra size alone. Just born: it goes down with the belly.
         } else if force || last_extra.is_none_or(|l| (extra - l).abs() >= self.mapping.min_stage_change as f32 || (extra == 0.0 && l != 0.0)) {
             self.push(&mut out, "bellyExtra", ParamValue::Float(extra), force);
         }
@@ -515,7 +554,17 @@ impl Driver {
             Some(ParamValue::Float(f)) => Some(*f),
             _ => None,
         };
-        if paused {
+        if let Some((t0, belly, extra)) = self.birth {
+            let left = 1.0 - ((now_ms - t0) as f32 / BIRTH_SHRINK_MS as f32).clamp(0.0, 1.0);
+            self.push(&mut out, "stage", ParamValue::Float(belly * left), true);
+            self.push(&mut out, "bellyExtra", ParamValue::Float(extra * left), true);
+            self.last_stage_ms = now_ms;
+            if left <= 0.0 {
+                self.birth = None;
+                self.belly_up = false;
+                self.push(&mut out, "labor", ParamValue::Int(0), true);
+            }
+        } else if paused {
             // Paused: leave the belly alone.
         } else if preg.is_some() {
             let changed = last.is_none_or(|l| (stage - l).abs() >= self.mapping.min_stage_change as f32);
@@ -569,7 +618,20 @@ impl Driver {
         Some(Send { key: "fetalMovement".into(), name, value })
     }
 
+    fn send_contraction(&mut self, now_ms: i64) -> Option<Send> {
+        let name = self.name_for("fetalMovement")?;
+        self.kick_reset_ms = Some(now_ms + labor::CONTRACTION_MS);
+        Some(Send { key: "fetalMovement".into(), name, value: ParamValue::Int(self.mapping.kicks.contraction) })
+    }
+
     fn tick_kicks(&mut self, now_ms: i64, data: &AppData, preg: Option<&crate::model::Pregnancy>) -> Option<()> {
+        // The partner being here makes the baby busier (if that's on).
+        let boost = data.settings.kicks_with_partner && preg.and_then(|p| labor::partner_here(data, p, now_ms)) == Some(true);
+        if boost && !self.partner_was_here && preg.is_some_and(|p| p.labor.is_none()) {
+            // They just arrived: a little kick soon.
+            self.next_kick_ms = Some(now_ms + 5_000 + (15_000.0 * fertility::roll()) as i64);
+        }
+        self.partner_was_here = boost;
         // A pending reset back to 0 comes first.
         if let Some(t) = self.kick_reset_ms {
             if now_ms >= t {
@@ -587,6 +649,24 @@ impl Driver {
         }
         let s = &data.settings;
         let p = preg?;
+        // In labor: contractions instead of kicks (quiet early labor keeps kicking).
+        if let Some(l) = p.labor.as_ref().filter(|l| labor::shown(l, &s.labor)) {
+            self.next_kick_ms = None;
+            if l.paused || p.timeline.is_paused() {
+                self.next_contraction_ms = None;
+                return None;
+            }
+            let gap = l.contraction_gap_ms(s.labor.minutes, boost);
+            let due = *self.next_contraction_ms.get_or_insert(now_ms + gap);
+            if now_ms >= due {
+                self.next_contraction_ms = Some(now_ms + gap);
+                if let Some(c) = self.send_contraction(now_ms) {
+                    self.extra.push(c);
+                }
+            }
+            return Some(());
+        }
+        self.next_contraction_ms = None;
         if !s.kicks || p.timeline.is_paused() {
             self.next_kick_ms = None;
             return None;
@@ -596,12 +676,15 @@ impl Driver {
             self.next_kick_ms = None;
             return None;
         }
-        let due = *self.next_kick_ms.get_or_insert_with(|| now_ms + movement::next_kick_delay_ms(s.kick_frequency, p.baby_count, fertility::roll()));
+        // Busier with the partner here: twice as often, and stronger.
+        let delay = || movement::next_kick_delay_ms(s.kick_frequency, p.baby_count, fertility::roll()) / if boost { 2 } else { 1 };
+        let due = *self.next_kick_ms.get_or_insert_with(|| now_ms + delay());
         if now_ms < due {
             return Some(());
         }
-        self.next_kick_ms = Some(now_ms + movement::next_kick_delay_ms(s.kick_frequency, p.baby_count, fertility::roll()));
-        let strength = movement::pick_strength(week, s.allowed_kicks, fertility::roll())?;
+        self.next_kick_ms = Some(now_ms + delay());
+        let roll = if boost { fertility::roll().sqrt() } else { fertility::roll() };
+        let strength = movement::pick_strength(week, s.allowed_kicks, roll)?;
         if let Some(k) = self.send_kick(now_ms, strength) {
             self.extra.push(k);
         }
@@ -624,6 +707,11 @@ impl Driver {
         self.push(&mut out, "appActive", ParamValue::Bool(false), true);
         out
     }
+}
+
+/// A pregnancy just ended with a birth (the belly goes down slowly).
+fn just_born(data: &AppData, now_ms: i64) -> bool {
+    data.pregnancies.iter().any(|p| p.born && p.ended_ms.is_some_and(|e| (0..JUST_BORN_MS).contains(&(now_ms - e))))
 }
 
 #[cfg(test)]
@@ -826,6 +914,18 @@ mod tests {
         let n = names(&out);
         assert!(n.contains(&"stage"));
         assert!(!n.contains(&"babyCount") && !n.contains(&"waiting") && !n.contains(&"appActive"));
+    }
+
+    #[test]
+    fn a_parameter_is_only_known_once_the_list_is_read() {
+        let mut d = Driver::new(Mapping::default());
+        d.on_avatar_change("avtr_1", 0);
+        assert!(d.has_param("labor") && !d.knows_param("labor"), "list not read yet");
+        d.set_avatar_params(vec![("Pregnancy/Stage".into(), Some(0.0))], 0);
+        assert!(!d.has_param("labor") && !d.knows_param("labor"));
+        d.on_avatar_change("avtr_2", 10_000);
+        d.set_avatar_params(vec![("Pregnancy/Labor".into(), Some(0.0))], 20_000);
+        assert!(d.knows_param("labor"));
     }
 
     #[test]
@@ -1123,5 +1223,63 @@ mod tests {
         let out = d.handoff(T0 + 140 * DAY_MS, &data_pregnant());
         assert_eq!(names(&out), vec!["stage", "appActive"]);
         assert_eq!(out[1].value, ParamValue::Bool(false));
+    }
+
+    #[test]
+    fn labor_sends_its_phase_and_contractions_instead_of_kicks() {
+        let mut d = Driver::new(Mapping::default());
+        d.set_connected(true);
+        let mut data = data_pregnant();
+        let start = T0 + 280 * DAY_MS;
+        data.pregnancies[0].labor = Some(crate::labor::Labor::new(false, 20, start));
+        let val = |out: &[Send], k: &str| out.iter().find(|s| s.key == k).map(|s| s.value);
+        assert_eq!(val(&d.tick(start, &data), "labor"), Some(ParamValue::Int(1)));
+        // The first contraction 5 minutes in, held for 30 s.
+        let mut seen = vec![];
+        for i in 1..=400 {
+            if let Some(v) = val(&d.tick(start + i * 1000, &data), "fetalMovement") {
+                seen.push((i, v));
+            }
+        }
+        assert_eq!(seen, vec![(300, ParamValue::Int(4)), (330, ParamValue::Int(0))]);
+        assert!(d.take_kicks().is_empty(), "contractions aren't kicks");
+        // Paused labor (another avatar): no contractions.
+        data.pregnancies[0].labor.as_mut().unwrap().paused = true;
+        assert!((401..1000).all(|i| val(&d.tick(start + i * 1000, &data), "fetalMovement").is_none()));
+    }
+
+    #[test]
+    fn quiet_early_labor_looks_like_no_labor() {
+        let mut d = Driver::new(Mapping::default());
+        d.set_connected(true);
+        let mut data = data_pregnant();
+        data.settings.labor.quiet_early = true;
+        let start = T0 + 280 * DAY_MS;
+        data.pregnancies[0].labor = Some(crate::labor::Labor::new(false, 20, start));
+        let val = |out: &[Send], k: &str| out.iter().find(|s| s.key == k).map(|s| s.value);
+        assert_eq!(val(&d.tick(start, &data), "labor"), Some(ParamValue::Int(0)));
+        let contraction = (1..=600).any(|i| val(&d.tick(start + i * 1000, &data), "fetalMovement") == Some(ParamValue::Int(4)));
+        assert!(!contraction, "no contractions before the water breaks");
+        data.pregnancies[0].labor.as_mut().unwrap().phase = crate::labor::Phase::Active;
+        assert_eq!(val(&d.tick(start + 700_000, &data), "labor"), Some(ParamValue::Int(2)));
+    }
+
+    #[test]
+    fn after_a_birth_the_belly_goes_down_slowly() {
+        let mut d = Driver::new(Mapping::default());
+        d.set_connected(true);
+        let mut data = data_pregnant();
+        let t = T0 + 280 * DAY_MS;
+        assert_eq!(stage_of(&d.tick(t, &data)), Some(1.0));
+        crate::actions::give_birth(&mut data, "p", t + 100);
+        let out = d.tick(t + 200, &data);
+        assert!(stage_of(&out).unwrap() > 0.9);
+        assert_eq!(out.iter().find(|s| s.key == "labor").map(|s| s.value), Some(ParamValue::Int(crate::labor::BORN_VALUE)));
+        let half = stage_of(&d.tick(t + 200 + BIRTH_SHRINK_MS / 2, &data)).unwrap();
+        assert!((half - 0.5).abs() < 0.05, "{half}");
+        let out = d.tick(t + 200 + BIRTH_SHRINK_MS, &data);
+        assert_eq!(stage_of(&out), Some(0.0));
+        assert_eq!(out.iter().find(|s| s.key == "labor").map(|s| s.value), Some(ParamValue::Int(0)));
+        assert_eq!(stage_of(&d.tick(t + 100_000, &data)), None, "then left alone");
     }
 }

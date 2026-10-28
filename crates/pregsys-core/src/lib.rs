@@ -7,6 +7,7 @@ pub mod controls;
 pub mod driver;
 pub mod fertility;
 pub mod instance;
+pub mod labor;
 pub mod logparse;
 pub mod logwatch;
 pub mod mapping;
@@ -15,6 +16,7 @@ pub mod movement;
 pub mod sps;
 pub mod stage;
 pub mod storage;
+pub mod testbuddy;
 pub mod timeline;
 
 /// Current time in Unix milliseconds.

@@ -65,6 +65,24 @@ pub struct Status {
     pub sps_found: Vec<String>,
     pub sps_live: Vec<SocketLive>,
     pub sps_progress: f64,
+    /// The app's tab is in the SteamVR dashboard.
+    pub steamvr_dashboard: bool,
+    /// VRChat says you're AFK (labor waits).
+    pub afk: bool,
+    /// Standing up (not seated or lying down), for "resting holds off labor".
+    pub up: bool,
+    /// VRChat's Upright value, for tuning (debug).
+    pub upright: Option<f32>,
+    /// The worn avatar can show labor (it has the labor parameter).
+    pub labor_supported: bool,
+    /// Another avatar sharing this pregnancy that can show labor (when this one can't).
+    pub labor_avatar: Option<String>,
+    /// The current pregnancy's partner is in the instance (None = can't tell).
+    pub partner_here: Option<bool>,
+    /// Labor time so far on the current pregnancy (for the progress bar).
+    pub labor_elapsed_ms: Option<i64>,
+    /// Labor is waiting right now (the saved copy only updates now and then).
+    pub labor_paused: Option<bool>,
     pub mapping_path: String,
     pub data_dir: String,
 }

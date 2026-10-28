@@ -1,19 +1,20 @@
 <script lang="ts">
-  let { checked = $bindable(false), label, hint = "", onchange }: { checked?: boolean; label: string; hint?: string; onchange?: (v: boolean) => void } = $props();
+  let { checked = $bindable(false), label, hint = "", disabled = false, onchange }: { checked?: boolean; label: string; hint?: string; disabled?: boolean; onchange?: (v: boolean) => void } = $props();
 </script>
 
-<label class="toggle">
+<label class="toggle" class:disabled>
   <span class="text">
     <span class="label">{label}</span>
     {#if hint}<span class="hint">{hint}</span>{/if}
   </span>
-  <input type="checkbox" role="switch" bind:checked onchange={() => onchange?.(checked)} />
+  <input type="checkbox" role="switch" bind:checked {disabled} onchange={() => onchange?.(checked)} />
   <span class="track" aria-hidden="true"><span class="knob"></span></span>
 </label>
 
 <style>
   /* relative: keeps the hidden checkbox inside the switch, so focusing it never scrolls the window */
   .toggle { display: flex; align-items: center; gap: 12px; cursor: pointer; padding: 6px 0; position: relative; }
+  .toggle.disabled { opacity: 0.55; cursor: default; }
   .text { flex: 1; display: flex; flex-direction: column; }
   .label { font-weight: 700; }
   .hint { color: var(--muted); font-size: 0.82rem; }

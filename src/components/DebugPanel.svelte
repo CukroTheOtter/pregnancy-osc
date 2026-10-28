@@ -51,7 +51,14 @@
     }
   }
 
+  // Late on, a WooHoo while pregnant can start labor (Labor and birth setting).
+  const laborWoohoo = $derived(!!p && !p.labor && !!d.settings.labor.woohooStarts && progress(p.timeline, app.now) * TERM_WEEKS >= 37);
+
   async function woohoo(outcome: boolean | null) {
+    if (laborWoohoo) {
+      await run(outcome === false ? "WooHoo (no labor)" : outcome ? "WooHoo (labor)" : "WooHoo (maybe labor)", () => api.debugWoohoo(outcome));
+      return;
+    }
     if (p) {
       toast("Already pregnant", "End or finish this pregnancy first (a WooHoo is ignored while pregnant).", "info");
       return;
@@ -104,12 +111,25 @@
 
   <div class="group">
     <strong>💕 Pretend a WooHoo</strong>
-    <span class="muted small">{p ? "You're pregnant on this avatar, so WooHoos are ignored." : w ? "Waiting already: another WooHoo is a second chance if the first didn't take." : "Uses who's in your instance right now for the partner guess."}</span>
+    <span class="muted small">{laborWoohoo ? "Week 37 or later: a WooHoo can start labor here (💕 starts it, 🤍 doesn't)." : p ? "You're pregnant on this avatar, so WooHoos are ignored." : w ? "Waiting already: another WooHoo is a second chance if the first didn't take." : "Uses who's in your instance right now for the partner guess."}</span>
     <div class="row">
-      <button class="small" onclick={() => woohoo(null)} disabled={!!p}>🎲 Random</button>
-      <button class="small" onclick={() => woohoo(true)} disabled={!!p}>💕 Pregnant</button>
-      <button class="small soft" onclick={() => woohoo(false)} disabled={!!p}>🤍 Not this time</button>
+      <button class="small" onclick={() => woohoo(null)} disabled={!!p && !laborWoohoo}>🎲 Random</button>
+      <button class="small" onclick={() => woohoo(true)} disabled={!!p && !laborWoohoo}>💕 {laborWoohoo ? "Labor" : "Pregnant"}</button>
+      <button class="small soft" onclick={() => woohoo(false)} disabled={!!p && !laborWoohoo}>🤍 Not this time</button>
     </div>
+  </div>
+
+  <div class="group">
+    <strong>🐰 Test Buddy</strong>
+    <span class="muted small">A pretend partner in your instance, with a made-up picture, a few past WooHoos and a past baby. Test with them so your real partner stats stay clean.</span>
+    <label class="note">
+      <input type="checkbox" checked={!!d.testBuddySince} onchange={(e) => run(e.currentTarget.checked ? "Test Buddy is here" : "Test Buddy removed", () => api.debugTestBuddy(e.currentTarget.checked))} />
+      <span>Test Buddy is here</span>
+    </label>
+    {#if d.testBuddySince}
+      <span class="muted small">Turning this off (or debug mode) removes Test Buddy and everything with them: WooHoos, pregnancies, grace periods, and achievements they unlocked.</span>
+      <button class="small soft" style="align-self:flex-start" onclick={() => run("Test Buddy's stats cleared", async () => { await api.debugTestBuddy(false); await api.debugTestBuddy(true); })}>🧹 Reset their stats</button>
+    {/if}
   </div>
 
   <div class="group">
@@ -160,6 +180,26 @@
     <strong>⏩ Grace period</strong>
     <span class="muted small">{d.waiting.length ? `${d.waiting.length} waiting.` : "Nothing waiting right now."}</span>
     <button class="small soft" onclick={() => run("Reveal now", api.debugRevealNow)} disabled={!d.waiting.length}>Find out now</button>
+  </div>
+
+  <div class="group">
+    <strong>⏩ Labor</strong>
+    <span class="muted small">
+      {#if !p}Not pregnant on this avatar.{:else if p.labor}In labor: {p.labor.phase === "early" ? "early" : p.labor.phase === "active" ? "water broke" : "pushing"}. Skips play out within a second, with the real events.{:else}Not in labor yet. Starting it here skips the week and avatar checks.{/if}
+    </span>
+    <div class="row">
+      <button class="small" onclick={() => run("Labor started", () => api.debugLabor(null))} disabled={!p || !!p.labor}>🤰 Start labor</button>
+      <button class="small soft" onclick={() => run("+1 minute", () => api.debugLabor("minute"))} disabled={!p?.labor}>+1 min</button>
+      <button class="small soft" onclick={() => run("Next phase", () => api.debugLabor("nextPhase"))} disabled={!p?.labor}>⏭ Next phase</button>
+      <button class="small soft" onclick={() => run("Born", () => api.debugLabor("birth"))} disabled={!p?.labor}>🍼 Born now</button>
+    </div>
+    {#if p?.labor && st?.laborPaused}<span class="small warn-text">Labor is paused right now, so skips wait until it runs again.</span>{/if}
+  </div>
+
+  <div class="group">
+    <strong>🧍 Posture</strong>
+    <span class="muted small">For "Resting holds off labor". Standing counts from Upright 0.7, unless you're in a seat.</span>
+    <span class="small">Upright {st?.upright != null ? st.upright.toFixed(2) : "not heard yet"} · {st?.up === false ? "🛋️ resting" : "🚶 up"}{st?.afk ? " · 💤 AFK" : ""}</span>
   </div>
 
   <div class="group">

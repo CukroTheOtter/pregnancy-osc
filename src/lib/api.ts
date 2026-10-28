@@ -41,6 +41,7 @@ export const api = {
     call<void>("set_waiting_partner", { timeMs, person, name, random }),
   saveAvatar: (profile: AvatarProfile) => call<void>("save_avatar", { profile }),
   deleteAvatar: (id: string) => call<void>("delete_avatar", { id }),
+  deleteAvatars: (ids: string[]) => call<void>("delete_avatars", { ids }),
   createGroup: (name: string, avatarIds: string[]) => call<string>("create_group", { name, avatarIds }),
   setAvatarGroup: (avatarId: string, groupId: string | null) => call<void>("set_avatar_group", { avatarId, groupId }),
   renameGroup: (id: string, name: string) => call<void>("rename_group", { id, name }),
@@ -71,8 +72,13 @@ export const api = {
   simulateConception: () => call<void>("simulate_conception"),
   partnerPicture: (userId: string) => call<string | null>("partner_picture", { userId }),
   giveBirth: (id: string) => call<void>("give_birth", { id }),
+  startLabor: (id: string) => call<void>("start_labor", { id }),
   debugWoohoo: (outcome: boolean | null) => call<void>("debug_woohoo", { outcome }),
   debugRevealNow: () => call<void>("debug_reveal_now"),
+  /** Debug: add Test Buddy, or remove them and everything they touched. */
+  debugTestBuddy: (on: boolean) => call<void>("debug_test_buddy", { on }),
+  /** Debug: start labor (null) or move it along. */
+  debugLabor: (skip: "minute" | "nextPhase" | "birth" | null) => call<void>("debug_labor", { skip }),
   debugKick: (strength: import("./types").KickStrength) => call<void>("debug_kick", { strength }),
   debugAddPerson: (name: string, userId: string | null) => call<void>("debug_add_person", { name, userId }),
   debugRemovePerson: (name: string, userId: string | null) => call<void>("debug_remove_person", { name, userId }),

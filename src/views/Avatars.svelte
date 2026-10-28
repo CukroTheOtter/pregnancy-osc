@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import AvatarPic, { lookupAvatar } from "../components/AvatarPic.svelte";
   import AvatarPicker from "../components/AvatarPicker.svelte";
+  import Toggle from "../components/Toggle.svelte";
   import { app, confirmAsk, errorToast, toast } from "../lib/app.svelte";
   import { api, inTauri } from "../lib/api";
   import { avatarName, groupMembers, pendingFor, pregnancyFor } from "../lib/scope";
@@ -33,6 +34,30 @@
       });
     }
   });
+
+  async function setAutoAdd(on: boolean) {
+    const s: Settings = { ...($state.snapshot(d.settings) as Settings), autoAddAvatars: on };
+    try {
+      await api.saveSettings(s);
+      app.data!.settings.autoAddAvatars = on;
+    } catch (e) {
+      errorToast(e);
+    }
+  }
+
+  async function removeWithout() {
+    const ids = shelves.other.map((p) => p.id);
+    const n = ids.length;
+    const back = d.settings.autoAddAvatars ? " They come back if you wear them again." : "";
+    if (await confirmAsk({ title: `Remove ${n} avatar${n === 1 ? "" : "s"}?`, text: `Every avatar without the Pregnancy System is removed from the list.${back}`, ok: "Remove all", danger: true })) {
+      try {
+        await api.deleteAvatars(ids);
+        toast(`Removed ${n} avatar${n === 1 ? "" : "s"}`, undefined, "success");
+      } catch (e) {
+        errorToast(e);
+      }
+    }
+  }
 
   async function turnOnPictures() {
     const s: Settings = { ...($state.snapshot(d.settings) as Settings), showPictures: true };
@@ -415,7 +440,8 @@
         {#if perAvatar}<button class="small soft" onclick={() => startNewGroup()}>+ Group</button>{/if}
         <button class="small" onclick={openAdd}>+ Avatar</button>
       </div>
-      <span class="muted small">Avatars are added on their own when you wear them. Ones you haven't worn in a while, or that don't have the Pregnancy System, fold away at the bottom.</span>
+      <Toggle checked={d.settings.autoAddAvatars} label="Add avatars I wear" hint={d.settings.autoAddAvatars ? "New avatars show up here when you wear them" : "Only avatars you add yourself (+ Avatar) are listed"} onchange={setAutoAdd} />
+      <span class="muted small">Ones you haven't worn in a while, or that don't have the Pregnancy System, fold away at the bottom.</span>
       {#if !d.settings.showPictures}
         <div class="row pics-off">
           <span class="grow small">Thumbnails are off.</span>
@@ -512,7 +538,10 @@
         {#if shelves.other.length}
           <details>
             <summary><strong>🚫 Without the Pregnancy System</strong> <span class="muted small">{shelves.other.length}</span></summary>
-            <span class="hint">VRChat didn't show any <code>Pregnancy/</code> parameters on these.</span>
+            <div class="row other-head">
+              <span class="hint grow">VRChat didn't show any <code>Pregnancy/</code> parameters on these. Only the 15 worn most recently are kept.</span>
+              <button class="small soft" onclick={removeWithout}>🗑 Remove all</button>
+            </div>
             {#each shelves.other as p (p.id)}
               {@render row(p, perAvatar)}
             {/each}
@@ -524,6 +553,11 @@
 </div>
 
 <style>
+  .other-head {
+    gap: 8px;
+    align-items: center;
+    margin: 4px 0 6px;
+  }
   .page {
     max-width: 560px;
     margin: 0 auto;
@@ -589,7 +623,7 @@
   :global(h2) + .avatar,
   .status + .avatar,
   summary + .avatar,
-  .hint + .avatar {
+  .other-head + .avatar {
     border-top: none;
   }
   .edit {

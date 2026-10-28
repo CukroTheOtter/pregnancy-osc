@@ -17,6 +17,14 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 
 const TICK: Duration = Duration::from_millis(200);
+/// VRChat's built-in "you're AFK" parameter.
+const AFK_PARAM: &str = "AFK";
+/// VRChat's built-in posture and movement parameters (for "resting holds off labor").
+const POSTURE_PARAMS: [&str; 4] = ["Upright", "Seated", "InStation", "VelocityMagnitude"];
+/// `Upright` at or above this counts as standing (1 = fully upright).
+const UPRIGHT_STANDING: f32 = 0.7;
+/// Moving at least this fast (m/s) counts as walking around.
+const WALKING_SPEED: f32 = 0.6;
 
 pub fn spawn(app: AppHandle, shared: Arc<Shared>) {
     let (tx, rx) = mpsc::channel();
@@ -67,6 +75,45 @@ struct Engine {
     linked: bool,
     /// Debug chatbox: when the last "belly put back" note was shown.
     last_snap_note: Option<Instant>,
+    /// Starts labor when it's due and moves it along.
+    labor: pregsys_core::labor::Watch,
+    /// VRChat's built-in AFK parameter (labor waits while it's on).
+    afk: bool,
+    /// VRChat's built-in posture values: Upright (None until heard), Seated,
+    /// InStation, VelocityMagnitude.
+    posture: Posture,
+    /// When avatars the app never read were last looked up in VRChat's OSC files.
+    last_params_fill: Instant,
+    /// When labor time was last marked for saving.
+    last_labor_save: Instant,
+}
+
+/// VRChat's built-in posture values.
+#[derive(Debug, Default)]
+struct Posture {
+    upright: Option<f32>,
+    seated: bool,
+    in_station: bool,
+    velocity: f32,
+}
+
+impl Posture {
+    /// Takes a posture parameter; false if it isn't one.
+    fn set(&mut self, name: &str, v: f32) -> bool {
+        match name {
+            "Upright" => self.upright = Some(v),
+            "Seated" => self.seated = v > 0.5,
+            "InStation" => self.in_station = v > 0.5,
+            "VelocityMagnitude" => self.velocity = v,
+            _ => return false,
+        }
+        true
+    }
+
+    /// Standing: not in a seat or station, and upright (counts as up until VRChat says otherwise).
+    fn up(&self) -> bool {
+        !self.seated && !self.in_station && self.upright.is_none_or(|u| u >= UPRIGHT_STANDING)
+    }
 }
 
 fn to_osc(v: ParamValue) -> OscValue {
@@ -110,6 +157,11 @@ impl Engine {
             last_heard_ms: None,
             linked: false,
             last_snap_note: None,
+            labor: Default::default(),
+            afk: false,
+            posture: Posture::default(),
+            last_params_fill: past,
+            last_labor_save: past,
         }
     }
 
@@ -222,6 +274,11 @@ impl Engine {
             self.read_logs(now);
             self.check_reveal(now);
             self.check_due(now);
+            self.tick_labor(now);
+            if self.last_params_fill.elapsed() >= Duration::from_secs(60) {
+                self.last_params_fill = Instant::now();
+                self.fill_params_from_vrchat();
+            }
         }
         if self.last_save.elapsed() >= Duration::from_secs(2) {
             self.check_achievements(now);
@@ -244,6 +301,8 @@ impl Engine {
             self.handoff();
             self.driver.set_connected(false);
             self.shared.data.lock().unwrap().instance.vrchat_closed(pregsys_core::now_ms());
+            self.afk = false;
+            self.posture = Posture::default();
             self.shared.mark_dirty();
             let _ = self.app.emit("instance-changed", ());
         } else if !self.vrchat && r.vrchat && self.bridge.is_some() {
@@ -328,7 +387,8 @@ impl Engine {
     /// Addresses VRChat is asked to send us over OSCQuery.
     fn listen_addresses(&self) -> Vec<String> {
         let mapping = self.driver.mapping();
-        let mut listen = vec!["/avatar/change".to_string()];
+        let mut listen = vec!["/avatar/change".to_string(), format!("{OSC_PARAM_PREFIX}{AFK_PARAM}")];
+        listen.extend(POSTURE_PARAMS.iter().map(|p| format!("{OSC_PARAM_PREFIX}{p}")));
         listen.extend(mapping.parameters.values().filter(|p| !p.name.is_empty()).map(|p| format!("{OSC_PARAM_PREFIX}{}", p.name)));
         // SPS sockets on this avatar, for detecting WooHoos.
         listen.extend(self.sps_listen.iter().map(|n| format!("{OSC_PARAM_PREFIX}{n}")));
@@ -369,6 +429,13 @@ impl Engine {
             }
             let Some(name) = m.addr.strip_prefix(OSC_PARAM_PREFIX) else { continue };
             let Some(v) = m.value.as_f32() else { continue };
+            if name == AFK_PARAM {
+                self.afk = v > 0.5;
+                continue;
+            }
+            if self.posture.set(name, v) {
+                continue;
+            }
             // App Controls buttons from the avatar's menu.
             if let Some(c) = self.driver.mapping().key_for_name(name).and_then(pregsys_core::controls::Control::from_key) {
                 if v > 0.5 {
@@ -506,6 +573,14 @@ impl Engine {
                 b.set_listen_addresses(&listen);
             }
         }
+        if let Some(v) = params.iter().find(|p| p.name == AFK_PARAM).and_then(|p| p.value.as_ref()).and_then(|v| v.as_f32()) {
+            self.afk = v > 0.5;
+        }
+        for p in &params {
+            if let Some(v) = p.value.as_ref().and_then(|v| v.as_f32()) {
+                self.posture.set(&p.name, v);
+            }
+        }
         let list: Vec<(String, Option<f32>)> = params.iter().map(|p| (p.name.clone(), p.value.as_ref().and_then(|v| v.as_f32()))).collect();
         let names: Vec<String> = list.iter().map(|(n, _)| n.clone()).collect();
         if self.driver.avatar_param_names() == Some(&names[..]) {
@@ -525,6 +600,7 @@ impl Engine {
             if let Some(p) = d.avatars.get_mut(&aid) {
                 p.params = names;
             }
+            actions::trim_without_system(&mut d);
             drop(d);
             self.shared.mark_dirty();
         }
@@ -644,6 +720,11 @@ impl Engine {
 
     /// A button in the avatar's App Controls menu.
     fn apply_control(&mut self, c: pregsys_core::controls::Control, now: i64) {
+        // Labor only starts on an avatar that can show it.
+        if c == pregsys_core::controls::Control::StartHeld && !self.driver.knows_param("labor") {
+            self.debug_chat("menuButtons", "Start held: this avatar can't show labor".into());
+            return;
+        }
         let msg = {
             let mut d = self.shared.data.lock().unwrap();
             pregsys_core::controls::apply(&mut d, self.driver.avatar_id(), c, now)
@@ -657,6 +738,20 @@ impl Engine {
 
     /// A WooHoo (from SPS sockets or debug). `roll` forces the outcome.
     fn woohoo(&mut self, now: i64, roll: Option<f64>) {
+        // Late in a pregnancy it can start labor (if that's on), on an avatar that can show it.
+        let ctx = self.labor_ctx();
+        if ctx.linked && ctx.avatar_ready && ctx.supports && !ctx.afk {
+            let started = {
+                let mut d = self.shared.data.lock().unwrap();
+                let id = d.current_pregnancy_id(self.driver.avatar_id());
+                id.and_then(|id| pregsys_core::labor::woohoo(&mut d, &id, now, roll.unwrap_or_else(pregsys_core::fertility::roll)))
+            };
+            if let Some(water_first) = started {
+                self.chat("woohoo", Vars::default());
+                self.labor_events(vec![pregsys_core::labor::Event::Started { water_first }], now);
+                return;
+            }
+        }
         let outcome = {
             let mut d = self.shared.data.lock().unwrap();
             actions::record_fun(&mut d, now, roll.unwrap_or_else(pregsys_core::fertility::roll))
@@ -714,6 +809,96 @@ impl Engine {
                 ("Your baby is due! 🍼", "Open the app to welcome them.")
             };
             crate::notify(&self.app, title, body);
+        }
+    }
+
+    /// Avatars the app never read over OSCQuery (worn while it wasn't linked,
+    /// or added by hand): their parameter lists come from VRChat's OSC files,
+    /// so "has the Pregnancy System" isn't stuck on "not checked yet".
+    fn fill_params_from_vrchat(&mut self) {
+        let (dir, missing) = {
+            let d = self.shared.data.lock().unwrap();
+            let dir = d.settings.log_dir.clone().map(PathBuf::from).or_else(find_log_dir);
+            (dir, d.avatars.values().filter(|a| a.params.is_empty()).map(|a| a.id.clone()).collect::<Vec<_>>())
+        };
+        let Some(dir) = dir.filter(|_| !missing.is_empty()) else { return };
+        let found: Vec<(String, Vec<String>)> = missing.into_iter().filter_map(|id| pregsys_core::logwatch::osc_avatar_params(&dir, &id).map(|p| (id, p))).collect();
+        if found.is_empty() {
+            return;
+        }
+        {
+            let mut d = self.shared.data.lock().unwrap();
+            for (id, params) in found {
+                if let Some(a) = d.avatars.get_mut(&id).filter(|a| a.params.is_empty()) {
+                    a.params = params;
+                }
+            }
+            actions::trim_without_system(&mut d);
+        }
+        self.shared.mark_dirty();
+        let _ = self.app.emit("data-changed", ());
+    }
+
+    /// Labor: starts it when it's due (in-game, on an avatar that can show
+    /// it) and moves it along to the birth.
+    fn tick_labor(&mut self, now: i64) {
+        let ctx = self.labor_ctx();
+        let (events, running) = {
+            let mut d = self.shared.data.lock().unwrap();
+            let events = self.labor.tick(&mut d, &ctx, now, pregsys_core::fertility::roll());
+            let running = d.current_pregnancy(self.driver.avatar_id()).and_then(|p| p.labor.as_ref()).is_some_and(|l| !l.paused);
+            (events, running)
+        };
+        // Labor time is saved now and then, so a crash loses little of it.
+        if running && self.last_labor_save.elapsed() >= Duration::from_secs(15) {
+            self.last_labor_save = Instant::now();
+            self.shared.mark_dirty();
+        }
+        self.labor_events(events, now);
+    }
+
+    /// What the engine knows about VRChat, for labor.
+    fn labor_ctx(&self) -> pregsys_core::labor::Ctx {
+        pregsys_core::labor::Ctx {
+            linked: self.linked,
+            avatar_id: self.driver.avatar_id().map(str::to_string),
+            avatar_ready: self.driver.avatar_id().is_some() && !self.driver.loading(),
+            supports: self.driver.knows_param("labor"),
+            afk: self.afk,
+            up: self.posture.up(),
+            moving: self.posture.velocity >= WALKING_SPEED,
+        }
+    }
+
+    /// Chatbox messages and notifications for what labor did.
+    fn labor_events(&mut self, events: Vec<pregsys_core::labor::Event>, now: i64) {
+        use pregsys_core::labor::Event;
+        if events.is_empty() {
+            return;
+        }
+        self.shared.mark_dirty();
+        let _ = self.app.emit("data-changed", ());
+        let vars = {
+            let d = self.shared.data.lock().unwrap();
+            d.current_pregnancy(self.driver.avatar_id()).map(|p| Vars::of(p, now)).unwrap_or_default()
+        };
+        for e in events {
+            match e {
+                Event::Started { water_first } => {
+                    self.chat("labor", vars.clone());
+                    if water_first {
+                        self.chat("waterBroke", vars.clone());
+                    }
+                    let body = if water_first { "Your water broke! The baby is on the way." } else { "Contractions have started." };
+                    crate::notify(&self.app, "Labor has started! 🤰", body);
+                }
+                Event::WaterBroke => self.chat("waterBroke", vars.clone()),
+                Event::Pushing => {}
+                Event::Born { .. } => {
+                    crate::notify(&self.app, "Welcome, little one! 🍼", "Your baby is here.");
+                    let _ = self.app.emit("born", ());
+                }
+            }
         }
     }
 
@@ -879,6 +1064,37 @@ impl Engine {
                 st.vrchat_query = None;
                 st.note = self.bridge_error.clone();
             }
+        }
+        st.labor_supported = self.driver.knows_param("labor");
+        st.afk = self.afk;
+        st.up = self.posture.up();
+        st.upright = self.posture.upright;
+        {
+            let d = self.shared.data.lock().unwrap();
+            let aid = self.driver.avatar_id();
+            let cur = d.current_pregnancy(aid);
+            st.partner_here = cur.and_then(|p| pregsys_core::labor::partner_here(&d, p, now_ms()));
+            // Live labor time for the progress bar (the saved copy only updates now and then).
+            st.labor_elapsed_ms = cur.and_then(|p| p.labor.as_ref()).map(|l| l.elapsed_ms);
+            st.labor_paused = cur.and_then(|p| p.labor.as_ref()).map(|l| l.paused);
+            // Another avatar showing the same pregnancy that has the labor parameter.
+            let mapping = self.driver.mapping();
+            st.labor_avatar = match aid {
+                Some(a) if !st.labor_supported && d.settings.sync_scope == pregsys_core::model::SyncScope::PerAvatar => d
+                    .linked_group(a)
+                    .iter()
+                    .filter(|id| id.as_str() != a)
+                    .filter_map(|id| d.avatars.get(id))
+                    .find(|p| p.param_names.contains_key("labor") || mapping.resolve("labor", &p.params).is_some())
+                    .map(|p| p.name.clone().unwrap_or_else(|| p.id.clone())),
+                Some(a) if !st.labor_supported => d
+                    .avatars
+                    .values()
+                    .filter(|p| p.id != a)
+                    .find(|p| mapping.resolve("labor", &p.params).is_some())
+                    .map(|p| p.name.clone().unwrap_or_else(|| p.id.clone())),
+                _ => None,
+            };
         }
         st.log_dir = self.logs.as_ref().map(|l| l.dir().to_string_lossy().to_string());
         st.log_file = self.logs.as_ref().and_then(|l| l.current_file()).map(|f| f.to_string_lossy().to_string());

@@ -49,7 +49,12 @@ pub fn take_load_warning(s: S) -> Option<String> {
 pub fn save_settings(app: AppHandle, s: S, settings: Settings) -> R<Option<String>> {
     let old = {
         let mut d = s.data.lock().unwrap();
-        std::mem::replace(&mut d.settings, settings.clone())
+        let old = std::mem::replace(&mut d.settings, settings.clone());
+        // Turning debug mode off removes Test Buddy and everything they touched.
+        if old.debug && !settings.debug {
+            pregsys_core::testbuddy::remove(&mut d, now_ms());
+        }
+        old
     };
     changed(&app, &s, true);
     if old.osc != settings.osc {
@@ -107,6 +112,12 @@ pub fn give_birth(app: AppHandle, s: S, id: String) {
 }
 
 #[tauri::command]
+pub fn start_labor(app: AppHandle, s: S, id: String) {
+    pregsys_core::labor::start(&mut s.data.lock().unwrap(), &id, now_ms());
+    changed(&app, &s, true);
+}
+
+#[tauri::command]
 pub fn delete_pregnancy(app: AppHandle, s: S, id: String) {
     actions::delete_pregnancy(&mut s.data.lock().unwrap(), &id);
     changed(&app, &s, true);
@@ -152,6 +163,12 @@ pub fn save_avatar(app: AppHandle, s: S, profile: AvatarProfile) {
 #[tauri::command]
 pub fn delete_avatar(app: AppHandle, s: S, id: String) {
     actions::delete_avatar(&mut s.data.lock().unwrap(), &id);
+    changed(&app, &s, true);
+}
+
+#[tauri::command]
+pub fn delete_avatars(app: AppHandle, s: S, ids: Vec<String>) {
+    actions::delete_avatars(&mut s.data.lock().unwrap(), &ids);
     changed(&app, &s, true);
 }
 
@@ -379,6 +396,41 @@ pub fn debug_add_person(app: AppHandle, s: S, name: String, user_id: Option<Stri
     }
     changed(&app, &s, false);
     let _ = app.emit("instance-changed", ());
+    Ok(())
+}
+
+/// Debug: add Test Buddy (a pretend partner with a few stats), or remove
+/// them and everything they touched.
+#[tauri::command]
+pub fn debug_test_buddy(app: AppHandle, s: S, on: bool) {
+    {
+        let mut d = s.data.lock().unwrap();
+        if on {
+            pregsys_core::testbuddy::add(&mut d, now_ms());
+        } else {
+            pregsys_core::testbuddy::remove(&mut d, now_ms());
+        }
+    }
+    changed(&app, &s, true);
+    let _ = app.emit("instance-changed", ());
+}
+
+/// Debug: start labor now (`None`) or move it along, on the pregnancy you're wearing.
+#[tauri::command]
+pub fn debug_labor(app: AppHandle, s: S, skip: Option<pregsys_core::labor::Skip>) -> R<()> {
+    let ok = {
+        let mut d = s.data.lock().unwrap();
+        let aid = d.current_avatar_id.clone();
+        let id = d.current_pregnancy_id(aid.as_deref()).ok_or("Not pregnant on this avatar.")?;
+        match skip {
+            None => pregsys_core::labor::start(&mut d, &id, now_ms()),
+            Some(how) => pregsys_core::labor::skip(&mut d, &id, how),
+        }
+    };
+    if !ok {
+        return Err(if skip.is_none() { "Already in labor." } else { "Not in labor yet." }.into());
+    }
+    changed(&app, &s, true);
     Ok(())
 }
 

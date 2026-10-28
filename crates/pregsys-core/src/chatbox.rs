@@ -23,7 +23,7 @@ const UNKNOWN: &str = "Unknown";
 pub const DEBUG_EVENTS: [&str; 7] = ["avatarChange", "avatarLoaded", "sync", "menuButtons", "bellySnap", "heard", "kicks"];
 
 /// Event keys, in the order the settings show them.
-pub const EVENTS: [&str; 8] = ["started", "paused", "resumed", "stopped", "born", "woohoo", "notPregnant", "achievement"];
+pub const EVENTS: [&str; 10] = ["started", "paused", "resumed", "stopped", "labor", "waterBroke", "born", "woohoo", "notPregnant", "achievement"];
 
 fn default_text(event: &str) -> &'static str {
     match event {
@@ -31,12 +31,19 @@ fn default_text(event: &str) -> &'static str {
         "paused" => "⏸️ Pregnancy paused (week {week})",
         "resumed" => "▶️ Pregnancy resumed (week {week})",
         "stopped" => "Pregnancy stopped",
+        "labor" => "🤰 Labor has started!",
+        "waterBroke" => "💦 Water broke!",
         "born" => "🍼 The baby is here!",
         "woohoo" => "💕 WooHoo!",
         "notPregnant" => "Not pregnant this time",
         "achievement" => "🏆 {achievement}",
         _ => "",
     }
+}
+
+/// Events whose message is off until turned on (labor can be private).
+fn on_by_default(event: &str) -> bool {
+    !matches!(event, "labor" | "waterBroke")
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -75,7 +82,7 @@ pub struct ChatboxSettings {
 
 impl Default for ChatboxSettings {
     fn default() -> Self {
-        let messages = EVENTS.iter().map(|e| (e.to_string(), ChatMessage { on: true, text: default_text(e).into() })).collect();
+        let messages = EVENTS.iter().map(|e| (e.to_string(), ChatMessage { on: on_by_default(e), text: default_text(e).into() })).collect();
         Self {
             enabled: false,
             sound: false,
@@ -130,7 +137,7 @@ impl ChatboxSettings {
             return None;
         }
         let m = self.messages.get(event);
-        if m.is_some_and(|m| !m.on) {
+        if !m.map_or(on_by_default(event), |m| m.on) {
             return None;
         }
         let text = m.map(|m| m.text.as_str()).filter(|t| !t.trim().is_empty()).unwrap_or(default_text(event));

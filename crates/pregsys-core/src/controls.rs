@@ -1,11 +1,13 @@
 //! In-game menu buttons (`Pregnancy/Control/*`): start, pause and stop a
-//! pregnancy from the avatar's Settings > App Controls menu.
+//! pregnancy from the avatar's Settings > App Controls menu. Start held for
+//! 2 s from week 37 starts labor.
 
 use crate::actions::{self, NewPregnancy};
 use crate::model::{AppData, PregnancySource};
 use std::collections::HashMap;
 
-/// Stop has to be held this long, so a stray tap never ends a pregnancy.
+/// Stop has to be held this long, so a stray tap never ends a pregnancy
+/// (and Start, to start labor).
 pub const STOP_HOLD_MS: i64 = 2_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -13,6 +15,8 @@ pub enum Control {
     Start,
     Pause,
     Stop,
+    /// Start held down: starts labor.
+    StartHeld,
 }
 
 impl Control {
@@ -50,12 +54,15 @@ impl Controls {
         (c != Control::Stop).then_some(c)
     }
 
-    /// Stop fires here once it has been held long enough.
+    /// Stop (and Start held) fire here once held long enough.
     pub fn tick(&mut self, now_ms: i64) -> Option<Control> {
-        let since = self.held.get_mut(name(Control::Stop))?;
-        if since.is_some_and(|t| now_ms - t >= STOP_HOLD_MS) {
-            *since = None;
-            return Some(Control::Stop);
+        for (c, fired) in [(Control::Stop, Control::Stop), (Control::Start, Control::StartHeld)] {
+            if let Some(since) = self.held.get_mut(name(c)) {
+                if since.is_some_and(|t| now_ms - t >= STOP_HOLD_MS) {
+                    *since = None;
+                    return Some(fired);
+                }
+            }
         }
         None
     }
@@ -63,7 +70,7 @@ impl Controls {
 
 fn name(c: Control) -> &'static str {
     match c {
-        Control::Start => "start",
+        Control::Start | Control::StartHeld => "start",
         Control::Pause => "pause",
         Control::Stop => "stop",
     }
@@ -93,6 +100,10 @@ pub fn apply(data: &mut AppData, avatar_id: Option<&str>, c: Control, now_ms: i6
             actions::end_pregnancy(data, &id, now_ms);
             Some("Pregnancy stopped from the menu")
         }
+        (Control::StartHeld, Some(id)) => {
+            let week = data.pregnancy(&id)?.timeline.week(now_ms);
+            (week >= crate::labor::START_BUTTON_WEEK && crate::labor::start(data, &id, now_ms)).then_some("Labor started from the menu")
+        }
         _ => None,
     }
 }
@@ -117,6 +128,10 @@ mod tests {
         assert_eq!(c.tick(STOP_HOLD_MS - 1), None);
         assert_eq!(c.tick(STOP_HOLD_MS), Some(Control::Stop));
         assert_eq!(c.tick(STOP_HOLD_MS + 500), None, "only once per hold");
+        // Start acts on the press, and again once held.
+        assert_eq!(c.on_param(Control::Start, 1.0, 0), Some(Control::Start));
+        assert_eq!(c.tick(STOP_HOLD_MS), Some(Control::StartHeld));
+        c.on_param(Control::Start, 0.0, 3_000);
         // A short tap does nothing.
         c.on_param(Control::Stop, 0.0, 3_000);
         c.on_param(Control::Stop, 1.0, 4_000);
@@ -133,6 +148,11 @@ mod tests {
         assert_eq!(apply(&mut d, Some("avtr_a"), Control::Pause, 10), Some("Pregnancy paused"));
         assert!(d.current_pregnancy(Some("avtr_a")).unwrap().timeline.paused_at_ms.is_some());
         assert_eq!(apply(&mut d, Some("avtr_a"), Control::Pause, 20), Some("Pregnancy resumed"));
+        assert_eq!(apply(&mut d, Some("avtr_a"), Control::StartHeld, 25), None, "too early for labor");
+        let id = d.current_pregnancy_id(Some("avtr_a")).unwrap();
+        let late = d.pregnancy(&id).unwrap().timeline.due_ms(25);
+        assert!(apply(&mut d, Some("avtr_a"), Control::StartHeld, late).is_some());
+        assert!(d.pregnancy(&id).unwrap().labor.is_some());
         assert!(apply(&mut d, Some("avtr_a"), Control::Stop, 30).is_some());
         assert!(d.current_pregnancy(Some("avtr_a")).is_none());
     }

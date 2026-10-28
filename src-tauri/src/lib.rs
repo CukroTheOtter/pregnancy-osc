@@ -4,6 +4,7 @@ mod commands;
 mod engine;
 mod pictures;
 mod state;
+mod steamvr_overlay;
 mod system;
 mod updates;
 
@@ -18,6 +19,8 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
 
 pub fn show_main(app: &AppHandle) {
+    // Parked off-screen for the SteamVR dashboard: bring it back first.
+    steamvr_overlay::unpark(app);
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.unminimize();
         let _ = w.show();
@@ -139,6 +142,7 @@ pub fn run() {
             shared.tray_available.store(tray_ok, Ordering::SeqCst);
 
             engine::spawn(handle.clone(), shared.clone());
+            steamvr_overlay::spawn(handle.clone(), shared.clone());
 
             let start_in_tray = shared.data.lock().unwrap().settings.start_in_tray;
             let hide = tray_arg || (autostart_arg && start_in_tray);
@@ -157,7 +161,8 @@ pub fn run() {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 let app = window.app_handle();
                 let shared = app.state::<Arc<Shared>>();
-                if shared.tray_available.load(Ordering::SeqCst) && !shared.quitting.load(Ordering::SeqCst) {
+                let to_tray = shared.data.lock().unwrap().settings.close_to_tray;
+                if to_tray && shared.tray_available.load(Ordering::SeqCst) && !shared.quitting.load(Ordering::SeqCst) {
                     // Keep running in the tray.
                     api.prevent_close();
                     let _ = window.hide();
@@ -181,6 +186,7 @@ pub fn run() {
             commands::set_waiting_partner,
             commands::save_avatar,
             commands::delete_avatar,
+            commands::delete_avatars,
             commands::create_group,
             commands::set_avatar_group,
             commands::rename_group,
@@ -212,10 +218,13 @@ pub fn run() {
             commands::debug_reveal_now,
             commands::debug_set_cycle_day,
             commands::debug_add_person,
+            commands::debug_test_buddy,
+            commands::debug_labor,
             commands::debug_remove_person,
             commands::debug_picture,
             commands::debug_kick,
             commands::give_birth,
+            commands::start_labor,
             commands::restart_cycle,
             commands::quit_app,
             updates::app_version,

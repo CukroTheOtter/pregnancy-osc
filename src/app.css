@@ -102,6 +102,15 @@
 :root[data-theme="dark"][data-palette="peach"] { --bg: #221a16; --bg-2: #2e2420; --bg-3: #3a2d27; --line: #4a3a32; }
 :root[data-theme="dark"][data-palette="sky"] { --bg: #161b24; --bg-2: #1f2633; --bg-3: #283142; --line: #344156; }
 
+/* ---------- black (OLED): dark, with true black behind everything ---------- */
+:root[data-theme="dark"][data-black] {
+  --bg: #000;
+  --bg-2: #0c0c0e;
+  --bg-3: #18181b;
+  --line: #26262b;
+  --shadow: none;
+}
+
 * {
   box-sizing: border-box;
 }

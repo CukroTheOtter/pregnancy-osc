@@ -44,6 +44,11 @@ fn partners(d: &AppData) -> BTreeSet<String> {
     out
 }
 
+/// How far along each birth was (1 = the due date).
+fn birth_progress(d: &AppData) -> impl Iterator<Item = f64> + '_ {
+    d.pregnancies.iter().filter(|p| p.born).filter_map(|p| p.ended_ms.map(|e| p.timeline.progress(e)))
+}
+
 fn birth_lengths(d: &AppData) -> impl Iterator<Item = i64> + '_ {
     d.pregnancies.iter().filter(|p| p.born).filter_map(|p| p.ended_ms.map(|e| e - p.timeline.start_ms))
 }
@@ -60,6 +65,14 @@ pub const ALL: &[Achievement] = &[
         id: "fashionably_late",
         title: "Fashionably Late",
         earned: |d, now| d.pregnancies.iter().any(|p| p.timeline.progress(p.ended_ms.unwrap_or(now)) > 1.01),
+    },
+    Achievement { id: "splash", title: "Splash!", earned: |d, _| d.pregnancies.iter().any(|p| p.born && p.labor.as_ref().is_some_and(|l| l.water_first)) },
+    Achievement { id: "right_on_time", title: "Right On Time", earned: |d, _| birth_progress(d).any(|x| (x - 1.0).abs() <= 1.0 / 280.0) },
+    Achievement { id: "early_bird", title: "Early Bird", earned: |d, _| birth_progress(d).any(|x| x * TERM_WEEKS < 37.0) },
+    Achievement {
+        id: "right_here_with_me",
+        title: "Right Here With Me",
+        earned: |d, _| d.pregnancies.iter().any(|p| p.born && p.labor.as_ref().is_some_and(|l| l.partner_at_birth)),
     },
     Achievement { id: "speedrun", title: "Speedrun", earned: |d, _| birth_lengths(d).any(|ms| ms <= DAY_MS) },
     Achievement { id: "long_haul", title: "The Long Haul", earned: |d, _| birth_lengths(d).any(|ms| ms >= 270 * DAY_MS) },
@@ -93,6 +106,11 @@ pub const ALL: &[Achievement] = &[
         },
     },
 ];
+
+/// Is this achievement earned with the data as it is now?
+pub fn earned(d: &AppData, id: &str, now_ms: i64) -> bool {
+    ALL.iter().find(|a| a.id == id).is_some_and(|a| (a.earned)(d, now_ms))
+}
 
 pub fn title(id: &str) -> Option<&'static str> {
     ALL.iter().find(|a| a.id == id).map(|a| a.title)

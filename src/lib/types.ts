@@ -3,7 +3,7 @@
 export type DurationMode = "realtime" | "accelerated" | "custom";
 export type SyncScope = "global" | "perAvatar";
 export type SpoilerMode = "surprise" | "hints" | "all";
-export type ThemeMode = "system" | "light" | "dark";
+export type ThemeMode = "system" | "light" | "dark" | "black";
 export type BodyKind = "human" | "furry" | "egg";
 export type ResetKind = "avatars" | "pregnancies" | "partners" | "achievements" | "settings" | "everything";
 export type PartnerStatus = "guessed" | "confirmed" | "unknown" | "manual" | "random";
@@ -26,9 +26,12 @@ export interface Timeline {
 }
 
 export interface Theme {
+  /** strawberry, lavender, mint, peach or sky (see src/app.css). */
   palette: string;
   mode: ThemeMode;
+  /** Your own accent color, used when customAccent is on. */
   accent: string;
+  customAccent?: boolean;
 }
 
 export interface OscSettings {
@@ -55,6 +58,34 @@ export interface ChatboxSettings {
   debug: Record<string, boolean>;
 }
 
+export type LaborStart = "random" | "dueDate" | "manual";
+
+export interface LaborSettings {
+  start: LaborStart;
+  /** Start labor by this week if it hasn't started (null = off). */
+  induceWeek: number | null;
+  /** Real minutes from the first contraction to the birth. */
+  minutes: number;
+  waitsForPartner: boolean;
+  /** A WooHoo from week 37 can start labor. */
+  woohooStarts?: boolean;
+  /** Early labor shows nothing on the avatar: the first sign is the water breaking. */
+  quietEarly?: boolean;
+  /** Labor starts, and the water breaks, only while you're up. */
+  restingHolds?: boolean;
+}
+
+/** Labor in progress (kept after the birth). Mirrors pregsys-core/src/labor.rs. */
+export interface Labor {
+  phase: "early" | "active" | "pushing";
+  startedMs: number;
+  elapsedMs: number;
+  waterFirst: boolean;
+  waterBrokeMs: number | null;
+  paused: boolean;
+  partnerAtBirth: boolean;
+}
+
 export interface Settings {
   syncScope: SyncScope;
   syncWaitMs: number;
@@ -66,6 +97,14 @@ export interface Settings {
   startWithOs: boolean;
   startInTray: boolean;
   exitWithSteamvr: boolean;
+  /** Avatars you wear are added to the list on their own. */
+  autoAddAvatars: boolean;
+  /** Closing the window keeps the app running in the tray. */
+  closeToTray: boolean;
+  /** A tab in the SteamVR dashboard. */
+  steamvrDashboard: boolean;
+  /** While in VR (dashboard on), the desktop window stays hidden. */
+  hideWindowInVr: boolean;
   heartbeatSound: boolean;
   soundVolume: number;
   revealPulse: boolean;
@@ -94,6 +133,8 @@ export interface Settings {
   kicks: boolean;
   kickFrequency: KickFrequency;
   allowedKicks: { weak: boolean; strong: boolean; extreme: boolean };
+  kicksWithPartner: boolean;
+  labor: LaborSettings;
   sps: { enabled: boolean; types: Record<HoleType, boolean>; depth: number; seconds: number; gapSeconds: number };
   onboarded: boolean;
 }
@@ -150,6 +191,7 @@ export interface Pregnancy {
   kicks: { timeMs: number; strength: KickStrength }[];
   milestones: string[];
   oscHints: { speciesIndex: number | null };
+  labor?: Labor | null;
 }
 
 export interface AvatarProfile {
@@ -253,6 +295,8 @@ export interface AppData {
   funLog: FunEvent[];
   syncValues: Record<string, number>;
   achievements: Record<string, number>;
+  /** Debug: when Test Buddy was added (null = not there). */
+  testBuddySince?: number | null;
 }
 
 /** A newer version on GitHub, ready to install. */
@@ -290,6 +334,24 @@ export interface Status {
   spsFound: string[];
   spsLive: { name: string; channel: string; value: number; holeType: HoleType; counts: boolean }[];
   spsProgress: number;
+  /** The app's tab is in the SteamVR dashboard. */
+  steamvrDashboard: boolean;
+  /** VRChat says you're AFK (labor waits). */
+  afk?: boolean;
+  /** Standing up (not seated or lying down). */
+  up?: boolean;
+  /** VRChat's Upright value (debug). */
+  upright?: number | null;
+  /** The worn avatar can show labor. */
+  laborSupported: boolean;
+  /** Another avatar sharing this pregnancy that can show labor. */
+  laborAvatar: string | null;
+  /** The partner is in the instance (null = can't tell). */
+  partnerHere: boolean | null;
+  /** Labor time so far (live, for the progress bar). */
+  laborElapsedMs?: number | null;
+  /** Labor is waiting right now (live). */
+  laborPaused?: boolean | null;
   mappingPath: string;
   dataDir: string;
 }
@@ -329,7 +391,7 @@ export interface Mapping {
   parameters: Record<string, ParamDef>;
   /** `role`: a built-in entry (renamable, never removed, always on/off). */
   sync: { name: string; type: "float" | "int" | "bool"; role?: SyncRole }[];
-  kicks: { weak: number; strong: number; extreme: number; holdMs: number };
+  kicks: { weak: number; strong: number; extreme: number; holdMs: number; contraction?: number };
 }
 
 export interface AvatarPreview {

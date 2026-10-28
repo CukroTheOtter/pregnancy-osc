@@ -27,10 +27,17 @@
     return () => mq.removeEventListener("change", on);
   });
   $effect(() => {
-    const mode = app.data?.settings.theme.mode ?? "system";
+    const theme = app.data?.settings.theme;
+    const mode = theme?.mode ?? "system";
     const root = document.documentElement;
-    root.dataset.palette = "strawberry";
-    root.dataset.theme = mode === "dark" || (mode !== "light" && systemDark) ? "dark" : "light";
+    root.dataset.palette = theme?.palette || "strawberry";
+    root.dataset.theme = mode === "dark" || mode === "black" || (mode === "system" && systemDark) ? "dark" : "light";
+    // Black: dark with true black backgrounds, for OLED screens.
+    if (mode === "black") root.dataset.black = "";
+    else delete root.dataset.black;
+    // Your own accent color on top of the palette.
+    if (theme?.customAccent && /^#[0-9a-f]{6}$/i.test(theme.accent)) root.style.setProperty("--accent", theme.accent);
+    else root.style.removeProperty("--accent");
   });
 
   const TABS: { id: View; label: string; icon: string }[] = [

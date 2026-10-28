@@ -1,5 +1,5 @@
 {
-  "version": 6,
+  "version": 7,
   "comment": "App parameters: rename them to match your avatar, or set a name to \"\" to turn one off. Sync: parameters the app remembers and re-sends on every avatar. See docs/osc-parameters.md.",
   "sendIntervalMs": 1000,
   "minStageChange": 0.004,
@@ -94,6 +94,12 @@
       "type": "int",
       "synced": true,
       "optional": true
+    },
+    "labor": {
+      "name": "Pregnancy/Labor",
+      "type": "int",
+      "synced": true,
+      "optional": true
     }
   },
   "sync": [
@@ -112,6 +118,7 @@
     "weak": 1,
     "strong": 2,
     "extreme": 3,
-    "holdMs": 1500
+    "holdMs": 1500,
+    "contraction": 4
   }
 }

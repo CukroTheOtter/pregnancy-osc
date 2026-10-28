@@ -76,7 +76,7 @@ The manifest grants: network (OSC/OSCQuery), read-only access to the VRChat fold
 
 **What each parameter does**, the sync cost, and how the "app active" flag and heartbeat work: **[docs/osc-parameters.md](docs/osc-parameters.md)**.
 
-**Minimum:** one synced float (8 bits). **Everything:** 41 synced bits. The app-active flag and heartbeat are local and free.
+**Minimum:** one synced float (8 bits). **Everything:** 49 synced bits. The app-active flag and heartbeat are local and free.
 
 ---
 

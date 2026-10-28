@@ -62,19 +62,24 @@ pub enum ThemeMode {
     System,
     Light,
     Dark,
+    /// Dark with true black backgrounds (OLED screens).
+    Black,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Theme {
+    /// Color set: strawberry, lavender, mint, peach or sky (see src/app.css).
     pub palette: String,
     pub mode: ThemeMode,
+    /// Your own accent color, used when `custom_accent` is on.
     pub accent: String,
+    pub custom_accent: bool,
 }
 
 impl Default for Theme {
     fn default() -> Self {
-        Self { palette: "strawberry".into(), mode: ThemeMode::System, accent: "#f59ac0".into() }
+        Self { palette: "strawberry".into(), mode: ThemeMode::System, accent: "#f59ac0".into(), custom_accent: false }
     }
 }
 
@@ -110,6 +115,14 @@ pub struct Settings {
     pub start_with_os: bool,
     pub start_in_tray: bool,
     pub exit_with_steamvr: bool,
+    /// Avatars you wear are added to the Avatars list on their own.
+    pub auto_add_avatars: bool,
+    /// Closing the window keeps the app running in the tray (else it quits).
+    pub close_to_tray: bool,
+    /// A tab in the SteamVR dashboard showing the app.
+    pub steamvr_dashboard: bool,
+    /// While in VR with the dashboard tab on, the desktop window stays hidden.
+    pub hide_window_in_vr: bool,
     pub heartbeat_sound: bool,
     pub sound_volume: f64,
     pub reveal_pulse: bool,
@@ -150,6 +163,10 @@ pub struct Settings {
     pub kicks: bool,
     pub kick_frequency: KickFrequency,
     pub allowed_kicks: AllowedKicks,
+    /// Kicks come more often (and stronger) while the partner is here.
+    pub kicks_with_partner: bool,
+    /// When labor starts, how long it takes, and whether it waits for the partner.
+    pub labor: crate::labor::LaborSettings,
     /// Detecting WooHoos from SPS sockets.
     pub sps: SpsSettings,
     /// Hidden debug tools (tap the title 5 times).
@@ -170,6 +187,10 @@ impl Default for Settings {
             start_with_os: false,
             start_in_tray: false,
             exit_with_steamvr: false,
+            auto_add_avatars: true,
+            close_to_tray: true,
+            steamvr_dashboard: false,
+            hide_window_in_vr: true,
             heartbeat_sound: false,
             sound_volume: 0.5,
             reveal_pulse: true,
@@ -197,6 +218,8 @@ impl Default for Settings {
             kicks: true,
             kick_frequency: KickFrequency::Normal,
             allowed_kicks: AllowedKicks::default(),
+            kicks_with_partner: false,
+            labor: Default::default(),
             sps: SpsSettings::default(),
             debug: false,
             onboarded: false,
@@ -330,6 +353,8 @@ pub struct Pregnancy {
     /// Milestone keys already announced.
     pub milestones: Vec<String>,
     pub osc_hints: OscHints,
+    /// Labor, once it has started (kept after the birth).
+    pub labor: Option<crate::labor::Labor>,
 }
 
 impl Default for Pregnancy {
@@ -355,6 +380,7 @@ impl Default for Pregnancy {
             kicks: Vec::new(),
             milestones: Vec::new(),
             osc_hints: OscHints::default(),
+            labor: None,
         }
     }
 }
@@ -528,6 +554,8 @@ pub struct AppData {
     pub sync_values: BTreeMap<String, f64>,
     /// Unlocked achievements: id -> when (see `achievements`).
     pub achievements: BTreeMap<String, i64>,
+    /// Debug: when Test Buddy was added (see `testbuddy`), until removed.
+    pub test_buddy_since: Option<i64>,
 }
 
 impl AppData {

@@ -7,6 +7,7 @@
   import RevealCard from "../components/RevealCard.svelte";
   import AllPregnancies from "../components/AllPregnancies.svelte";
   import MovementCard from "../components/MovementCard.svelte";
+  import LaborCard from "../components/LaborCard.svelte";
   import { app, currentPregnancy, currentPending, homeAvatarId, updatePregnancy, errorToast, toast, confirmAsk } from "../lib/app.svelte";
   import { api } from "../lib/api";
   import { avatarName, linkedGroup } from "../lib/scope";
@@ -168,9 +169,7 @@
       {#if bellyHidden && !viewingOther}
         <div class="hidden-note">🙈 <span><strong>Your belly is hidden.</strong> Turn off Hide Belly in the Pregnancy System menu to see it.</span></div>
       {/if}
-      {#if isDue}
-        <button class="big" onclick={birth}>{p.babyCount > 1 && week >= BABY_REVEAL_WEEK ? "Welcome your babies 🍼" : "Welcome your baby 🍼"}</button>
-      {/if}
+      <LaborCard {p} {week} {isDue} {viewingOther} onbirth={birth} />
       <div class="row">
         <button class="soft" onclick={togglePause}>{paused ? "▶ Resume" : "⏸ Pause"}</button>
         <button class="soft" onclick={openAdjust}>Adjust progress</button>
@@ -328,11 +327,6 @@
   }
   .adjust input {
     width: 100%;
-  }
-  .big {
-    width: 100%;
-    padding: 13px;
-    font-size: 1.05rem;
   }
   .end {
     justify-content: center;

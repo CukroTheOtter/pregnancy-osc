@@ -11,7 +11,8 @@ export const PARAM_INFO: Record<string, { label: string; text: string }> = {
   waiting: { label: "Waiting", text: "True during the grace period after a WooHoo." },
   babyCount: { label: "Baby count", text: "0 until it can be seen (week 12), then 1 to 4." },
   fetalMovement: { label: "Fetal movement", text: "Kicks: the values sent are set under Kick values below." },
-  controlStart: { label: "Menu: Start", text: "Button in the avatar's App Controls menu. Starts a pregnancy." },
+  labor: { label: "Labor", text: "0 none, 1 early labor, 2 water broke, 3 pushing, 4 born. Contractions go to Fetal movement." },
+  controlStart: { label: "Menu: Start", text: "Button in the avatar's App Controls menu. Starts a pregnancy; held 2 seconds from week 37, starts labor." },
   controlPause: { label: "Menu: Pause", text: "Button in the avatar's App Controls menu. Pauses or resumes." },
   controlStop: { label: "Menu: Stop", text: "Button in the avatar's App Controls menu. Hold 2 seconds to end the pregnancy." },
 };
@@ -23,6 +24,7 @@ export const REQUIRED = ["stage", "appActive", "appHeartbeat"];
 export const FEATURES: { label: string; keys: string[] }[] = [
   { label: "Bigger belly", keys: ["bellyExtra"] },
   { label: "Kicks", keys: ["fetalMovement"] },
+  { label: "Labor", keys: ["labor"] },
   { label: "Menu buttons", keys: ["controlStart", "controlPause", "controlStop"] },
   { label: "Fertile level", keys: ["fertileLevel"] },
   { label: "Waiting", keys: ["waiting"] },

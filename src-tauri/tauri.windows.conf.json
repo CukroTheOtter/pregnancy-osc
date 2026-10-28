@@ -1,0 +1,8 @@
+{
+  "bundle": {
+    "resources": {
+      "openvr/openvr_api.dll": "openvr_api.dll",
+      "openvr/LICENSE-openvr.txt": "LICENSE-openvr.txt"
+    }
+  }
+}

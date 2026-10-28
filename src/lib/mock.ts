@@ -8,6 +8,7 @@ import { chance, cycleDay, cycleMs, graceMs } from "./fertility";
 import { groupMembers, owner, pendingFor, pregnancyFor, pregnancyIdOf } from "./scope";
 import { socketCounts, typeOf } from "./sps";
 import { FIXED } from "./params";
+import { TEST_BUDDY_ID, TEST_BUDDY_NAME, isTestBuddy } from "./testbuddy";
 
 const KEY = "pregsys-mock-data";
 type Listener = (payload: unknown) => void;
@@ -120,6 +121,15 @@ function status(): Status {
       return { name, channel: "PenOthersNewRoot", value: 0, holeType: typeOf(a, name), counts: socketCounts(data.settings, a, name) };
     }),
     spsProgress: 0,
+    steamvrDashboard: false,
+    up: true,
+    upright: null,
+    laborSupported: true,
+    laborAvatar: null,
+    partnerHere: p && p.partner.name ? data.instance.present.some((x) => x.name === p.partner.name) : null,
+    // The preview's labor just runs on the clock.
+    laborPaused: p?.labor ? p.labor.paused : null,
+    laborElapsedMs: p?.labor ? Math.min(Date.now() - p.labor.startedMs + p.labor.elapsedMs, data.settings.labor.minutes * 60_000) : null,
     mappingPath: "config/osc-parameters.json",
     dataDir: "(localStorage)",
   };
@@ -276,6 +286,17 @@ function setAvatarGroup(avatarId: string, groupId: string | null) {
 
 let mapping: Mapping | null = null;
 
+/** Debug: Test Buddy and everything they touched go away. */
+function removeTestBuddy() {
+  for (const p of data.pregnancies.filter((x) => isTestBuddy(x.partner.userId))) endPregnancy(p.id);
+  data.pregnancies = data.pregnancies.filter((x) => !isTestBuddy(x.partner.userId));
+  data.waiting = data.waiting.filter((w) => !isTestBuddy(w.partner.userId));
+  data.funLog = data.funLog.filter((f) => !isTestBuddy(f.partnerUserId));
+  data.instance.present = data.instance.present.filter((x) => !isTestBuddy(x.userId));
+  data.instance.history = data.instance.history.filter((x) => !isTestBuddy(x.userId));
+  data.testBuddySince = null;
+}
+
 export const mock = {
   async get_data() {
     return structuredClone(data);
@@ -287,6 +308,8 @@ export const mock = {
     return null;
   },
   async save_settings({ settings }: { settings: Settings }) {
+    // Turning debug mode off removes Test Buddy.
+    if (data.settings.debug && !settings.debug) removeTestBuddy();
     data.settings = settings;
     changed();
     return null;
@@ -311,6 +334,13 @@ export const mock = {
     const p = data.pregnancies.find((x) => x.id === id);
     if (p) p.born = true;
     changed();
+  },
+  async start_labor({ id }: { id: string }) {
+    const p = data.pregnancies.find((x) => x.id === id);
+    if (p && p.endedMs == null && !p.labor) {
+      p.labor = { phase: "early", startedMs: Date.now(), elapsedMs: 0, waterFirst: false, waterBrokeMs: null, paused: false, partnerAtBirth: false };
+      changed();
+    }
   },
   async delete_pregnancy({ id }: { id: string }) {
     endPregnancy(id);
@@ -342,6 +372,11 @@ export const mock = {
   },
   async delete_avatar({ id }: { id: string }) {
     delete data.avatars[id];
+    pruneGroups();
+    changed();
+  },
+  async delete_avatars({ ids }: { ids: string[] }) {
+    for (const id of ids) delete data.avatars[id];
     pruneGroups();
     changed();
   },
@@ -506,6 +541,42 @@ export const mock = {
     changed();
     emit("instance-changed");
   },
+  async debug_test_buddy({ on }: { on: boolean }) {
+    if (on && !data.testBuddySince) {
+      const now = Date.now();
+      data.testBuddySince = now;
+      data.instance.present.push({ name: TEST_BUDDY_NAME, userId: TEST_BUDDY_ID, avatarName: "Test Bunny", lastSeenMs: now, worldName: "Debug world" });
+      for (const days of [9, 6, 2]) {
+        data.funLog.push({ timeMs: now - days * 86_400_000, partnerName: TEST_BUDDY_NAME, partnerUserId: TEST_BUDDY_ID, avatarId: data.currentAvatarId, worldName: "Debug world" });
+      }
+    } else if (!on) removeTestBuddy();
+    changed();
+    emit("instance-changed");
+  },
+  async debug_labor({ skip }: { skip: "minute" | "nextPhase" | "birth" | null }) {
+    const p = pregnancyFor(data, data.currentAvatarId);
+    if (!p) throw new Error("Not pregnant on this avatar.");
+    const now = Date.now();
+    if (skip === null) {
+      if (p.labor) throw new Error("Already in labor.");
+      p.labor = { phase: "early", startedMs: now, elapsedMs: 0, waterFirst: false, waterBrokeMs: null, paused: false, partnerAtBirth: false };
+    } else {
+      if (!p.labor) throw new Error("Not in labor yet.");
+      // Same split as pregsys-core/src/labor.rs: early half, water 30%, pushing 20%.
+      const total = data.settings.labor.minutes * 60_000;
+      const ends = [total * 0.5, total * 0.8, total];
+      const at = Math.min(total, now - p.labor.startedMs + p.labor.elapsedMs);
+      const to = skip === "minute" ? at + 60_000 : skip === "birth" ? total : (ends.find((e) => e > at) ?? total);
+      p.labor.elapsedMs += Math.min(total, to) - at;
+      const now2 = Math.min(total, to);
+      p.labor.phase = now2 < ends[0] ? "early" : now2 < ends[1] ? "active" : "pushing";
+      if (now2 >= total) {
+        endPregnancy(p.id);
+        p.born = true;
+      }
+    }
+    changed();
+  },
   async debug_remove_person({ name, userId }: { name: string; userId: string | null }) {
     data.instance.present = data.instance.present.filter((p) => !(p.name === name && p.userId === userId));
     changed();
@@ -545,7 +616,19 @@ async function woohoo(forced: boolean | null) {
   {
     const now = Date.now();
     const s = data.settings;
-    if (pregnancyFor(data, data.currentAvatarId)) return;
+    const preg = pregnancyFor(data, data.currentAvatarId);
+    if (preg) {
+      // Late on, a WooHoo can start labor (same chance as pregsys-core/src/labor.rs).
+      const week = progress(preg.timeline, now) * 40;
+      const chance = week < 37 ? 0 : Math.min(0.75, 0.25 + ((week - 37) / 3) * 0.5);
+      const roll = forced === null ? Math.random() : forced ? 0 : 1;
+      const partnerAway = !!s.labor.waitsForPartner && !!preg.partner.name && !data.instance.present.some((x) => x.name === preg.partner.name);
+      if (s.labor.woohooStarts && !preg.labor && !partnerAway && roll < chance) {
+        preg.labor = { phase: "early", startedMs: now, elapsedMs: 0, waterFirst: false, waterBrokeMs: null, paused: false, partnerAtBirth: false };
+        changed();
+      }
+      return;
+    }
     const partner = funPartner(now);
     data.funLog.push({ timeMs: now, partnerName: partner.name, partnerUserId: partner.userId, avatarId: data.currentAvatarId, worldName: data.instance.worldName });
     if (!s.fertility) {

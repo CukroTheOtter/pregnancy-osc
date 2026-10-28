@@ -461,6 +461,10 @@ pub fn reset_data(data: &mut AppData, kind: ResetKind) {
 /// Records an avatar switch from OSC.
 pub fn touch_avatar(data: &mut AppData, avatar_id: &str, now_ms: i64) {
     data.current_avatar_id = Some(avatar_id.to_string());
+    // A new avatar is only added when that's on (Avatars > "Add avatars I wear").
+    if !data.settings.auto_add_avatars && !data.avatars.contains_key(avatar_id) {
+        return;
+    }
     let p = data
         .avatars
         .entry(avatar_id.to_string())
@@ -577,7 +581,53 @@ pub fn delete_group(data: &mut AppData, group_id: &str) {
 
 /// Forgets an avatar (and any group it leaves empty).
 pub fn delete_avatar(data: &mut AppData, avatar_id: &str) {
-    data.avatars.remove(avatar_id);
+    delete_avatars(data, &[avatar_id.to_string()]);
+}
+
+/// At most this many avatars without the Pregnancy System are kept.
+pub const MAX_WITHOUT_SYSTEM: usize = 15;
+
+/// Something about the avatar was chosen by you or is going on (same rule as
+/// `isSetUp` in src/lib/avatars.ts). Those are never removed on their own.
+fn is_set_up(data: &AppData, p: &AvatarProfile) -> bool {
+    let preg = data.current_pregnancy(Some(&p.id)).filter(|_| data.settings.sync_scope == SyncScope::PerAvatar);
+    p.group_id.is_some()
+        || !p.param_names.is_empty()
+        || p.sps.custom
+        || p.species.is_some()
+        || p.kind.is_some()
+        || p.hide_belly.is_some()
+        || p.belly_scale.is_some()
+        || p.fetal_sounds.is_some()
+        || preg.is_some()
+        || data.waiting.iter().any(|w| w.avatar_id.as_deref() == Some(p.id.as_str()))
+}
+
+/// Keeps the "Without the Pregnancy System" list to [`MAX_WITHOUT_SYSTEM`]:
+/// the ones worn longest ago are removed. Never the one you're wearing or one
+/// you set something up on. Returns how many were removed.
+pub fn trim_without_system(data: &mut AppData) -> usize {
+    let mut without: Vec<(i64, String)> = data
+        .avatars
+        .values()
+        .filter(|p| !p.params.is_empty() && !p.has_system())
+        .filter(|p| data.current_avatar_id.as_deref() != Some(p.id.as_str()) && !is_set_up(data, p))
+        .map(|p| (p.last_seen_ms, p.id.clone()))
+        .collect();
+    if without.len() <= MAX_WITHOUT_SYSTEM {
+        return 0;
+    }
+    without.sort();
+    let gone: Vec<String> = without[..without.len() - MAX_WITHOUT_SYSTEM].iter().map(|(_, id)| id.clone()).collect();
+    delete_avatars(data, &gone);
+    gone.len()
+}
+
+/// Forgets several avatars at once ("Remove all" on a folded section).
+pub fn delete_avatars(data: &mut AppData, avatar_ids: &[String]) {
+    for id in avatar_ids {
+        data.avatars.remove(id);
+    }
     prune_groups(data);
 }
 
@@ -961,6 +1011,41 @@ mod tests {
         assert!(d.groups.is_empty() && d.avatars.values().all(|a| a.group_id.is_none()));
         assert_eq!(d.current_pregnancy(Some("c")).unwrap().id, p);
         assert!(d.current_pregnancy(Some("b")).is_none());
+    }
+
+    #[test]
+    fn only_the_newest_avatars_without_the_system_are_kept() {
+        let mut d = AppData::new();
+        for i in 0..20 {
+            touch_avatar(&mut d, &format!("plain{i:02}"), i);
+            d.avatars.get_mut(&format!("plain{i:02}")).unwrap().params = vec!["AFK".into()];
+        }
+        touch_avatar(&mut d, "preg", 100);
+        d.avatars.get_mut("preg").unwrap().params = vec!["Pregnancy/Stage".into()];
+        d.avatars.get_mut("plain00").unwrap().species = Some("fox".into()); // set up: kept
+        touch_avatar(&mut d, "plain01", 200); // worn now: kept
+        d.avatars.insert("unchecked".into(), AvatarProfile { id: "unchecked".into(), ..Default::default() });
+        // 18 can go (02 to 19): the 3 worn longest ago are removed.
+        assert_eq!(trim_without_system(&mut d), 3);
+        for kept in ["plain00", "plain01", "preg", "unchecked", "plain19", "plain05"] {
+            assert!(d.avatars.contains_key(kept), "{kept}");
+        }
+        assert!(!d.avatars.contains_key("plain04"), "oldest go first");
+        assert_eq!(trim_without_system(&mut d), 0);
+    }
+
+    #[test]
+    fn adding_worn_avatars_can_be_turned_off() {
+        let mut d = AppData::new();
+        touch_avatar(&mut d, "a", 0);
+        d.settings.auto_add_avatars = false;
+        touch_avatar(&mut d, "b", 1);
+        touch_avatar(&mut d, "a", 2);
+        assert!(!d.avatars.contains_key("b"), "new ones aren't added");
+        assert_eq!(d.avatars["a"].last_seen_ms, 2, "known ones still update");
+        assert_eq!(d.current_avatar_id.as_deref(), Some("a"));
+        delete_avatars(&mut d, &["a".into(), "zz".into()]);
+        assert!(d.avatars.is_empty());
     }
 
     #[test]

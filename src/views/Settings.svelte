@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import Toggle from "../components/Toggle.svelte";
   import Section from "../components/Section.svelte";
+  import AccentPicker from "../components/AccentPicker.svelte";
   import DebugPanel from "../components/DebugPanel.svelte";
   import LinkInfo from "../components/LinkInfo.svelte";
   import { app, checkForUpdate, confirmAsk, errorToast, toast } from "../lib/app.svelte";
@@ -11,22 +12,55 @@
   import { FEATURES, FIXED, PARAM_INFO, PARAM_ORDER, REQUIRED, SYNC_ROLES, hasParam, syncLabel } from "../lib/params";
   import { week as weekOf } from "../lib/timeline";
   import { pregnancyFor } from "../lib/scope";
-  import type { MappingInfo, Multiples, ResetKind, Settings } from "../lib/types";
+  import type { LaborStart, MappingInfo, Multiples, ResetKind, Settings } from "../lib/types";
 
-  // Chatbox events, in order (keys match pregsys-core/src/chatbox.rs).
+  // Chatbox events, in order, with their default text (keys and texts match pregsys-core/src/chatbox.rs).
   const CHAT_EVENTS = [
-    { id: "started", label: "Pregnancy started" },
-    { id: "paused", label: "Paused" },
-    { id: "resumed", label: "Resumed" },
-    { id: "stopped", label: "Pregnancy stopped" },
-    { id: "born", label: "Baby born" },
-    { id: "woohoo", label: "WooHoo" },
-    { id: "notPregnant", label: "Not pregnant this time" },
-    { id: "achievement", label: "Achievement unlocked" },
+    { id: "started", label: "Pregnancy started", def: "🤰 A little one is on the way!" },
+    { id: "paused", label: "Paused", def: "⏸️ Pregnancy paused (week {week})" },
+    { id: "resumed", label: "Resumed", def: "▶️ Pregnancy resumed (week {week})" },
+    { id: "stopped", label: "Pregnancy stopped", def: "Pregnancy stopped" },
+    { id: "labor", label: "Labor started", def: "🤰 Labor has started!", off: true },
+    { id: "waterBroke", label: "Water broke", def: "💦 Water broke!", off: true },
+    { id: "born", label: "Baby born", def: "🍼 The baby is here!" },
+    { id: "woohoo", label: "WooHoo", def: "💕 WooHoo!" },
+    { id: "notPregnant", label: "Not pregnant this time", def: "Not pregnant this time" },
+    { id: "achievement", label: "Achievement unlocked", def: "🏆 {achievement}" },
+  ];
+  // Your own accent color: Custom opens the picker (closes it again if open).
+  let pickingColor = $state(false);
+  function openCustom() {
+    if (s.theme.customAccent && pickingColor) {
+      pickingColor = false;
+      return;
+    }
+    // Starts from the color you see now.
+    if (!s.theme.customAccent) s.theme.accent = PALETTES.find((p) => p.id === s.theme.palette)?.color ?? s.theme.accent;
+    s.theme.customAccent = true;
+    pickingColor = true;
+    commit();
+  }
+
+  // Palettes in src/app.css, with their accent color.
+  const PALETTES = [
+    { id: "strawberry", label: "Strawberry", color: "#f59ac0" },
+    { id: "lavender", label: "Lavender", color: "#b39bff" },
+    { id: "mint", label: "Mint", color: "#6fcfac" },
+    { id: "peach", label: "Peach", color: "#ffad7a" },
+    { id: "sky", label: "Sky", color: "#7fb8f5" },
+  ];
+  const LABOR_STARTS: { k: LaborStart; l: string; h: string }[] = [
+    { k: "random", l: "Surprise", h: "Some day from week 37 to 42" },
+    { k: "dueDate", l: "Due date", h: "Right on the due date" },
+    { k: "manual", l: "When I say", h: "You start it (Home or the avatar's menu)" },
   ];
   const SHOW_FOR: [number, string][] = [[5, "5 s"], [8, "8 s"], [15, "15 s"], [30, "30 s"]];
   function withChatRows(x: Settings): Settings {
-    for (const ev of CHAT_EVENTS) x.chatbox.messages[ev.id] ??= { on: true, text: "" };
+    // Empty texts show the default, typed out, so it can be edited.
+    for (const ev of CHAT_EVENTS) {
+      const m = (x.chatbox.messages[ev.id] ??= { on: !("off" in ev && ev.off), text: "" });
+      if (!m.text.trim()) m.text = ev.def;
+    }
     return x;
   }
 
@@ -260,6 +294,8 @@
     { v: 0.9, label: "Very likely", hint: "about 90%" },
   ];
   const status = $derived(app.status);
+  // Some Linux desktops have no tray (the browser preview pretends there is one).
+  const trayOk = $derived(!inTauri || (status?.trayAvailable ?? true));
 
   // What the status line looks like now (or with example values when not pregnant).
   const statusPreview = $derived.by(() => {
@@ -373,10 +409,10 @@
             <input type="checkbox" bind:checked={m.on} onchange={() => commit()} />
             <span>{ev.label}</span>
           </label>
-          <input class="chat-text" bind:value={m.text} disabled={!m.on} maxlength="144" placeholder="(default)" aria-label="{ev.label} message" oninput={() => commit()} />
+          <input class="chat-text" bind:value={m.text} disabled={!m.on} maxlength="144" placeholder={ev.def} aria-label="{ev.label} message" oninput={() => commit()} onblur={() => { if (!m.text.trim()) { m.text = ev.def; commit(); } }} />
         {/each}
       </div>
-      <span class="muted small">Use {"{week}"}, {"{babies}"}, {"{partner}"}, {"{name}"} or {"{achievement}"} in any text. Leave one empty for the default.</span>
+      <span class="muted small">Use {"{week}"}, {"{babies}"}, {"{partner}"}, {"{name}"} or {"{achievement}"} in any text. Clear one to get its default back.</span>
     {/if}
   </Section>
 
@@ -518,6 +554,7 @@
         </div>
         <span class="hint">Twins and more kick more often.</span>
       </div>
+      <Toggle bind:checked={s.kicksWithPartner} disabled={!s.readLogs} label="More active with your partner here" hint={s.readLogs ? "Kicks come twice as often (and stronger) while the partner is in the instance" : "Needs log reading (Logs and pictures)"} onchange={() => commit()} />
       <div class="field">
         <strong>Kinds of kicks</strong>
         <Toggle bind:checked={s.allowedKicks.weak} label="Little kicks" hint="From week 16" onchange={() => commit()} />
@@ -527,19 +564,120 @@
     {/if}
   </Section>
 
+  <Section id="labor" title="🍼 Labor and birth">
+    {#snippet extra()}<span class="pill">{LABOR_STARTS.find((x) => x.k === s.labor.start)?.l}</span>{/snippet}
+    <div class="field">
+      <strong>Labor starts</strong>
+      <div class="choices three">
+        {#each LABOR_STARTS as o}
+          <button class="opt" class:on={s.labor.start === o.k} onclick={() => { s.labor.start = o.k; commit(); }}>
+            <strong>{o.l}</strong><span>{o.h}</span>
+          </button>
+        {/each}
+      </div>
+    </div>
+    <div class="field">
+      <strong>Induce at</strong>
+      <div class="segmented">
+        {#each [[null, "Off"], [41, "Week 41"], [42, "Week 42"], [43, "Week 43"]] as [w, l]}
+          <button class:on={s.labor.induceWeek === w} onclick={() => { s.labor.induceWeek = w as number | null; commit(); }}>{l}</button>
+        {/each}
+      </div>
+      <span class="hint">Starts labor by then if it hasn't started on its own.</span>
+    </div>
+    <div class="field">
+      <strong>Labor length</strong>
+      <div class="segmented">
+        {#each [10, 20, 30, 60] as m}
+          <button class:on={s.labor.minutes === m} onclick={() => { s.labor.minutes = m; commit(); }}>{m} min</button>
+        {/each}
+      </div>
+      <span class="hint">Real minutes, whatever the pregnancy length. Contractions get closer, the water breaks, then the baby comes.</span>
+    </div>
+    <div class="field">
+      <strong>Contractions start</strong>
+      <div class="segmented">
+        <button class:on={!s.labor.quietEarly} onclick={() => { s.labor.quietEarly = false; commit(); }}>In early labor</button>
+        <button class:on={!!s.labor.quietEarly} onclick={() => { s.labor.quietEarly = true; commit(); }}>After the water breaks</button>
+      </div>
+      <span class="hint">{s.labor.quietEarly ? "Early labor shows nothing on your avatar (kicks carry on), so the water breaking is the first sign." : "Contractions show from the start of labor, getting closer until the water breaks."}</span>
+    </div>
+    <Toggle bind:checked={s.labor.restingHolds} label="Resting holds off labor" hint="Labor only starts, and the water only breaks, while you're standing. Sitting or lying down holds it off (Induce at still starts it)." onchange={() => commit()} />
+    <Toggle bind:checked={s.labor.woohooStarts} label="A WooHoo can start labor" hint="From week 37: a 25% chance, rising to 75% from week 40" onchange={() => commit()} />
+    <Toggle bind:checked={s.labor.waitsForPartner} disabled={!s.readLogs} label="Labor waits for your partner" hint={s.readLogs ? "Labor doesn't start until the partner is in the instance. Once it starts, it keeps going." : "Needs log reading (Logs and pictures)"} onchange={() => commit()} />
+    <span class="muted small">Labor only moves while you're in VRChat on an avatar with <code>Pregnancy/Labor</code>. On other avatars, "Welcome your baby" skips straight to the birth. Holding Start in the avatar's menu (from week 37) starts labor too.</span>
+    {#if lacks("labor")}{@render cantShow("labor", "Labor")}{/if}
+  </Section>
+
   <h3 class="cat">App</h3>
-  <Section id="startup" title="🚀 Start-up and look">
+  <Section id="steamvr" title="🥽 SteamVR">
+    {#snippet extra()}{#if status}<span class="pill" class:ok={status.steamvrRunning} class:off={!status.steamvrRunning}>{status.steamvrRunning ? "running" : "not running"}</span>{/if}{/snippet}
     <Toggle bind:checked={s.startWithSteamvr} label="Start with SteamVR" onchange={() => commit(true)} />
+    <Toggle bind:checked={s.steamvrDashboard} label="Show in the SteamVR dashboard" hint="The app gets its own tab in the dashboard" onchange={() => commit()} />
+    {#if s.steamvrDashboard}
+      <Toggle bind:checked={s.hideWindowInVr} label="Hide the window while in VR" hint="Open it from the dashboard tab or the tray" onchange={() => commit()} />
+    {/if}
+    <div class="field">
+      <strong>When SteamVR closes</strong>
+      <div class="segmented">
+        <button class:on={!s.exitWithSteamvr} onclick={() => { s.exitWithSteamvr = false; commit(); }}>Keep running</button>
+        <button class:on={s.exitWithSteamvr} onclick={() => { s.exitWithSteamvr = true; commit(); }}>Quit the app</button>
+      </div>
+    </div>
+    {#if status}
+      <span class="hint">
+        {#if !status.steamvrRunning}SteamVR isn't running.{:else if s.steamvrDashboard}SteamVR is running · {status.steamvrDashboard ? "In the dashboard ✓" : "Joining the dashboard…"}{:else}SteamVR is running.{/if}
+      </span>
+    {/if}
+  </Section>
+
+  <Section id="startup" title="🚀 Starting and closing">
     <Toggle bind:checked={s.startWithOs} label="Start when I log in" onchange={() => commit(true)} />
-    <Toggle bind:checked={s.startInTray} label="Start hidden in the tray" onchange={() => commit()} />
-    <Toggle bind:checked={s.exitWithSteamvr} label="Quit when SteamVR closes" onchange={() => commit()} />
+    <div class="field">
+      <strong>When it starts by itself</strong>
+      <div class="segmented">
+        <button class:on={!s.startInTray} onclick={() => { s.startInTray = false; commit(); }}>Open the window</button>
+        <button class:on={s.startInTray} disabled={!trayOk} onclick={() => { s.startInTray = true; commit(); }}>Stay in the tray</button>
+      </div>
+      <span class="hint">At log-in or with SteamVR. Opening it yourself always shows the window.</span>
+    </div>
+    <div class="field">
+      <strong>Closing the window</strong>
+      <div class="segmented">
+        <button class:on={s.closeToTray} disabled={!trayOk} onclick={() => { s.closeToTray = true; commit(); }}>Keep running in the tray</button>
+        <button class:on={!s.closeToTray} onclick={() => { s.closeToTray = false; commit(); }}>Quit the app</button>
+      </div>
+      {#if !trayOk}<span class="hint">There's no tray on this desktop, so closing quits.</span>{/if}
+    </div>
+  </Section>
+
+  <Section id="look" title="🎨 Look">
     <div class="field">
       <strong>Theme</strong>
       <div class="segmented">
-        {#each [["system", "Follow system"], ["light", "Light"], ["dark", "Dark"]] as [m, l]}
+        {#each [["system", "Follow system"], ["light", "Light"], ["dark", "Dark"], ["black", "Black"]] as [m, l]}
           <button class:on={s.theme.mode === m} onclick={() => { s.theme.mode = m as Settings["theme"]["mode"]; commit(); }}>{l}</button>
         {/each}
       </div>
+      {#if s.theme.mode === "black"}<span class="hint">True black, for OLED screens.</span>{/if}
+    </div>
+    <div class="field">
+      <strong>Color</strong>
+      <div class="swatches">
+        {#each PALETTES as pl}
+          {@const on = !s.theme.customAccent && s.theme.palette === pl.id}
+          <button class="swatch" class:on style="--sw:{pl.color}" aria-pressed={on} onclick={() => { s.theme.palette = pl.id; s.theme.customAccent = false; commit(); }}>
+            <span class="dot">{#if on}✓{/if}</span>{pl.label}
+          </button>
+        {/each}
+        <button class="swatch custom" class:on={s.theme.customAccent} style="--sw:{s.theme.customAccent ? s.theme.accent : 'transparent'}" aria-expanded={pickingColor} onclick={openCustom}>
+          <span class="dot">{#if s.theme.customAccent}✓{/if}</span>Custom
+        </button>
+      </div>
+      {#if pickingColor && s.theme.customAccent}
+        <AccentPicker value={s.theme.accent} onchange={(c) => { s.theme.accent = c; commit(); }} />
+      {/if}
+      <span class="hint">Buttons, toggles and the progress ring.</span>
     </div>
   </Section>
 
@@ -636,12 +774,13 @@
 
     {#if mapInfo}
       <h3 class="sub">💓 Kick values</h3>
-      <p class="muted small">Sent to Fetal movement. The SDK plays a different kick for 1, 2 and 3, and goes back to 0 after the hold time. If your avatar also makes its own random kicks, have its kick layer pause while <code>Pregnancy/AppActive</code> is on.</p>
+      <p class="muted small">Sent to Fetal movement. The SDK plays a different kick for 1, 2 and 3, and goes back to 0 after the hold time. During labor, the contraction value is held for 30 s instead. If your avatar also makes its own random kicks, have its kick layer pause while <code>Pregnancy/AppActive</code> is on.</p>
       <div class="kickvals">
         <label class="field">Little<input type="number" bind:value={mapInfo.mapping.kicks.weak} /></label>
         <label class="field">Strong<input type="number" bind:value={mapInfo.mapping.kicks.strong} /></label>
         <label class="field">Big<input type="number" bind:value={mapInfo.mapping.kicks.extreme} /></label>
         <label class="field">Hold (ms)<input type="number" min="100" step="100" bind:value={mapInfo.mapping.kicks.holdMs} /></label>
+        <label class="field">Contraction<input type="number" bind:value={mapInfo.mapping.kicks.contraction} /></label>
       </div>
 
       <div class="row">
@@ -808,9 +947,52 @@
     align-items: center;
     gap: 8px;
   }
+  .swatches {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .swatch {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 12px 5px 5px;
+    border-radius: 999px;
+    border: 1.5px solid transparent;
+    background: var(--bg-3);
+    color: var(--text);
+    font: inherit;
+    font-weight: 700;
+    font-size: 0.9rem;
+    box-shadow: none;
+    cursor: pointer;
+  }
+  .swatch.on {
+    border-color: var(--sw);
+    background: color-mix(in srgb, var(--sw) 16%, var(--bg-3));
+  }
+  .dot {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--sw);
+    color: #fff;
+    font-size: 0.75rem;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  }
+  /* Custom before one is picked: a little rainbow. */
+  .custom:not(.on) .dot {
+    background: conic-gradient(#f59ac0, #ffad7a, #f7d774, #6fcfac, #7fb8f5, #b39bff, #f59ac0);
+  }
+  .custom.on {
+    border-color: var(--accent);
+  }
   .kickvals {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
     gap: 8px;
     margin-bottom: 8px;
   }

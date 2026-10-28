@@ -20,7 +20,8 @@
         "minWidth": 380,
         "minHeight": 560,
         "visible": false,
-        "center": true
+        "center": true,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion"
       }
     ],
     "security": {

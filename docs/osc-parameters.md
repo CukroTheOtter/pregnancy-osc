@@ -37,7 +37,7 @@ Found in the avatar's Settings > App Controls menu. These names can't be changed
 
 | Parameter | Type | Who sets it | What it does |
 |---|---|---|---|
-| `Pregnancy/Control/Start` | bool, local | Avatar | **Start** a pregnancy with the length saved in the app. |
+| `Pregnancy/Control/Start` | bool, local | Avatar | **Start** a pregnancy with the length saved in the app. From week 37, **hold 2 s** to start labor. |
 | `Pregnancy/Control/Pause` | bool, local | Avatar | **Pause**, or resume if paused. |
 | `Pregnancy/Control/Stop` | bool, local | Avatar | **Stop** the pregnancy. Hold for 2 s. Ends it without a birth. |
 
@@ -48,7 +48,8 @@ Found in the avatar's Settings > App Controls menu. These names can't be changed
 | `Pregnancy/FertileLevel` | int, synced | App | **How fertile you are right now.** 0 low, 1 medium, 2 high, 3 peak. Always 0 while pregnant or waiting. Use it for a fertility indicator. |
 | `Pregnancy/Waiting` | bool, synced | App | **"Waiting to find out."** On during the grace period after a WooHoo, before the app reveals whether it took. |
 | `Pregnancy/BabyCount` | int, synced | App | **How many babies.** 0 until they can be seen (week 12), then 1 to 4. |
-| `Pregnancy/FetalMovement` | int, synced | App | **A kick.** 1 little, 2 strong, 3 big (editable in Settings > Advanced), then back to 0 after 1.5 s. Kicks start at week 16, strong from 24, big from 32. |
+| `Pregnancy/FetalMovement` | int, synced | App | **A kick.** 1 little, 2 strong, 3 big (editable in Settings > Advanced), then back to 0 after 1.5 s. Kicks start at week 16, strong from 24, big from 32. During labor: **4 = a contraction**, held 30 s. |
+| `Pregnancy/Labor` | int, synced | App | **Labor.** 0 none, 1 early labor, 2 water broken, 3 pushing, 4 born (while the belly goes down, about 10 s). Use the change to 2 for the water breaking. |
 | `Pregnancy/FetalSounds` | bool, synced | Both | **Heartbeat / womb sounds on or off.** You toggle it in-game; the app keeps it the same on every avatar. |
 
 ### Read only: WooHoo detection
@@ -87,12 +88,13 @@ What the app drives or reads. Rename them in **Settings > Advanced** (or per ava
 | `Pregnancy/BellyExtra` | float | yes | 8 | Optional. **Extra size**, 0 to 1, for the SDK's Bigger Belly (adds Belly_Bigger on top, scaled by Stage). Twins 0.35, triplets 0.6, 4+ 0.8; past the due date it grows to 1. Each part can be turned off under Settings > Bigger belly. |
 | `Pregnancy/AppActive` | bool | **no** | 0 | True while the app runs. False on exit. **Required.** |
 | `Pregnancy/AppHeartbeat` | bool | **no** | 0 | Flips every second while the app runs. **Required.** |
-| `Pregnancy/Control/Start` | bool | **no** | 0 | Optional, name fixed (Start, Pause and Stop are made for this app, so they can't be renamed or given per-avatar names). Read. Button in the avatar's Settings > App Controls menu: starts a pregnancy with the saved length. |
+| `Pregnancy/Control/Start` | bool | **no** | 0 | Optional, name fixed (Start, Pause and Stop are made for this app, so they can't be renamed or given per-avatar names). Read. Button in the avatar's Settings > App Controls menu: starts a pregnancy with the saved length. Held for 2 seconds from week 37: starts labor. |
 | `Pregnancy/Control/Pause` | bool | **no** | 0 | Read. Button: pauses, or resumes if paused. |
 | `Pregnancy/Control/Stop` | bool | **no** | 0 | Read. Button: held for 2 seconds, ends the pregnancy (not a birth). |
 | `Pregnancy/FertileLevel` | int | yes | 8 | Optional. 0 low, 1 medium, 2 high, 3 peak. 0 while pregnant or waiting. |
 | `Pregnancy/Waiting` | bool | yes | 1 | Optional. True during the grace period after a WooHoo. |
 | `Pregnancy/BabyCount` | int | yes | 8 | Optional. 0 until the babies can be seen (week 12), then 1 to 4. |
+| `Pregnancy/Labor` | int | yes | 8 | Optional. **Labor phase:** 0 none, 1 early (contractions getting closer), 2 the water broke, 3 pushing, 4 born (held while the belly goes down over about 10 s, then 0). See [Labor and birth](#labor-and-birth). |
 | `Pregnancy/FetalMovement` | int | yes | 8 | Optional. **Kicks:** the app sets it to the little / strong / big kick code (default 1 / 2 / 3, editable under Settings > Advanced > Kick values), then back to 0 after 1.5 s. The SDK's kick layer plays a different kick for each code, and only rolls its own kicks while `Pregnancy/AppActive` is off. Kicks start at week 16; strong from 24, big from 32. |
 
 Older names still work as backups: `Pregnancy/Active`, `Pregnancy/Heartbeat` and the `PregnancyOSC/...` names. Parameter files from earlier versions are upgraded to the new names automatically (names you changed yourself are kept).
@@ -142,7 +144,8 @@ These are local parameters on the avatar, so they cost no synced bits.
 | Belly + Extra size | 16 |
 | App is running + Heartbeat | 0 (local) |
 | Fertility, babies and kicks (optional) | +25 |
-| **All app parameters** | **41** |
+| Labor (optional) | +8 |
+| **All app parameters** | **49** |
 
 ---
 
@@ -158,7 +161,19 @@ These are local parameters on the avatar, so they cost no synced bits.
 | A WooHoo (SPS sockets) | With Fertility on, the app starts a **grace period** (holds the belly at 0, sets `waiting`) and reveals the outcome later; with Fertility off, a pregnancy starts right away. The avatar's own fertility trigger is not used. |
 | Chatbox (Settings > Chatbox, off by default) | Shows a message per event (started, paused, resumed, stopped, born, WooHoo, not pregnant, achievement) with `/chatbox/input`, at most one every 2 s, then clears it after "Show each message for" (default 8 s). Optional status line ("Always show pregnancy status", with or without the partner) is re-sent every 4 s while pregnant, and comes back after each event message. |
 | Exit (or VRChat closes, or tracking paused) | Sends the final belly value, then Active false. The avatar's clock carries on from there. |
-| Past the due date | `stage` stays at 1. `bellyExtra` grows to 1 over `overdue.maxOverdueFraction` of the term (default 5%, about 2 weeks at 9 months). |
+| Past the due date | `stage` stays at 1. `bellyExtra` grows to 1 over `overdue.maxOverdueFraction` of the term (default 5%, about 2 weeks at 9 months), then stops. |
+| Labor | See below. Kicks stop; `fetalMovement` sends contractions instead. |
+| Birth | The belly (and extra size) goes down to 0 over about 10 s, with `labor` = 4, then the belly is left alone. |
+
+### Labor and birth
+
+- **When labor starts** (Settings > Labor and birth): *Surprise* (default, a day from week 37 to 42 picked when the pregnancy starts, most likely about 40; twins a week earlier, triplets 2.5, 4+ 4), *Due date*, or *When I say*. *Induce at* (week 41 to 43, off by default) starts it by then.
+- **Only in-game:** labor starts and moves only while VRChat is linked and you wear an avatar that has `Pregnancy/Labor` (or whose parameter list isn't known). When it's due, it starts 1 to 5 minutes later, so never while the avatar loads. On any other avatar it waits (the pregnancy stays at full term), or pauses partway and picks up when you switch back. "Welcome your baby" on Home always skips straight to the birth.
+- **Phases** take *Labor length* (default 20 real minutes, whatever the pregnancy length): early labor half of it (a contraction every 5 minutes, closing in to 2), water broken 30% (every minute), pushing 20% (every 45 s). 15% of the time the water breaks first and early labor is skipped.
+- **Contractions start** *after the water breaks* (quiet early labor): during early labor `labor` stays 0, kicks carry on and no contractions are sent, so the water breaking (`labor` = 2) is the first sign on the avatar.
+- **Resting holds off labor** (off by default): labor only starts, and the water only breaks, while you're up. Up = not `Seated`, not `InStation`, and `Upright` at least 0.7 (VRChat built-ins, read only, free). Once due, labor starts while you're up with a chance each second (about 4 minutes on average, 2 while walking, `VelocityMagnitude` at least 0.6). Resting in early labor keeps the contractions going but stops just before the water breaks. *Induce at* still starts labor while resting. Debug mode shows the live `Upright` value.
+- **AFK:** while VRChat's `AFK` is on, labor doesn't start and its clock stops.
+- **Partner** (needs log reading): *Labor waits for your partner* holds the start until the pregnancy's partner is in the instance (gone less than 2 minutes still counts). Once labor starts it keeps going if they leave. *More active with your partner here* (Kicks) makes kicks twice as often and stronger, adds a kick soon after they arrive, and makes contractions a little closer. An unknown partner turns both off.
 
 ---
 
@@ -173,4 +188,4 @@ These are local parameters on the avatar, so they cost no synced bits.
 ## 5. Open questions
 
 1. **Speed on exit:** should the app set `progressionSpeed` on exit so the avatar keeps the app's pace? (It changes a saved menu setting, so it's off for now.)
-2. **Overdue:** the app only reads `overdue`. Should it ever turn it on itself past the due date?
+2. ~~Overdue~~: answered. Labor starts by week 42 on its own (unless *When I say*), and the overdue belly stops growing at full extra size.

@@ -6,6 +6,7 @@
 <script lang="ts">
   import { app } from "../lib/app.svelte";
   import { api } from "../lib/api";
+  import { TEST_BUDDY_PICTURE, isTestBuddy } from "../lib/testbuddy";
 
   let { name, userId = null, size = 46 }: { name: string; userId?: string | null; size?: number } = $props();
 
@@ -14,6 +15,11 @@
 
   $effect(() => {
     src = null;
+    // Debug: Test Buddy's picture is made up, so it shows even with pictures off.
+    if (isTestBuddy(userId)) {
+      src = TEST_BUDDY_PICTURE;
+      return;
+    }
     if (!enabled || !userId) return;
     const id = userId;
     if (!cache.has(id)) {

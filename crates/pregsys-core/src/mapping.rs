@@ -96,11 +96,13 @@ pub struct KickValues {
     pub strong: i32,
     pub extreme: i32,
     pub hold_ms: i64,
+    /// Sent for each contraction during labor (held for 30 s).
+    pub contraction: i32,
 }
 
 impl Default for KickValues {
     fn default() -> Self {
-        Self { weak: 1, strong: 2, extreme: 3, hold_ms: 1500 }
+        Self { weak: 1, strong: 2, extreme: 3, hold_ms: 1500, contraction: 4 }
     }
 }
 
@@ -115,7 +117,7 @@ impl KickValues {
 }
 
 /// Current version of the parameter file layout.
-pub const MAPPING_VERSION: u32 = 6;
+pub const MAPPING_VERSION: u32 = 7;
 
 /// The app's own menu buttons: made for this app by the SDK, so their names
 /// are fixed (no renaming, no per-avatar names).
@@ -271,9 +273,10 @@ impl Mapping {
         for key in ["hideBelly", "fetalSounds", "progressionSpeed", "eggMode", "species", "revealPulse", "kick", "overdue"] {
             self.parameters.remove(key);
         }
+        // v6 -> v7: labor (`labor`, added by fill_missing) and the contraction code (defaults to 4).
         // v4 -> v5: the SDK's kick layer plays kick codes 1 / 2 / 3. Values the user changed are kept.
         if (self.kicks.weak, self.kicks.strong, self.kicks.extreme) == (25, 60, 90) {
-            self.kicks = KickValues { hold_ms: self.kicks.hold_ms, ..KickValues::default() };
+            self.kicks = KickValues { hold_ms: self.kicks.hold_ms, contraction: self.kicks.contraction, ..KickValues::default() };
         }
         self.version = MAPPING_VERSION;
     }
@@ -392,8 +395,8 @@ mod tests {
         let m = Mapping::default();
         // stage 8
         assert_eq!(m.synced_bits(false), 8);
-        // + bellyExtra 8 + babyCount 8 + fertileLevel 8 + waiting 1 + fetalMovement 8
-        assert_eq!(m.synced_bits(true), 41);
+        // + bellyExtra 8 + babyCount 8 + fertileLevel 8 + waiting 1 + fetalMovement 8 + labor 8
+        assert_eq!(m.synced_bits(true), 49);
     }
 
     #[test]
@@ -432,7 +435,7 @@ mod tests {
     #[test]
     fn v2_active_becomes_app_active() {
         let json = DEFAULT_MAPPING_JSON
-            .replace(r#""version": 6"#, r#""version": 2"#)
+            .replace(r#""version": 7"#, r#""version": 2"#)
             .replace(r#""name": "Pregnancy/AppActive""#, r#""name": "Pregnancy/Active""#)
             .replace(r#""name": "Pregnancy/AppHeartbeat""#, r#""name": "Pregnancy/Heartbeat""#);
         let m = Mapping::from_json(&json).unwrap();
@@ -444,7 +447,7 @@ mod tests {
     #[test]
     fn old_kick_values_become_codes() {
         let old = DEFAULT_MAPPING_JSON
-            .replace(r#""version": 6"#, r#""version": 4"#)
+            .replace(r#""version": 7"#, r#""version": 4"#)
             .replace(r#""weak": 1"#, r#""weak": 25"#)
             .replace(r#""strong": 2"#, r#""strong": 60"#)
             .replace(r#""extreme": 3"#, r#""extreme": 90"#);
@@ -456,7 +459,7 @@ mod tests {
 
     #[test]
     fn overdue_becomes_extra_size() {
-        let old = DEFAULT_MAPPING_JSON.replace(r#""version": 6"#, r#""version": 5"#).replace(
+        let old = DEFAULT_MAPPING_JSON.replace(r#""version": 7"#, r#""version": 5"#).replace(
             r#""bellyExtra": {"#,
             r#""overdue": {"name": "Pregnancy/Overdue", "type": "bool", "synced": true}, "bellyExtra": {"#,
         );
