@@ -1,6 +1,6 @@
 [package]
 name = "pregsys-companion"
-version = "0.5.1"
+version = "0.6.0"
 description = "Pregnancy OSC"
 edition = "2021"
 default-run = "pregsys-companion"
