@@ -6,6 +6,7 @@
   import { BABY_REVEAL_WEEK } from "../lib/fertility";
   import type { Labor, Pregnancy } from "../lib/types";
   import { hipWarning } from "../lib/posture";
+  import HeightDoubt from "./HeightDoubt.svelte";
 
   let { p, week, isDue, viewingOther, onbirth }: { p: Pregnancy; week: number; isDue: boolean; viewingOther: boolean; onbirth: () => void } = $props();
 
@@ -23,6 +24,8 @@
   const many = $derived(p.babyCount > 1 && week >= BABY_REVEAL_WEEK);
   // "Resting holds off labor": whether you're up right now (in-game only).
   const resting = $derived(!!settings?.labor.restingHolds && canShow && status?.up === false);
+  // "Labor waits for your partner", and they aren't in the instance (same as labor.rs).
+  const waitingPartner = $derived(!!settings?.labor.waitsForPartner && !!partner && status?.partnerHere === false);
   const welcome = $derived(many ? "Welcome your babies 🍼" : "Welcome your baby 🍼");
   let busy = $state(false);
 
@@ -72,6 +75,7 @@
       <span class="small">⏸ Labor paused. {pausedWhy}</span>
     {:else if resting && labor.phase === "early"}
       <span class="rest small">🛋️ Resting: your water won't break until you're up</span>
+      <HeightDoubt />
     {:else if settings}
       <span class="small muted">Contractions about every {Math.round(gapMinutes(labor, settings.labor.minutes) * 10) / 10} min</span>
     {/if}
@@ -93,10 +97,10 @@
   <button class="big" onclick={onbirth}>{welcome}</button>
 {:else if week >= LABOR_WEEK && canShow}
   {#if settings?.labor.restingHolds}
-    <span class="rest small" class:up={!resting}>{resting ? "🛋️ Resting: labor is holding off" : "🚶 Up and about: labor can start any time"}</span>
+    <span class="rest small" class:up={!resting && !waitingPartner}>{resting ? "🛋️ Resting: labor is holding off" : waitingPartner ? `🚶 Up and about, but labor waits for ${partner} 💞` : "🚶 Up and about: labor can start any time"}</span>
     {#if hipWarning(status)}<span class="small warn">⚠️ {hipWarning(status)}</span>{/if}
-  {/if}
-  {#if isDue && settings?.labor.waitsForPartner && partner && status?.partnerHere === false}
+    {#if resting}<HeightDoubt />{/if}
+  {:else if isDue && waitingPartner}
     <span class="small muted">Ready when {partner} is here 💞</span>
   {/if}
   <button class="big" onclick={startLabor} disabled={busy}>Start labor 🤰</button>

@@ -1,7 +1,31 @@
 // Notes about how "Resting holds off labor" can tell you're resting (see
-// pregsys-core/src/posture.rs and steamvr_posture.rs).
+// pregsys-core/src/posture.rs and steamvr.rs).
 
 import type { Status } from "./types";
+import { app, errorToast, toast } from "./app.svelte";
+import { api } from "./api";
+
+/** "Set height now": SteamVR measures your headset. Shows it straight away. */
+export async function setHeightNow(): Promise<void> {
+  try {
+    const m = await api.setStandingHeightNow();
+    if (app.status) app.status.vrStandingM = m;
+    toast("Height set", `${m.toFixed(2)} m. Sitting or lying well below it counts as resting.`);
+  } catch (e) {
+    errorToast(e);
+  }
+}
+
+/** Forgets your height (learned again as you play, if that's on). */
+export async function forgetHeight(): Promise<void> {
+  try {
+    await api.forgetStandingHeight();
+    if (app.status) app.status.vrStandingM = null;
+    toast("Height forgotten", app.data?.settings.vrHeightAuto !== false ? "It's learned again as you play." : "Set it again when you're ready.");
+  } catch (e) {
+    errorToast(e);
+  }
+}
 
 /** A warning about the waist (hip) tracker, or "" when all is well. */
 export function hipWarning(st: Status | null | undefined): string {

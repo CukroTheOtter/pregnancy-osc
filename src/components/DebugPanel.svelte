@@ -211,9 +211,9 @@
 
   <div class="group">
     <strong>🧍 Posture</strong>
-    <span class="muted small">For "Resting holds off labor". In VR with SteamVR: resting when your headset is 0.45 m below its highest, or your waist tracker says you're lying down. Otherwise: VRChat's Upright 0.7 or more, not in a seat.</span>
+    <span class="muted small">For "Resting holds off labor". In VR with SteamVR: resting when your headset is 0.45 m below your normal height (the highest it's spent 20 s at), tipped about 70° over, or your waist tracker says you're lying down. Otherwise: VRChat's Upright 0.7 or more, not in a seat.</span>
     <span class="small">{st?.up === false ? "🛋️ resting" : "🚶 up"} · by {st?.postureSource === "steamvr" ? "SteamVR" : "VRChat"}{st?.afk ? " · 💤 AFK" : ""}</span>
-    <span class="small muted">Upright {st?.upright != null ? st.upright.toFixed(2) : "not heard yet"}{#if st?.vrDropM != null} · headset {st.vrDropM.toFixed(2)} m below its highest{/if}{#if st?.vrLying != null} · hip tracker: {st.vrLying ? "lying down" : "upright"}{/if}{#if st?.vrTrackers} · {st.vrTrackers} trackers, waist {st.vrWaist ? (st.vrHipTracked ? "✓" : "lost") : "not set"}{/if}</span>
+    <span class="small muted">Upright {st?.upright != null ? st.upright.toFixed(2) : "not heard yet"}{#if st?.vrDropM != null} · headset {st.vrDropM.toFixed(2)} m below standing{/if}{#if st?.vrStandingM} (saved normal height {st.vrStandingM.toFixed(2)} m){/if}{#if st?.postureSource === "steamvr"} · {st.vrProven ? "height proven this session" : "height not proven yet this session"}{/if}{#if st?.vrHeightDoubt} · 🤔 avatar standing, SteamVR says sitting{/if}{#if st?.vrTilted} · headset tipped over{/if}{#if st?.vrLying != null} · hip tracker: {st.vrLying ? "lying down" : "upright"}{/if}{#if st?.vrTrackers} · {st.vrTrackers} trackers, waist {st.vrWaist ? (st.vrHipTracked ? "✓" : "lost") : "not set"}{/if}</span>
     {#if hipWarning(st)}<span class="small warn-text">⚠️ {hipWarning(st)}</span>{/if}
   </div>
 

@@ -14,6 +14,9 @@ pub struct Procs {
 pub struct Running {
     pub vrchat: bool,
     pub steamvr: bool,
+    /// XSOverlay and OVR Toolkit, for notifications in VR (see `vr_notify`).
+    pub xsoverlay: bool,
+    pub ovr_toolkit: bool,
 }
 
 impl Procs {
@@ -33,7 +36,13 @@ impl Procs {
             if n.starts_with("vrserver") || n.starts_with("vrmonitor") {
                 r.steamvr = true;
             }
+            if n.starts_with("xsoverlay") {
+                r.xsoverlay = true;
+            }
         }
+        // OVR Toolkit counts when its notification API answers (its process
+        // name doesn't matter then, and an API that's off doesn't count).
+        r.ovr_toolkit = crate::vr_notify::ovr_toolkit_listening();
         r
     }
 }

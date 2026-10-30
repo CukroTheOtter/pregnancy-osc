@@ -4,9 +4,10 @@ mod commands;
 mod engine;
 mod pictures;
 mod state;
-mod steamvr_posture;
+mod steamvr;
 mod system;
 mod updates;
+mod vr_notify;
 
 use pregsys_core::mapping::Mapping;
 use pregsys_core::storage::Store;
@@ -42,12 +43,23 @@ pub fn request_quit(app: &AppHandle) {
     });
 }
 
+/// Shows a notification in your headset if it can (see `vr_notify`), else as
+/// a desktop notification (if that's on): never both.
 pub fn notify(app: &AppHandle, title: &str, body: &str) {
-    let on = app.state::<Arc<Shared>>().data.lock().unwrap().settings.notifications;
-    if on {
-        use tauri_plugin_notification::NotificationExt;
-        let _ = app.notification().builder().title(title).body(body).show();
+    let shared = app.state::<Arc<Shared>>();
+    if !vr_notify::send(&shared, title, body).is_empty() {
+        return;
     }
+    let on = shared.data.lock().unwrap().settings.notifications;
+    if on {
+        desktop_notify(app, title, body);
+    }
+}
+
+/// Your computer's own notification (Windows, Linux, macOS).
+pub fn desktop_notify(app: &AppHandle, title: &str, body: &str) {
+    use tauri_plugin_notification::NotificationExt;
+    let _ = app.notification().builder().title(title).body(body).show();
 }
 
 pub fn set_os_autostart(app: &AppHandle, enable: bool) -> Result<(), String> {
@@ -133,6 +145,8 @@ pub fn run() {
                 tray_available: AtomicBool::new(false),
                 quitting: AtomicBool::new(false),
                 vr_posture: Mutex::new(None),
+                vr_set_height: Mutex::new(None),
+                vr_notice_queue: Mutex::new(Vec::new()),
             });
             app.manage(shared.clone());
 
@@ -141,7 +155,7 @@ pub fn run() {
             shared.tray_available.store(tray_ok, Ordering::SeqCst);
 
             engine::spawn(handle.clone(), shared.clone());
-            steamvr_posture::spawn(handle.clone(), shared.clone());
+            steamvr::spawn(handle.clone(), shared.clone());
 
             let start_in_tray = shared.data.lock().unwrap().settings.start_in_tray;
             let hide = tray_arg || (autostart_arg && start_in_tray);
@@ -192,6 +206,9 @@ pub fn run() {
             commands::delete_group,
             commands::set_species_answer,
             commands::forget_person,
+            commands::forget_standing_height,
+            commands::set_standing_height_now,
+            commands::test_notice,
             commands::import_community_table,
             commands::save_journal_entry,
             commands::delete_journal_entry,

@@ -3,8 +3,9 @@
   import Toggle from "../components/Toggle.svelte";
   import Section from "../components/Section.svelte";
   import AccentPicker from "../components/AccentPicker.svelte";
-  import { hipWarning } from "../lib/posture";
+  import { forgetHeight, hipWarning, setHeightNow } from "../lib/posture";
   import DebugPanel from "../components/DebugPanel.svelte";
+  import HeightDoubt from "../components/HeightDoubt.svelte";
   import LinkInfo from "../components/LinkInfo.svelte";
   import { app, checkForUpdate, confirmAsk, errorToast, toast } from "../lib/app.svelte";
   import { api, inTauri, pickFolder, pickTextFile, saveTextFile } from "../lib/api";
@@ -13,7 +14,7 @@
   import { FEATURES, FIXED, PARAM_INFO, PARAM_ORDER, REQUIRED, SYNC_ROLES, hasParam, syncLabel } from "../lib/params";
   import { week as weekOf } from "../lib/timeline";
   import { pregnancyFor } from "../lib/scope";
-  import type { LaborStart, MappingInfo, Multiples, ResetKind, Settings } from "../lib/types";
+  import type { LaborStart, MappingInfo, Multiples, ResetKind, Settings, VrNotices, VrTarget } from "../lib/types";
 
   // Chatbox events, in order, with their default text (keys and texts match pregsys-core/src/chatbox.rs).
   const CHAT_EVENTS = [
@@ -115,6 +116,43 @@
       errorToast(e);
     }
     updating = "";
+  }
+
+  // "Set height now": SteamVR measures your headset (see steamvr.rs).
+  let settingHeight = $state(false);
+  async function measureHeight() {
+    settingHeight = true;
+    await setHeightNow();
+    settingHeight = false;
+  }
+
+  // Notifications > In VR. Where they go mirrors VrNotices::targets (model.rs):
+  // every overlay tool that's on and running, else SteamVR as the fallback.
+  const VR_APP_NAMES: Record<VrTarget, string> = { xsoverlay: "XSOverlay", ovrToolkit: "OVR Toolkit", steamvr: "SteamVR" };
+  const vn = $derived<VrNotices>(s.vrNotices ?? { xsoverlay: true, ovrToolkit: true, steamvr: false });
+  const vrTargets = $derived.by(() => {
+    const out: VrTarget[] = [];
+    if (vn.xsoverlay && status?.xsoverlayRunning) out.push("xsoverlay");
+    if (vn.ovrToolkit && status?.ovrToolkitRunning) out.push("ovrToolkit");
+    if (!out.length && vn.steamvr && status?.steamvrRunning) out.push("steamvr");
+    return out;
+  });
+  function setNotices(key: keyof VrNotices, on: boolean) {
+    s.vrNotices = { ...vn, [key]: on };
+    commit();
+  }
+  let testingNotice = $state(false);
+  async function testNotice() {
+    testingNotice = true;
+    try {
+      const sent = await api.testNotice();
+      toast("Test sent", `To ${sent.join(" and ")}.`);
+    } catch (e) {
+      // Usually just "nothing's running", not an error.
+      toast("No test sent", e instanceof Error ? e.message : String(e));
+    } finally {
+      testingNotice = false;
+    }
   }
 
   let portError = $state("");
@@ -567,6 +605,7 @@
 
   <Section id="labor" title="🍼 Labor and birth">
     {#snippet extra()}<span class="pill">{LABOR_STARTS.find((x) => x.k === s.labor.start)?.l}</span>{/snippet}
+    <strong class="sub">🗓️ When it starts</strong>
     <div class="field">
       <strong>Labor starts</strong>
       <div class="choices three">
@@ -586,6 +625,9 @@
       </div>
       <span class="hint">Starts labor by then if it hasn't started on its own.</span>
     </div>
+    <Toggle bind:checked={s.labor.woohooStarts} label="A WooHoo can start labor" hint="From week 37: a 25% chance, rising to 75% from week 40" onchange={() => commit()} />
+    <Toggle bind:checked={s.labor.waitsForPartner} disabled={!s.readLogs} label="Labor waits for your partner" hint={s.readLogs ? "Labor doesn't start until the partner is in the instance. Once it starts, it keeps going." : "Needs log reading (Logs and pictures)"} onchange={() => commit()} />
+    <strong class="sub">⏱️ How it goes</strong>
     <div class="field">
       <strong>Labor length</strong>
       <div class="segmented">
@@ -603,37 +645,48 @@
       </div>
       <span class="hint">{s.labor.quietEarly ? "Early labor shows nothing on your avatar (kicks carry on), so the water breaking is the first sign." : "Contractions show from the start of labor, getting closer until the water breaks."}</span>
     </div>
+    <strong class="sub">🛋️ Resting</strong>
     <Toggle bind:checked={s.labor.restingHolds} label="Resting holds off labor" hint="Labor only starts, and the water only breaks, while you're standing. Sitting or lying down holds it off (Induce at still starts it)." onchange={() => commit()} />
     {#if s.labor.restingHolds}
-      <span class="hint">{status?.postureSource === "steamvr" ? "In VR, SteamVR's tracking tells if you're up (playspace movers can't fool it)." : "Goes by VRChat's Upright and seats. In VR with SteamVR running, SteamVR's tracking is used instead."}</span>
+      <Toggle checked={s.vrPosture !== false} label="Use SteamVR tracking" hint={status?.postureSource === "steamvr" ? "✓ In use: your headset height, tilt and waist tracker tell if you're up (playspace movers can't fool it)." : "In VR with SteamVR running, your headset height, tilt and waist tracker tell if you're up. Off, or without SteamVR: VRChat's Upright and seats."} onchange={(v) => { s.vrPosture = v; commit(); }} />
       {#if hipWarning(status)}<span class="small cant">⚠️ {hipWarning(status)}</span>{/if}
+      {#if s.vrPosture !== false}
+        <HeightDoubt />
+        <div class="height">
+          <span><strong>Your height:</strong> {status?.vrStandingM ? `${status.vrStandingM.toFixed(2)} m` : "not set yet"}</span>
+          <div class="row">
+            <button class="small soft" onclick={measureHeight} disabled={settingHeight}>📏 Set height now</button>
+            {#if status?.vrStandingM}<button class="small soft" onclick={forgetHeight}>Forget</button>{/if}
+          </div>
+          <span class="hint">With your headset on, stand (or sit up, if that's your normal) and tap. Sitting or lying well below it counts as resting.</span>
+        </div>
+        <Toggle checked={s.vrHeightAuto !== false} label="Set height automatically" hint="Learns the highest height your headset spends 20 seconds at. Off: only the height you set." onchange={(v) => { s.vrHeightAuto = v; commit(); }} />
+      {/if}
     {/if}
-    <Toggle bind:checked={s.labor.woohooStarts} label="A WooHoo can start labor" hint="From week 37: a 25% chance, rising to 75% from week 40" onchange={() => commit()} />
-    <Toggle bind:checked={s.labor.waitsForPartner} disabled={!s.readLogs} label="Labor waits for your partner" hint={s.readLogs ? "Labor doesn't start until the partner is in the instance. Once it starts, it keeps going." : "Needs log reading (Logs and pictures)"} onchange={() => commit()} />
     <span class="muted small">Labor only moves while you're in VRChat on an avatar with <code>Pregnancy/Labor</code>. On other avatars, "Welcome your baby" skips straight to the birth. Holding Start in the avatar's menu (from week 37) starts labor too.</span>
     {#if lacks("labor")}{@render cantShow("labor", "Labor")}{/if}
   </Section>
 
   <h3 class="cat">App</h3>
-  <Section id="steamvr" title="🥽 SteamVR">
-    {#snippet extra()}{#if status}<span class="pill" class:ok={status.steamvrRunning} class:off={!status.steamvrRunning}>{status.steamvrRunning ? "running" : "not running"}</span>{/if}{/snippet}
-    <Toggle bind:checked={s.startWithSteamvr} label="Start with SteamVR" onchange={() => commit(true)} />
-    <div class="field">
-      <strong>When SteamVR closes</strong>
-      <div class="segmented">
-        <button class:on={!s.exitWithSteamvr} onclick={() => { s.exitWithSteamvr = false; commit(); }}>Keep running</button>
-        <button class:on={s.exitWithSteamvr} onclick={() => { s.exitWithSteamvr = true; commit(); }}>Quit the app</button>
-      </div>
+  <Section id="notifications" title="🔔 Notifications">
+    {#snippet extra()}<span class="pill" class:ok={vrTargets.length > 0} class:off={vrTargets.length === 0}>VR: {vrTargets.length ? vrTargets.map((t) => VR_APP_NAMES[t]).join(" + ") : "nowhere now"}</span>{/snippet}
+    <span class="hint">Labor, births, achievements and more.</span>
+    <strong class="sub">🖥️ Desktop</strong>
+    <Toggle bind:checked={s.notifications} label="Desktop notifications" hint="Your computer's own pop-ups (Windows, Linux, macOS). Skipped when they show in your headset instead." onchange={() => commit()} />
+    <strong class="sub">🥽 In VR</strong>
+    <span class="hint">In your headset, in whichever of these is on and running.</span>
+    <Toggle checked={vn.xsoverlay} label="XSOverlay" hint={status?.xsoverlayRunning ? "✓ Running" : "Not running"} onchange={(v) => setNotices("xsoverlay", v)} />
+    <Toggle checked={vn.ovrToolkit} label="OVR Toolkit" hint={status?.ovrToolkitRunning ? "✓ Running" : "Not running"} onchange={(v) => setNotices("ovrToolkit", v)} />
+    <Toggle checked={vn.steamvr} label="SteamVR (fallback)" hint={`Only when XSOverlay and OVR Toolkit aren't showing them. ${status?.steamvrRunning ? "✓ Running" : "Not running"}`} onchange={(v) => setNotices("steamvr", v)} />
+    <div class="row">
+      <button class="small soft" onclick={testNotice} disabled={testingNotice}>🔔 Send a test</button>
+      <span class="hint">Goes where a real one would: your headset, else the desktop.</span>
     </div>
-    {#if status}
-      <span class="hint">
-        {status.steamvrRunning ? "SteamVR is running." : "SteamVR isn't running."}
-      </span>
-    {/if}
   </Section>
 
   <Section id="startup" title="🚀 Starting and closing">
     <Toggle bind:checked={s.startWithOs} label="Start when I log in" onchange={() => commit(true)} />
+    <Toggle bind:checked={s.startWithSteamvr} label="Start with SteamVR" hint={status?.steamvrRunning ? "✓ SteamVR is running" : "SteamVR isn't running"} onchange={() => commit(true)} />
     <div class="field">
       <strong>When it starts by itself</strong>
       <div class="segmented">
@@ -649,6 +702,13 @@
         <button class:on={!s.closeToTray} onclick={() => { s.closeToTray = false; commit(); }}>Quit the app</button>
       </div>
       {#if !trayOk}<span class="hint">There's no tray on this desktop, so closing quits.</span>{/if}
+    </div>
+    <div class="field">
+      <strong>When SteamVR closes</strong>
+      <div class="segmented">
+        <button class:on={!s.exitWithSteamvr} onclick={() => { s.exitWithSteamvr = false; commit(); }}>Keep running</button>
+        <button class:on={s.exitWithSteamvr} onclick={() => { s.exitWithSteamvr = true; commit(); }}>Quit the app</button>
+      </div>
     </div>
   </Section>
 
@@ -807,6 +867,17 @@
 </div>
 
 <style>
+  /* A small heading for a group inside a card. */
+  .sub {
+    margin-top: 6px;
+    font-size: 0.9rem;
+  }
+  /* SteamVR: your height, for "Resting holds off labor". */
+  .height {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
   .chat-preview {
     padding: 8px 12px;
     border-radius: 12px;

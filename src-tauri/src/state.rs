@@ -34,6 +34,9 @@ pub enum EngineCmd {
 pub struct Status {
     pub vrchat_running: bool,
     pub steamvr_running: bool,
+    /// XSOverlay is running, and OVR Toolkit's notification API answers.
+    pub xsoverlay_running: bool,
+    pub ovr_toolkit_running: bool,
     pub osc_active: bool,
     pub oscquery: bool,
     pub vrchat_found: bool,
@@ -76,6 +79,15 @@ pub struct Status {
     /// SteamVR: headset below its highest (m), and lying down by the hip tracker.
     pub vr_drop_m: Option<f32>,
     pub vr_lying: Option<bool>,
+    /// SteamVR: lying down by the headset's tilt.
+    pub vr_tilted: Option<bool>,
+    /// SteamVR: your saved standing height above the floor (m).
+    pub vr_standing_m: Option<f32>,
+    /// SteamVR: your normal height is proven this session (held 20 s in total).
+    pub vr_proven: bool,
+    /// SteamVR has said resting (by height) for 10 minutes while your avatar
+    /// stands: the saved height may be off.
+    pub vr_height_doubt: bool,
     /// SteamVR: full-body trackers, and whether one is set as your waist.
     pub vr_trackers: u32,
     pub vr_waist: bool,
@@ -95,7 +107,7 @@ pub struct Status {
     pub data_dir: String,
 }
 
-/// Your posture from SteamVR's tracking (see `steamvr_posture`).
+/// Your posture from SteamVR's tracking (see `steamvr`).
 #[derive(Debug, Clone, Copy)]
 pub struct VrPosture {
     pub reading: pregsys_core::posture::Reading,
@@ -122,6 +134,11 @@ pub struct Shared {
     pub quitting: AtomicBool,
     /// Posture from SteamVR, while "Resting holds off labor" is on and SteamVR runs.
     pub vr_posture: Mutex<Option<VrPosture>>,
+    /// "Set height now": the SteamVR thread measures your headset and answers
+    /// with your height above the floor (or why it can't).
+    pub vr_set_height: Mutex<Option<std::sync::mpsc::Sender<Result<f32, String>>>>,
+    /// Notices waiting for the SteamVR thread to show (see `vr_notify`).
+    pub vr_notice_queue: Mutex<Vec<(String, std::time::Instant)>>,
 }
 
 impl Shared {

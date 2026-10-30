@@ -94,6 +94,8 @@ function status(): Status {
   return {
     vrchatRunning: true,
     steamvrRunning: false,
+    xsoverlayRunning: false,
+    ovrToolkitRunning: false,
     oscActive: true,
     oscquery: true,
     vrchatFound: true,
@@ -126,6 +128,10 @@ function status(): Status {
     postureSource: "vrchat",
     vrDropM: null,
     vrLying: null,
+    vrTilted: null,
+    vrStandingM: data.vrStandingM ?? null,
+    vrProven: false,
+    vrHeightDoubt: false,
     vrTrackers: 0,
     vrWaist: false,
     vrHipTracked: false,
@@ -421,6 +427,21 @@ export const mock = {
       p.partner.candidates = p.partner.candidates.filter((c) => !same(c.name, c.userId));
       if (same(p.partner.name, p.partner.userId)) p.partner = { ...p.partner, status: "unknown", name: null, userId: null, avatarName: null, species: null };
     }
+    changed();
+  },
+  async test_notice() {
+    // The preview has no VR apps running, so it's the desktop or nothing.
+    if (!data.settings.notifications) throw new Error("Nothing's on to show it. Turn on Desktop notifications, or one of the VR apps (with it running).");
+    return ["your desktop"];
+  },
+  async set_standing_height_now() {
+    // The preview has no headset: pretend it measured 1.6 m.
+    data.vrStandingM = 1.6;
+    changed();
+    return 1.6;
+  },
+  async forget_standing_height() {
+    data.vrStandingM = null;
     changed();
   },
   async import_community_table() {

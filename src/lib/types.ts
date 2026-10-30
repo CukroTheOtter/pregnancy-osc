@@ -60,6 +60,14 @@ export interface ChatboxSettings {
 
 export type LaborStart = "random" | "dueDate" | "manual";
 
+/** Where notifications show in your headset. SteamVR is only the fallback (see model.rs VrNotices). */
+export interface VrNotices {
+  xsoverlay: boolean;
+  ovrToolkit: boolean;
+  steamvr: boolean;
+}
+export type VrTarget = "xsoverlay" | "ovrToolkit" | "steamvr";
+
 export interface LaborSettings {
   start: LaborStart;
   /** Start labor by this week if it hasn't started (null = off). */
@@ -97,6 +105,12 @@ export interface Settings {
   startWithOs: boolean;
   startInTray: boolean;
   exitWithSteamvr: boolean;
+  /** "Resting holds off labor" reads SteamVR's tracking (off: VRChat's values only). */
+  vrPosture?: boolean;
+  /** Notifications in your headset. */
+  vrNotices?: VrNotices;
+  /** SteamVR learns your normal height as you play (off: only the one you set). */
+  vrHeightAuto?: boolean;
   /** Avatars you wear are added to the list on their own. */
   autoAddAvatars: boolean;
   /** Closing the window keeps the app running in the tray. */
@@ -293,6 +307,8 @@ export interface AppData {
   achievements: Record<string, number>;
   /** Debug: when Test Buddy was added (null = not there). */
   testBuddySince?: number | null;
+  /** Your standing headset height above the floor, learned from SteamVR. */
+  vrStandingM?: number | null;
 }
 
 /** A newer version on GitHub, ready to install. */
@@ -304,6 +320,9 @@ export interface UpdateInfo {
 export interface Status {
   vrchatRunning: boolean;
   steamvrRunning: boolean;
+  /** XSOverlay is running, and OVR Toolkit's notification API answers. */
+  xsoverlayRunning?: boolean;
+  ovrToolkitRunning?: boolean;
   oscActive: boolean;
   oscquery: boolean;
   vrchatFound: boolean;
@@ -341,6 +360,13 @@ export interface Status {
   /** SteamVR: headset below its highest (m), and lying down by the hip tracker. */
   vrDropM?: number | null;
   vrLying?: boolean | null;
+  /** SteamVR: lying down by the headset's tilt, and your saved standing height (m). */
+  vrTilted?: boolean | null;
+  vrStandingM?: number | null;
+  /** SteamVR: your normal height is proven this session (held 20 s in total). */
+  vrProven?: boolean;
+  /** SteamVR says resting (by height) while your avatar stands: the saved height may be off. */
+  vrHeightDoubt?: boolean;
   /** SteamVR: full-body trackers, whether one is set as your waist, and whether it's tracked now. */
   vrTrackers?: number;
   vrWaist?: boolean;

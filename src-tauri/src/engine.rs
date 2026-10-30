@@ -25,6 +25,10 @@ const POSTURE_PARAMS: [&str; 5] = ["Upright", "Seated", "InStation", "VelocityMa
 const VR_POSTURE_FRESH_MS: i64 = 3_000;
 /// `Upright` at or above this counts as standing (1 = fully upright).
 const UPRIGHT_STANDING: f32 = 0.7;
+/// SteamVR resting by height while VRChat's Upright is at least this, for this
+/// long, hints that your saved normal height is off.
+const HEIGHT_DOUBT_UPRIGHT: f32 = 0.9;
+const HEIGHT_DOUBT_MS: i64 = 10 * 60_000;
 /// Moving at least this fast (m/s) counts as walking around.
 const WALKING_SPEED: f32 = 0.6;
 
@@ -88,6 +92,8 @@ struct Engine {
     last_params_fill: Instant,
     /// When labor time was last marked for saving.
     last_labor_save: Instant,
+    /// Since when SteamVR has said resting (by height only) while VRChat says standing.
+    height_doubt_since: Option<i64>,
 }
 
 /// VRChat's built-in posture values.
@@ -173,6 +179,7 @@ impl Engine {
             posture: Posture::default(),
             last_params_fill: past,
             last_labor_save: past,
+            height_doubt_since: None,
         }
     }
 
@@ -322,6 +329,11 @@ impl Engine {
         }
         self.vrchat = r.vrchat;
         self.steamvr = r.steamvr;
+        {
+            let mut st = self.shared.status.lock().unwrap();
+            st.xsoverlay_running = r.xsoverlay;
+            st.ovr_toolkit_running = r.ovr_toolkit;
+        }
         if r.steamvr {
             self.steamvr_seen = true;
         } else if self.steamvr_seen {
@@ -1089,6 +1101,16 @@ impl Engine {
         st.posture_source = if self.steamvr_resting().is_some() && self.posture.vr { "steamvr" } else { "vrchat" }.into();
         st.vr_drop_m = vr.map(|v| v.reading.drop_m);
         st.vr_lying = vr.and_then(|v| v.reading.lying);
+        st.vr_tilted = vr.map(|v| v.reading.tilted);
+        st.vr_proven = vr.is_some_and(|v| v.reading.proven);
+        // SteamVR says resting only because you're below your normal height,
+        // yet your avatar's been standing all along: the saved height may be
+        // off (a hint to Forget it, never acted on by itself).
+        let by_height = vr.is_some_and(|v| v.reading.resting && !v.reading.tilted && v.reading.lying != Some(true));
+        let avatar_up = self.posture.upright.is_some_and(|u| u >= HEIGHT_DOUBT_UPRIGHT) && !self.posture.seated && !self.posture.in_station;
+        self.height_doubt_since = if by_height && avatar_up && st.posture_source == "steamvr" { self.height_doubt_since.or(Some(now_ms())) } else { None };
+        st.vr_height_doubt = self.height_doubt_since.is_some_and(|t| now_ms() - t >= HEIGHT_DOUBT_MS);
+        st.vr_standing_m = self.shared.data.lock().unwrap().vr_standing_m;
         st.vr_trackers = vr.map_or(0, |v| v.trackers);
         st.vr_waist = vr.is_some_and(|v| v.waist);
         st.vr_hip_tracked = vr.is_some_and(|v| v.hip_tracked);

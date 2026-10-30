@@ -99,6 +99,91 @@ impl Default for OscSettings {
     }
 }
 
+/// Where notifications show in your headset. XSOverlay and OVR Toolkit get
+/// them while running; SteamVR's own is the fallback, used only when neither
+/// of those is on and running.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct VrNotices {
+    pub xsoverlay: bool,
+    pub ovr_toolkit: bool,
+    pub steamvr: bool,
+}
+
+impl Default for VrNotices {
+    fn default() -> Self {
+        Self { xsoverlay: true, ovr_toolkit: true, steamvr: false }
+    }
+}
+
+/// Somewhere a notification can show in your headset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum VrTarget {
+    Xsoverlay,
+    OvrToolkit,
+    Steamvr,
+}
+
+/// What's running right now, for [`VrNotices::targets`].
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct VrApps {
+    pub xsoverlay: bool,
+    pub ovr_toolkit: bool,
+    pub steamvr: bool,
+}
+
+impl VrNotices {
+    /// Where a notification goes: every overlay tool that's on and running,
+    /// else SteamVR (if on and running), else nowhere.
+    pub fn targets(&self, running: VrApps) -> Vec<VrTarget> {
+        let mut out = Vec::new();
+        if self.xsoverlay && running.xsoverlay {
+            out.push(VrTarget::Xsoverlay);
+        }
+        if self.ovr_toolkit && running.ovr_toolkit {
+            out.push(VrTarget::OvrToolkit);
+        }
+        if out.is_empty() && self.steamvr && running.steamvr {
+            out.push(VrTarget::Steamvr);
+        }
+        out
+    }
+}
+
+#[cfg(test)]
+mod vr_notice_tests {
+    use super::*;
+
+    const ALL_ON: VrNotices = VrNotices { xsoverlay: true, ovr_toolkit: true, steamvr: true };
+
+    #[test]
+    fn steamvr_is_only_the_fallback() {
+        let all = VrApps { xsoverlay: true, ovr_toolkit: true, steamvr: true };
+        assert_eq!(ALL_ON.targets(all), vec![VrTarget::Xsoverlay, VrTarget::OvrToolkit]);
+        let xso = VrApps { xsoverlay: true, steamvr: true, ..Default::default() };
+        assert_eq!(ALL_ON.targets(xso), vec![VrTarget::Xsoverlay]);
+        let ovrt = VrApps { ovr_toolkit: true, steamvr: true, ..Default::default() };
+        assert_eq!(ALL_ON.targets(ovrt), vec![VrTarget::OvrToolkit]);
+        let steamvr = VrApps { steamvr: true, ..Default::default() };
+        assert_eq!(ALL_ON.targets(steamvr), vec![VrTarget::Steamvr]);
+    }
+
+    #[test]
+    fn a_tool_thats_off_doesnt_count_or_block_the_fallback() {
+        let s = VrNotices { xsoverlay: false, ..ALL_ON };
+        let xso = VrApps { xsoverlay: true, steamvr: true, ..Default::default() };
+        assert_eq!(s.targets(xso), vec![VrTarget::Steamvr]);
+    }
+
+    #[test]
+    fn nothing_on_or_running_goes_nowhere() {
+        assert!(VrNotices { xsoverlay: false, ovr_toolkit: false, steamvr: false }.targets(VrApps { xsoverlay: true, ovr_toolkit: true, steamvr: true }).is_empty());
+        assert!(ALL_ON.targets(VrApps::default()).is_empty());
+        assert!(VrNotices::default().targets(VrApps { steamvr: true, ..Default::default() }).is_empty(), "SteamVR is off by default");
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
@@ -115,6 +200,14 @@ pub struct Settings {
     pub start_with_os: bool,
     pub start_in_tray: bool,
     pub exit_with_steamvr: bool,
+    /// "Resting holds off labor" reads your posture from SteamVR's tracking
+    /// (off: VRChat's Upright and seats only).
+    pub vr_posture: bool,
+    /// Notifications in your headset (see `VrNotices`).
+    pub vr_notices: VrNotices,
+    /// SteamVR learns your normal height as you play (off: only the one you
+    /// set). For "Resting holds off labor".
+    pub vr_height_auto: bool,
     /// Avatars you wear are added to the Avatars list on their own.
     pub auto_add_avatars: bool,
     /// Closing the window keeps the app running in the tray (else it quits).
@@ -183,6 +276,9 @@ impl Default for Settings {
             start_with_os: false,
             start_in_tray: false,
             exit_with_steamvr: false,
+            vr_posture: true,
+            vr_notices: VrNotices::default(),
+            vr_height_auto: true,
             auto_add_avatars: true,
             close_to_tray: true,
             heartbeat_sound: false,
@@ -550,6 +646,9 @@ pub struct AppData {
     pub achievements: BTreeMap<String, i64>,
     /// Debug: when Test Buddy was added (see `testbuddy`), until removed.
     pub test_buddy_since: Option<i64>,
+    /// Your headset's height above the floor when standing, learned from
+    /// SteamVR (see `posture`), so starting seated still counts as resting.
+    pub vr_standing_m: Option<f32>,
 }
 
 impl AppData {

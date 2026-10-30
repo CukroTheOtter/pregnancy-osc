@@ -214,6 +214,68 @@ pub fn forget_person(app: AppHandle, s: S, name: String, user_id: Option<String>
     changed(&app, &s, false);
 }
 
+/// Forgets your standing height (SteamVR learns it again while you stand).
+#[tauri::command]
+pub fn forget_standing_height(app: AppHandle, s: S) {
+    s.data.lock().unwrap().vr_standing_m = None;
+    changed(&app, &s, false);
+}
+
+/// "Set height now": measures your headset's height above the floor through
+/// SteamVR and saves it as your normal height.
+#[tauri::command]
+pub async fn set_standing_height_now(app: AppHandle, s: S<'_>) -> R<f32> {
+    let tracking = s.vr_posture.lock().unwrap().is_some_and(|v| now_ms() - v.at_ms < 3_000);
+    if !tracking {
+        return Err("Needs SteamVR running with your headset tracked (and \"Resting holds off labor\" and \"Use SteamVR tracking\" on).".into());
+    }
+    let (tx, rx) = std::sync::mpsc::channel();
+    *s.vr_set_height.lock().unwrap() = Some(tx);
+    let m = tauri::async_runtime::spawn_blocking(move || rx.recv_timeout(std::time::Duration::from_secs(2)))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|_| "SteamVR didn't answer. Try again.".to_string())??;
+    changed(&app, &s, false);
+    Ok(m)
+}
+
+/// "Send a test" (Settings > Notifications): goes where a real notification
+/// would (headset, else desktop, see `crate::notify`). Returns where, by name.
+#[tauri::command]
+pub async fn test_notice(app: AppHandle, s: S<'_>) -> R<Vec<String>> {
+    let targets = crate::vr_notify::targets(&s);
+    if targets.is_empty() {
+        if !s.data.lock().unwrap().settings.notifications {
+            return Err("Nothing's on to show it. Turn on Desktop notifications, or one of the VR apps (with it running).".into());
+        }
+        crate::desktop_notify(&app, "Pregnancy OSC 💕", "This is how notifications look.");
+        return Ok(vec!["your desktop".into()]);
+    }
+    let (title, body) = ("Pregnancy OSC 💕", "This is how notifications look in VR.");
+    for &t in &targets {
+        if t == VrTarget::Steamvr {
+            crate::vr_notify::queue_steamvr(&s, title, body);
+        } else {
+            tauri::async_runtime::spawn_blocking(move || crate::vr_notify::send_to(t, title, body))
+                .await
+                .map_err(|e| e.to_string())?
+                .map_err(|e| format!("{}: {e}", match t {
+                    VrTarget::Xsoverlay => "XSOverlay",
+                    _ => "OVR Toolkit",
+                }))?;
+        }
+    }
+    Ok(targets
+        .iter()
+        .map(|t| match t {
+            VrTarget::Xsoverlay => "XSOverlay",
+            VrTarget::OvrToolkit => "OVR Toolkit",
+            VrTarget::Steamvr => "SteamVR",
+        })
+        .map(String::from)
+        .collect())
+}
+
 #[tauri::command]
 pub fn import_community_table(app: AppHandle, s: S, json: String) -> R<usize> {
     let table: std::collections::BTreeMap<String, String> =
