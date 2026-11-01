@@ -341,6 +341,8 @@ pub struct Ctx {
     pub up: bool,
     /// Walking around.
     pub moving: bool,
+    /// This instance type holds off labor (Settings > Safety): it doesn't start or move.
+    pub held_here: bool,
 }
 
 /// Starts labor when it's due and moves it along.
@@ -356,7 +358,7 @@ impl Watch {
         let mut out = Vec::new();
         let current = data.current_pregnancy_id(ctx.avatar_id.as_deref()).filter(|id| data.pregnancy(id).is_some_and(|p| p.is_active()));
         let minutes = data.settings.labor.minutes;
-        let can_run = ctx.linked && ctx.avatar_ready && ctx.supports && !ctx.afk;
+        let can_run = ctx.linked && ctx.avatar_ready && ctx.supports && !ctx.afk && !ctx.held_here;
 
         // Labor on a pregnancy you're not wearing waits.
         for p in data.pregnancies.iter_mut().filter(|p| p.is_active() && Some(&p.id) != current.as_ref()) {
@@ -466,7 +468,7 @@ mod tests {
     }
 
     fn ready() -> Ctx {
-        Ctx { linked: true, avatar_id: Some("avtr_a".into()), avatar_ready: true, supports: true, afk: false, up: true, moving: false }
+        Ctx { linked: true, avatar_id: Some("avtr_a".into()), avatar_ready: true, supports: true, afk: false, up: true, moving: false, held_here: false }
     }
 
     /// Ticks once a second from `from` for `secs` seconds, collecting events.
@@ -515,7 +517,7 @@ mod tests {
         let mut d = data();
         let mut w = Watch::default();
         let late = T0 + TERM + 30 * DAY_MS;
-        for ctx in [Ctx { linked: false, ..ready() }, Ctx { supports: false, ..ready() }, Ctx { avatar_ready: false, ..ready() }, Ctx { afk: true, ..ready() }] {
+        for ctx in [Ctx { linked: false, ..ready() }, Ctx { supports: false, ..ready() }, Ctx { avatar_ready: false, ..ready() }, Ctx { afk: true, ..ready() }, Ctx { held_here: true, ..ready() }] {
             assert!(run(&mut w, &mut d, &ctx, late, 600).is_empty());
             assert!(d.pregnancy("p").unwrap().labor.is_none());
         }
@@ -542,6 +544,22 @@ mod tests {
         run(&mut w, &mut d, &ready(), T0 + 4_000_000, 5);
         let l = d.pregnancy("p").unwrap().labor.clone().unwrap();
         assert!(!l.paused && l.elapsed_ms > at, "picks up again");
+    }
+
+    #[test]
+    fn a_public_instance_holds_labor() {
+        let mut d = data();
+        d.settings.labor.induce_week = Some(41);
+        let mut w = Watch::default();
+        let public = Ctx { held_here: true, ..ready() };
+        let late = T0 + TERM + 30 * DAY_MS;
+        assert!(run(&mut w, &mut d, &public, late, 600).is_empty(), "not even induced");
+        assert!(start(&mut d, "p", late));
+        run(&mut w, &mut d, &ready(), late, 30);
+        let at = d.pregnancy("p").unwrap().labor.as_ref().unwrap().elapsed_ms;
+        run(&mut w, &mut d, &public, late + 30_000, 3600);
+        let l = d.pregnancy("p").unwrap().labor.clone().unwrap();
+        assert!(l.paused && l.elapsed_ms == at, "waits until you leave");
     }
 
     fn with_partner(d: &mut AppData) {

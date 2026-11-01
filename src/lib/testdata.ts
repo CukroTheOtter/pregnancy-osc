@@ -38,6 +38,7 @@ export function defaultSettings(): Settings {
       status: false,
       statusText: "🤰 Week {week} of 40",
       statusPartner: true,
+      statusWhenHidden: false,
       debug: {},
       messages: {
         started: { on: true, text: "🤰 A little one is on the way!" },
@@ -70,6 +71,7 @@ export function defaultSettings(): Settings {
     autoAddAvatars: true,
     closeToTray: true,
     labor: { start: "random", induceWeek: null, minutes: 20, waitsForPartner: false, woohooStarts: false, quietEarly: false, restingHolds: false },
+    safety: { hideBellyIn: ["public", "groupPublic"], laborWaitsIn: ["public", "groupPublic"] },
     sps: { enabled: true, types: { vaginal: true, anal: false, oral: false, other: false }, depth: 0.3, seconds: 20, gapSeconds: 120 },
     onboarded: false,
   };

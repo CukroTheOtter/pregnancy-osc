@@ -25,7 +25,7 @@ Desktop app that drives the avatar's pregnancy over OSC. Tauri 2 + Rust + Svelte
 - Avatar names: VRChat's `LocalLow\VRChat\VRChat\OSC\usr_*\Avatars\<avtr_id>.json` has the exact name; the log only has names, logged when loading STARTS. `auto_name` marks names the app picked (user-typed names are never changed).
 - The log writes "Entering Room" BEFORE "Joining wrld_…" (see `instance.rs`).
 - After uploading an avatar update, VRChat can keep reporting the OLD parameter list (its OSC config is stale). Fix: reset the avatar's OSC config in VRChat (Action Menu > Options > OSC > Reset Config), then switch avatars.
-- "Belly not changing" is often Hide Belly on (Home shows a 🙈 note). `belly-cli --query` shows live values.
+- "Belly not changing" is often Hide Belly on, or Settings > Safety hiding it in a public instance (Home shows a 🙈 note with Show / Show here). `belly-cli --query` shows live values.
 
 ## Commands (bash needs `~/.cargo/bin` and `/c/Program Files/nodejs` on PATH)
 - `cargo test --workspace` · `npm test` · `npx svelte-check --tsconfig ./tsconfig.json`

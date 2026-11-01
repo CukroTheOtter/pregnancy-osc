@@ -15,6 +15,7 @@
   import { BABY_REVEAL_WEEK, GENDER_REVEAL_WEEK, babyWord, genderEmoji, genderText } from "../lib/fertility";
   import { dueMs, humanDuration, pause, progress, resume, retime, setProgress, TERM_WEEKS } from "../lib/timeline";
   import type { Settings } from "../lib/types";
+  import { instanceName } from "../lib/safety";
 
   const p = $derived(currentPregnancy());
   const w = $derived(currentPending());
@@ -31,6 +32,16 @@
   const viewingOther = $derived(!!app.viewAvatarId && app.viewAvatarId !== app.data?.currentAvatarId);
   // Hide Belly is on in-game (the app re-applies it on every avatar, so it's easy to forget).
   const bellyHidden = $derived(!!status?.hideBelly && (app.data?.syncValues?.[status.hideBelly] ?? 0) > 0.5);
+  // Settings > Safety hides it in this instance (Hide Belly itself stays as it is).
+  const autoHidden = $derived(!!status?.autoHidden);
+
+  /** Turns Hide Belly off (saved, like doing it in-game). */
+  function showBelly() {
+    const name = status?.hideBelly;
+    if (!name || !app.data) return;
+    app.data.syncValues = { ...app.data.syncValues, [name]: 0 };
+    api.setSyncValue(name, 0).catch(errorToast);
+  }
   // The avatar shown (worn or picked) has no Pregnancy System parameters (checked; the worn one not loading).
   const noSystem = $derived.by(() => {
     const a = aid ? app.data?.avatars[aid] : undefined;
@@ -167,7 +178,9 @@
         </div>
       </div>
       {#if bellyHidden && !viewingOther}
-        <div class="hidden-note">🙈 <span><strong>Your belly is hidden.</strong> Turn off Hide Belly in the Pregnancy System menu to see it.</span></div>
+        <div class="hidden-note">🙈 <span><strong>Your belly is hidden.</strong> Hide Belly is on (in the Pregnancy System menu).</span><button class="small" onclick={showBelly}>Show</button></div>
+      {:else if autoHidden && !viewingOther}
+        <div class="hidden-note">🙈 <span><strong>Hidden in this {instanceName(status?.instanceKind)} instance.</strong> It comes back when you leave (Settings > Safety).</span><button class="small" onclick={() => api.showBellyHere().catch(errorToast)}>Show here</button></div>
       {/if}
       <LaborCard {p} {week} {isDue} {viewingOther} onbirth={birth} />
       <div class="row">
@@ -263,12 +276,18 @@
   .hidden-note {
     display: flex;
     gap: 8px;
-    align-items: flex-start;
+    align-items: center;
     padding: 8px 12px;
     border-radius: var(--radius);
     background: color-mix(in srgb, var(--warn) 18%, transparent);
     font-size: 0.9rem;
     text-align: left;
+  }
+  .hidden-note span {
+    flex: 1;
+  }
+  .hidden-note button {
+    flex: none;
   }
   .page {
     max-width: 560px;

@@ -94,6 +94,9 @@ struct Engine {
     last_labor_save: Instant,
     /// Since when SteamVR has said resting (by height only) while VRChat says standing.
     height_doubt_since: Option<i64>,
+    /// "Show here": the instance where you showed the belly (Settings > Safety
+    /// hides it there otherwise). Forgotten when you leave it.
+    shown_here: Option<String>,
 }
 
 /// VRChat's built-in posture values.
@@ -180,6 +183,7 @@ impl Engine {
             last_params_fill: past,
             last_labor_save: past,
             height_doubt_since: None,
+            shown_here: None,
         }
     }
 
@@ -195,6 +199,10 @@ impl Engine {
                 Ok(EngineCmd::Pulse(key, ms)) => self.driver.pulse(&key, now_ms(), ms),
                 Ok(EngineCmd::DebugWoohoo(roll)) => self.woohoo(now_ms(), roll),
                 Ok(EngineCmd::DebugKick(s)) => self.driver.kick_now(s),
+                Ok(EngineCmd::ShowHere) => {
+                    self.shown_here = self.shared.data.lock().unwrap().instance.instance.clone();
+                    self.update_safety();
+                }
                 Ok(EngineCmd::Shutdown(reply)) => {
                     self.handoff();
                     let _ = self.shared.save_if_dirty();
@@ -254,6 +262,7 @@ impl Engine {
             self.apply_control(c, now);
         }
         self.fetch_params_if_due();
+        self.update_safety();
 
         let sends = {
             let data = self.shared.data.lock().unwrap();
@@ -476,6 +485,27 @@ impl Engine {
                 SyncReport::NotSync => {}
                 // Remembered a moment later (save_held_sync), unless the avatar changes first.
                 SyncReport::Held => continue,
+                // Hidden by the instance: turning Hide Belly off in-game shows it here
+                // (and turns your own Hide Belly off), never saved as on.
+                SyncReport::Safety(on) => {
+                    if !on {
+                        self.shown_here = self.shared.data.lock().unwrap().instance.instance.clone();
+                        let was_on = {
+                            let mut d = self.shared.data.lock().unwrap();
+                            let on = d.sync_values.get(name).is_some_and(|&s| s > 0.5);
+                            if on {
+                                d.sync_values.insert(name.to_string(), 0.0);
+                            }
+                            on
+                        };
+                        if was_on {
+                            self.shared.mark_dirty();
+                            let _ = self.app.emit("data-changed", ());
+                        }
+                        self.update_safety();
+                    }
+                    continue;
+                }
                 SyncReport::Ignored => {
                     let saved = self.shared.data.lock().unwrap().sync_values.get(name).copied();
                     // Only worth a note when it differs from what's saved (the avatar's default).
@@ -763,7 +793,7 @@ impl Engine {
     fn woohoo(&mut self, now: i64, roll: Option<f64>) {
         // Late in a pregnancy it can start labor (if that's on), on an avatar that can show it.
         let ctx = self.labor_ctx();
-        if ctx.linked && ctx.avatar_ready && ctx.supports && !ctx.afk {
+        if ctx.linked && ctx.avatar_ready && ctx.supports && !ctx.afk && !ctx.held_here {
             let started = {
                 let mut d = self.shared.data.lock().unwrap();
                 let id = d.current_pregnancy_id(self.driver.avatar_id());
@@ -862,6 +892,26 @@ impl Engine {
         let _ = self.app.emit("data-changed", ());
     }
 
+    /// Settings > Safety: hides the belly in some instance types (unless you
+    /// showed it here). Your saved Hide Belly isn't touched.
+    fn update_safety(&mut self) {
+        let hide = {
+            let d = self.shared.data.lock().unwrap();
+            let here = d.instance.instance.clone().filter(|_| d.settings.read_logs);
+            if self.shown_here.is_some() && self.shown_here != here {
+                self.shown_here = None;
+            }
+            d.settings.safety.hides(here.as_deref()) && self.shown_here.is_none()
+        };
+        self.driver.set_auto_hide(hide);
+    }
+
+    /// The belly is hidden right now (Hide Belly, or by the instance).
+    fn belly_hidden(&self, d: &pregsys_core::model::AppData) -> bool {
+        let saved = self.driver.mapping().sync_role(pregsys_core::mapping::SyncRole::HideBelly).and_then(|s| d.sync_values.get(&s.name));
+        self.driver.auto_hide() || saved.is_some_and(|&v| v > 0.5)
+    }
+
     /// Labor: starts it when it's due (in-game, on an avatar that can show
     /// it) and moves it along to the birth.
     fn tick_labor(&mut self, now: i64) {
@@ -895,6 +945,10 @@ impl Engine {
             afk: self.afk,
             up: self.posture.up(self.steamvr_resting()),
             moving: self.posture.velocity >= WALKING_SPEED,
+            held_here: {
+                let d = self.shared.data.lock().unwrap();
+                d.settings.read_logs && d.settings.safety.holds_labor(d.instance.instance.as_deref())
+            },
         }
     }
 
@@ -973,7 +1027,7 @@ impl Engine {
         let (status, show_seconds, sound) = {
             let d = self.shared.data.lock().unwrap();
             let c = &d.settings.chatbox;
-            (c.status_line(&d, self.driver.avatar_id(), now), c.show_seconds, c.sound)
+            (c.status_line(&d, self.driver.avatar_id(), self.belly_hidden(&d), now), c.show_seconds, c.sound)
         };
         if let Some(text) = self.chat_screen.tick(now, show_seconds, status.clone()) {
             // The sound only for events, not the status or clearing.
@@ -1094,6 +1148,14 @@ impl Engine {
             }
         }
         st.labor_supported = self.driver.knows_param("labor");
+        {
+            let d = self.shared.data.lock().unwrap();
+            let here = d.instance.instance.as_deref().filter(|_| d.settings.read_logs);
+            st.instance_kind = here.and_then(pregsys_core::safety::InstanceKind::of);
+            st.auto_hidden = self.driver.auto_hide();
+            st.labor_held = d.settings.read_logs && d.settings.safety.holds_labor(here);
+            st.shown_here = self.shown_here.is_some();
+        }
         st.afk = self.afk;
         st.up = self.posture.up(self.steamvr_resting());
         st.upright = self.posture.upright;

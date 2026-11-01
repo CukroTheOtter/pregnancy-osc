@@ -66,6 +66,8 @@ export const api = {
   openPath: (path: string) => call<void>("open_path", { path }),
   openSystemPage: () => call<void>("open_system_page"),
   setSyncValue: (name: string, value: number) => call<void>("set_sync_value", { name, value }),
+  /** Shows the belly in this instance only (Settings > Safety hides it here). */
+  showBellyHere: () => call<void>("show_belly_here"),
   defaultLogDirs: () => call<string[]>("default_log_dirs"),
   quitApp: () => call<void>("quit_app"),
   appVersion: () => call<string>("app_version"),

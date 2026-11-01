@@ -256,6 +256,8 @@ pub struct Settings {
     pub kicks_with_partner: bool,
     /// When labor starts, how long it takes, and whether it waits for the partner.
     pub labor: crate::labor::LaborSettings,
+    /// Hiding the belly and holding off labor in some instance types (public, ...).
+    pub safety: crate::safety::SafetySettings,
     /// Detecting WooHoos from SPS sockets.
     pub sps: SpsSettings,
     /// Hidden debug tools (tap the title 5 times).
@@ -310,6 +312,7 @@ impl Default for Settings {
             allowed_kicks: AllowedKicks::default(),
             kicks_with_partner: false,
             labor: Default::default(),
+            safety: Default::default(),
             sps: SpsSettings::default(),
             debug: false,
             onboarded: false,

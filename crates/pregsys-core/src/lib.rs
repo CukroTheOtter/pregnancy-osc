@@ -14,6 +14,7 @@ pub mod mapping;
 pub mod model;
 pub mod movement;
 pub mod posture;
+pub mod safety;
 pub mod sps;
 pub mod stage;
 pub mod storage;

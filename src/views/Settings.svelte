@@ -14,7 +14,8 @@
   import { FEATURES, FIXED, PARAM_INFO, PARAM_ORDER, REQUIRED, SYNC_ROLES, hasParam, syncLabel } from "../lib/params";
   import { week as weekOf } from "../lib/timeline";
   import { pregnancyFor } from "../lib/scope";
-  import type { LaborStart, MappingInfo, Multiples, ResetKind, Settings, VrNotices, VrTarget } from "../lib/types";
+  import type { InstanceKind, LaborStart, MappingInfo, Multiples, ResetKind, SafetySettings, Settings, VrNotices, VrTarget } from "../lib/types";
+  import { INSTANCE_KINDS, OPEN_KINDS } from "../lib/safety";
 
   // Chatbox events, in order, with their default text (keys and texts match pregsys-core/src/chatbox.rs).
   const CHAT_EVENTS = [
@@ -165,6 +166,26 @@
       portError = "";
       commit(true);
     }
+  }
+
+  // Settings > Safety (older saves have none yet: the defaults, as in safety.rs).
+  const safety = $derived<SafetySettings>(s.safety ?? { hideBellyIn: [...OPEN_KINDS], laborWaitsIn: [...OPEN_KINDS] });
+  async function toggleKind(list: keyof SafetySettings, k: InstanceKind) {
+    const cur = { ...safety, [list]: [...safety[list]] };
+    const on = cur[list].includes(k);
+    if (on && list === "laborWaitsIn" && OPEN_KINDS.includes(k)) {
+      const name = INSTANCE_KINDS.find((x) => x.k === k)?.l;
+      const yes = await confirmAsk({
+        title: `Allow labor in ${name} instances?`,
+        text: "Anyone can join these. Some avatars' labor and birth effects aren't right for a public crowd, and could break VRChat's rules. Only allow this if you know what your avatar shows.",
+        ok: "Allow labor",
+        danger: true,
+      });
+      if (!yes) return;
+    }
+    cur[list] = on ? cur[list].filter((x) => x !== k) : [...cur[list], k];
+    s.safety = cur;
+    commit();
   }
 
   function commit(now = false) {
@@ -417,6 +438,30 @@
     </Section>
   {/if}
 
+  <Section id="safety" title="🛡️ Safety">
+    {#snippet extra()}<span class="pill" class:ok={safety.hideBellyIn.length > 0} class:off={safety.hideBellyIn.length === 0}>{safety.hideBellyIn.includes("public") ? "public: hidden" : "off in public"}</span>{/snippet}
+    <span class="muted small">Based on the instance you're in. Nothing you set is changed: leave and everything is back as it was. {status?.instanceKind ? `You're in a ${INSTANCE_KINDS.find((x) => x.k === status?.instanceKind)?.l} instance now.` : ""}</span>
+    {#if !s.readLogs}<span class="small cant">⚠️ Needs log reading (Logs and pictures): without it the app can't tell which instance you're in.</span>{/if}
+    <div class="field">
+      <strong>🙈 Hide the belly in</strong>
+      <div class="kinds">
+        {#each INSTANCE_KINDS as o}
+          <button class:on={safety.hideBellyIn.includes(o.k)} onclick={() => toggleKind("hideBellyIn", o.k)}>{o.l}</button>
+        {/each}
+      </div>
+      <span class="hint">Your Hide Belly isn't changed: back in another instance, your belly is shown (or hidden) just as you left it. Home's <strong>Show here</strong> shows it anyway, until you leave.</span>
+    </div>
+    <div class="field">
+      <strong>🍼 Labor waits in</strong>
+      <div class="kinds">
+        {#each INSTANCE_KINDS as o}
+          <button class:on={safety.laborWaitsIn.includes(o.k)} onclick={() => toggleKind("laborWaitsIn", o.k)}>{o.l}</button>
+        {/each}
+      </div>
+      <span class="hint">Labor doesn't start here (not even when induced, or from a WooHoo), and labor already going pauses until you leave.</span>
+    </div>
+  </Section>
+
   <Section id="chatbox" title="💬 Chatbox">
     {#snippet extra()}<span class="pill" class:ok={s.chatbox.enabled} class:off={!s.chatbox.enabled}>{s.chatbox.enabled ? "on" : "off"}</span>{/snippet}
     <Toggle bind:checked={s.chatbox.enabled} label="Use my chatbox" hint="Everyone near you can see it. Other chatbox apps may take turns with it." onchange={() => commit()} />
@@ -428,6 +473,7 @@
           <input bind:value={s.chatbox.statusText} maxlength="144" placeholder="🤰 Week {'{week}'} of 40" oninput={() => commit()} />
         </label>
         <Toggle bind:checked={s.chatbox.statusPartner} label="Show partner in status" onchange={() => commit()} />
+        <Toggle checked={!s.chatbox.statusWhenHidden} label="Hide the status while my belly is hidden" hint="Hide Belly, or hidden in this instance (Safety)" onchange={(v) => { s.chatbox.statusWhenHidden = !v; commit(); }} />
         <div class="chat-preview" aria-label="Preview">{statusPreview}</div>
       {/if}
 
@@ -606,6 +652,7 @@
   <Section id="labor" title="🍼 Labor and birth">
     {#snippet extra()}<span class="pill">{LABOR_STARTS.find((x) => x.k === s.labor.start)?.l}</span>{/snippet}
     <strong class="sub">🗓️ When it starts</strong>
+    <span class="muted small">Labor starts at the first of these that happens. <strong>Labor starts</strong> is the normal way; <strong>Induce at</strong> is a deadline in case it hasn't by then; a <strong>WooHoo</strong> can bring it on sooner.</span>
     <div class="field">
       <strong>Labor starts</strong>
       <div class="choices three">
@@ -623,9 +670,11 @@
           <button class:on={s.labor.induceWeek === w} onclick={() => { s.labor.induceWeek = w as number | null; commit(); }}>{l}</button>
         {/each}
       </div>
-      <span class="hint">Starts labor by then if it hasn't started on its own.</span>
+      <span class="hint">{s.labor.induceWeek
+        ? `A deadline: if labor hasn't started by week ${s.labor.induceWeek} (for "When I say", if you haven't started it), it starts then. It also beats "Resting holds off labor", but still waits for VRChat, your partner (if that's on) and Safety.`
+        : "Off: labor only starts as set above (it could go on overdue). Pick a week as a deadline: labor starts then if it hasn't yet."}</span>
     </div>
-    <Toggle bind:checked={s.labor.woohooStarts} label="A WooHoo can start labor" hint="From week 37: a 25% chance, rising to 75% from week 40" onchange={() => commit()} />
+    <Toggle bind:checked={s.labor.woohooStarts} label="A WooHoo can start labor" hint="An extra way in, on top of the above: from week 37 each WooHoo has a 25% chance, rising to 75% from week 40" onchange={() => commit()} />
     <Toggle bind:checked={s.labor.waitsForPartner} disabled={!s.readLogs} label="Labor waits for your partner" hint={s.readLogs ? "Labor doesn't start until the partner is in the instance. Once it starts, it keeps going." : "Needs log reading (Logs and pictures)"} onchange={() => commit()} />
     <strong class="sub">⏱️ How it goes</strong>
     <div class="field">
@@ -967,6 +1016,21 @@
     width: 2px;
     background: var(--text);
     opacity: 0.6;
+  }
+  .kinds {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .kinds button {
+    padding: 5px 12px;
+    font-size: 0.85rem;
+    background: var(--bg-3);
+    color: var(--text);
+  }
+  .kinds button.on {
+    background: var(--accent);
+    color: var(--accent-text, #fff);
   }
   .choices {
     display: grid;

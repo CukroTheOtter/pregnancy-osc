@@ -88,7 +88,8 @@ The manifest grants: network (OSC/OSCQuery), read-only access to the VRChat fold
 | VRChat starts | Links up, snaps the belly to the app's timeline. |
 | Avatar switch | Snaps the belly on the new avatar. |
 | Pregnancy paused | Lets go of the belly and extra size, so you can set them in-game. |
-| Chatbox on (Settings) | Shows your own message in the chatbox when a pregnancy starts, pauses, resumes, stops, and more, then clears it. Can also always show your pregnancy status (and partner). |
+| Chatbox on (Settings) | Shows your own message in the chatbox when a pregnancy starts, pauses, resumes, stops, and more, then clears it. Can also always show your pregnancy status (and partner); by default not while your belly is hidden. |
+| Public instance (Settings > Safety) | By default the belly is hidden and labor waits in Public and Group Public instances (pick any instance types). Your own Hide Belly isn't changed, so it's back as you left it in the next instance. Home's **Show here** shows it anyway until you leave. |
 | A WooHoo (SPS sockets, see Settings) | Starts the grace period (or a pregnancy right away with Fertility off) and guesses the partner from the log. With 2+ others around you pick who it was (or 🎲 Random); once you've WooHoo'd as many times in one instance as there are other people in it, it picks at random for you. |
 | Exactly one other person in the instance, nobody came or went for 10 min | Partner shown as **Guessed**, with confirm or change. |
 | More people, or joins/leaves | Partner **Unknown**, with a list of who was in that instance to pick from. |

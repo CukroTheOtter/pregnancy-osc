@@ -7,6 +7,7 @@
   import type { Labor, Pregnancy } from "../lib/types";
   import { hipWarning } from "../lib/posture";
   import HeightDoubt from "./HeightDoubt.svelte";
+  import { instanceName } from "../lib/safety";
 
   let { p, week, isDue, viewingOther, onbirth }: { p: Pregnancy; week: number; isDue: boolean; viewingOther: boolean; onbirth: () => void } = $props();
 
@@ -50,6 +51,7 @@
     if (!paused) return "";
     if (p.timeline.pausedAtMs != null) return "Resume the pregnancy to carry on.";
     if (status?.afk) return "It carries on when you're back from AFK.";
+    if (status?.laborHeld) return `It waits in ${instanceName(status.instanceKind)} instances (Settings > Safety).`;
     if (status?.laborAvatar && !status.laborSupported) return `Switch back to ${status.laborAvatar} to carry on.`;
     if (!status?.oscActive) return "It carries on when you're in VRChat.";
     if (!status.laborSupported) return "This avatar can't show labor.";
@@ -96,6 +98,9 @@
   </div>
   <button class="big" onclick={onbirth}>{welcome}</button>
 {:else if week >= LABOR_WEEK && canShow}
+  {#if status?.laborHeld}
+    <span class="small muted">🛡️ Labor won't start in {instanceName(status.instanceKind)} instances (Settings > Safety)</span>
+  {/if}
   {#if settings?.labor.restingHolds}
     <span class="rest small" class:up={!resting && !waitingPartner}>{resting ? "🛋️ Resting: labor is holding off" : waitingPartner ? `🚶 Up and about, but labor waits for ${partner} 💞` : "🚶 Up and about: labor can start any time"}</span>
     {#if hipWarning(status)}<span class="small warn">⚠️ {hipWarning(status)}</span>{/if}

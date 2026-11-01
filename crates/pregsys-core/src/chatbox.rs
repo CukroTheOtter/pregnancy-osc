@@ -73,6 +73,8 @@ pub struct ChatboxSettings {
     pub status_text: String,
     /// Add the partner's name to the status.
     pub status_partner: bool,
+    /// No status while the belly is hidden (Hide Belly, or hidden in this instance).
+    pub status_when_hidden: bool,
     /// Event key -> message. Missing events use the default text.
     pub messages: BTreeMap<String, ChatMessage>,
     /// Debug-mode messages that are on (see [`DEBUG_EVENTS`]). They show
@@ -90,6 +92,7 @@ impl Default for ChatboxSettings {
             status: false,
             status_text: DEFAULT_STATUS.into(),
             status_partner: true,
+            status_when_hidden: false,
             messages,
             debug: BTreeMap::new(),
         }
@@ -151,8 +154,9 @@ impl ChatboxSettings {
     }
 
     /// The always-on status line for the current pregnancy, if it's on.
-    pub fn status_line(&self, data: &AppData, avatar_id: Option<&str>, now_ms: i64) -> Option<String> {
-        if !self.enabled || !self.status {
+    /// `hidden`: the belly is hidden right now.
+    pub fn status_line(&self, data: &AppData, avatar_id: Option<&str>, hidden: bool, now_ms: i64) -> Option<String> {
+        if !self.enabled || !self.status || (hidden && !self.status_when_hidden) {
             return None;
         }
         let p = data.current_pregnancy(avatar_id)?;
@@ -326,16 +330,19 @@ mod tests {
         let mut d = AppData::new();
         let id = actions::start_pregnancy(&mut d, NewPregnancy { avatar_id: Some("a".into()), ..Default::default() }, 0);
         let mut s = on();
-        assert_eq!(s.status_line(&d, Some("a"), 0), None, "status off");
+        assert_eq!(s.status_line(&d, Some("a"), false, 0), None, "status off");
         s.status = true;
-        assert_eq!(s.status_line(&d, Some("a"), 0).unwrap(), "🤰 Week 0 of 40 · 💕 Unknown");
+        assert_eq!(s.status_line(&d, Some("a"), false, 0).unwrap(), "🤰 Week 0 of 40 · 💕 Unknown");
+        assert_eq!(s.status_line(&d, Some("a"), true, 0), None, "belly hidden: no status");
+        s.status_when_hidden = true;
+        assert!(s.status_line(&d, Some("a"), true, 0).is_some(), "unless that's on");
         d.pregnancy_mut(&id).unwrap().partner.name = Some("Alex".into());
-        assert_eq!(s.status_line(&d, Some("a"), 0).unwrap(), "🤰 Week 0 of 40 · 💕 Alex");
+        assert_eq!(s.status_line(&d, Some("a"), false, 0).unwrap(), "🤰 Week 0 of 40 · 💕 Alex");
         s.status_partner = false;
         d.pregnancy_mut(&id).unwrap().timeline.pause(0);
-        assert_eq!(s.status_line(&d, Some("a"), 0).unwrap(), "🤰 Week 0 of 40 ⏸️");
+        assert_eq!(s.status_line(&d, Some("a"), false, 0).unwrap(), "🤰 Week 0 of 40 ⏸️");
         actions::end_pregnancy(&mut d, &id, 10);
-        assert_eq!(s.status_line(&d, Some("a"), 20), None, "not pregnant");
+        assert_eq!(s.status_line(&d, Some("a"), false, 20), None, "not pregnant");
     }
 
     #[test]

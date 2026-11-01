@@ -223,6 +223,7 @@ pub fn run() {
             commands::reload_mapping,
             commands::open_path,
             commands::set_sync_value,
+            commands::show_belly_here,
             commands::open_system_page,
             commands::default_log_dirs,
             commands::write_file,

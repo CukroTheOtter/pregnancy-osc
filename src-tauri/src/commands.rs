@@ -40,6 +40,12 @@ pub fn set_sync_value(app: AppHandle, s: S, name: String, value: f64) {
     let _ = app.emit("data-changed", ());
 }
 
+/// Shows the belly in this instance only (Settings > Safety hides it here).
+#[tauri::command]
+pub fn show_belly_here(s: S) {
+    s.send(EngineCmd::ShowHere);
+}
+
 #[tauri::command]
 pub fn take_load_warning(s: S) -> Option<String> {
     s.load_warning.lock().unwrap().take()

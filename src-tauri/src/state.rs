@@ -25,6 +25,8 @@ pub enum EngineCmd {
     DebugWoohoo(Option<f64>),
     /// Debug: kick right now.
     DebugKick(pregsys_core::movement::KickStrength),
+    /// Show the belly in this instance (Settings > Safety hides it here).
+    ShowHere,
     /// Exit: hand off to the avatar, save, then reply.
     Shutdown(Sender<()>),
 }
@@ -103,6 +105,14 @@ pub struct Status {
     pub labor_elapsed_ms: Option<i64>,
     /// Labor is waiting right now (the saved copy only updates now and then).
     pub labor_paused: Option<bool>,
+    /// The instance you're in, from the log (None = not in a world, or no log).
+    pub instance_kind: Option<pregsys_core::safety::InstanceKind>,
+    /// Settings > Safety hides the belly in this instance.
+    pub auto_hidden: bool,
+    /// You showed the belly in this instance ("Show here").
+    pub shown_here: bool,
+    /// Settings > Safety: labor waits in this instance.
+    pub labor_held: bool,
     pub mapping_path: String,
     pub data_dir: String,
 }

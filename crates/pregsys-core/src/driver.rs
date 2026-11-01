@@ -72,6 +72,9 @@ pub enum SyncReport {
     Ignored,
     /// Held, remembered after the hold time unless the avatar changes.
     Held,
+    /// Hide Belly changed in-game while the instance hides the belly
+    /// (Settings > Safety): not remembered. false = you turned it off (show it here).
+    Safety(bool),
 }
 
 pub struct Driver {
@@ -114,6 +117,10 @@ pub struct Driver {
     /// While switching avatars: keep sending a saved Hide Belly until then.
     hide_until_ms: Option<i64>,
     last_hide_ms: i64,
+    /// This instance hides the belly (Settings > Safety), whatever Hide Belly says.
+    auto_hide: bool,
+    /// Hide Belly was sent on by `auto_hide`: put back (to off if never set) when it ends.
+    hide_forced: bool,
     /// After an avatar change: when the second full send is due.
     resend_at_ms: Option<i64>,
     /// A belly above 0 was sent for a pregnancy (survives resyncs), so it's
@@ -169,6 +176,8 @@ impl Driver {
             need_sync: true,
             hide_until_ms: None,
             last_hide_ms: i64::MIN / 2,
+            auto_hide: false,
+            hide_forced: false,
             resend_at_ms: None,
             belly_up: false,
             paused: false,
@@ -221,6 +230,9 @@ impl Driver {
         if self.sync_ignored(now_ms) {
             return SyncReport::Ignored;
         }
+        if self.auto_hide && def.role == Some(SyncRole::HideBelly) {
+            return SyncReport::Safety(v > 0.5);
+        }
         let value = match def.kind {
             ParamType::Bool => (v > 0.5) as i32 as f64,
             ParamType::Int => v.round() as f64,
@@ -228,6 +240,20 @@ impl Driver {
         };
         self.held_sync.insert(name.to_string(), (value, now_ms));
         SyncReport::Held
+    }
+
+    /// This instance hides the belly (or not): sent on the next tick, never saved.
+    pub fn set_auto_hide(&mut self, on: bool) {
+        if on != self.auto_hide {
+            self.auto_hide = on;
+            self.need_sync = true;
+            self.last_hide_ms = i64::MIN / 2;
+        }
+    }
+
+    /// The belly is hidden by the instance (Settings > Safety).
+    pub fn auto_hide(&self) -> bool {
+        self.auto_hide
     }
 
     /// Forget an in-game change still held for this parameter (it was set in the app since).
@@ -415,13 +441,14 @@ impl Driver {
         }
     }
 
-    /// Sends Hide Belly = true, if that's the saved sync value.
-    fn push_hide(&self, out: &mut Vec<Send>, data: &AppData) {
+    /// Sends Hide Belly = true, if that's the saved sync value (or the instance hides it).
+    fn push_hide(&mut self, out: &mut Vec<Send>, data: &AppData) {
         let Some(def) = self.mapping.sync_role(SyncRole::HideBelly) else { return };
         if self.mapping.is_app_param(&def.name) || self.overrides.values().any(|n| *n == def.name) {
             return;
         }
-        if data.sync_values.get(&def.name).is_some_and(|&v| v > 0.5) {
+        if self.auto_hide || data.sync_values.get(&def.name).is_some_and(|&v| v > 0.5) {
+            self.hide_forced |= self.auto_hide;
             out.push(Send { key: format!("sync:{}", def.name), name: def.name.clone(), value: ParamValue::Bool(true) });
         }
     }
@@ -444,7 +471,9 @@ impl Driver {
             return out;
         }
         // Switching avatars with the belly hidden: keep it hidden while it loads.
-        if self.hide_until_ms.is_some_and(|t| now_ms < t) && now_ms - self.last_hide_ms >= HIDE_REPEAT_MS {
+        // Hidden by the instance: right away, even mid-load.
+        let hide_now = self.auto_hide && !self.hide_forced;
+        if (hide_now || self.hide_until_ms.is_some_and(|t| now_ms < t)) && now_ms - self.last_hide_ms >= HIDE_REPEAT_MS {
             self.last_hide_ms = now_ms;
             self.push_hide(&mut out, data);
         }
@@ -490,7 +519,15 @@ impl Driver {
                 if self.mapping.is_app_param(&def.name) || self.overrides.values().any(|n| *n == def.name) {
                     continue;
                 }
-                let Some(&v) = data.sync_values.get(&def.name) else { continue };
+                let saved = data.sync_values.get(&def.name).copied();
+                // The instance hides the belly; when it stops, your own Hide Belly comes back.
+                let v = match def.role {
+                    Some(SyncRole::HideBelly) if self.auto_hide => Some(1.0),
+                    Some(SyncRole::HideBelly) if std::mem::take(&mut self.hide_forced) => Some(saved.unwrap_or(0.0)),
+                    _ => saved,
+                };
+                let Some(v) = v else { continue };
+                self.hide_forced |= def.role == Some(SyncRole::HideBelly) && self.auto_hide;
                 let value = match def.kind {
                     ParamType::Bool => ParamValue::Bool(v > 0.5),
                     ParamType::Int => ParamValue::Int(v.round() as i32),
@@ -951,6 +988,44 @@ mod tests {
         data.settings.bigger_for_multiples = false;
         data.settings.grow_when_overdue = false;
         assert_eq!(extra(&d.tick(T0 + 401 * DAY_MS, &data)), Some(ParamValue::Float(0.0)));
+    }
+
+    #[test]
+    fn a_public_instance_hides_the_belly_without_touching_your_choice() {
+        let hide = |out: &[Send]| out.iter().find(|s| s.name == "Pregnancy/HideBelly").map(|s| s.value);
+        for saved in [None, Some(0.0), Some(1.0)] {
+            let mut d = Driver::new(Mapping::default());
+            d.set_connected(true);
+            let mut data = AppData::new();
+            if let Some(v) = saved {
+                data.sync_values.insert("Pregnancy/HideBelly".into(), v);
+            }
+            d.tick(T0, &data);
+            d.set_auto_hide(true);
+            assert_eq!(hide(&d.tick(T0 + 100, &data)), Some(ParamValue::Bool(true)), "hidden right away ({saved:?})");
+            assert_eq!(hide(&d.tick(T0 + 1_000, &data)), None, "once");
+            // Its echo, or a toggle in-game, isn't remembered.
+            assert_eq!(d.on_sync_param("Pregnancy/HideBelly", 1.0, T0 + 1_100), SyncReport::Safety(true));
+            assert_eq!(d.on_sync_param("Pregnancy/HideBelly", 0.0, T0 + 1_200), SyncReport::Safety(false));
+            assert!(d.take_sync_saves(T0 + 60_000, SYNC_HOLD_MS).is_empty());
+            // Back to a private instance: your own choice comes back.
+            d.set_auto_hide(false);
+            let back = saved.map_or(false, |v| v > 0.5);
+            assert_eq!(hide(&d.tick(T0 + 61_000, &data)), Some(ParamValue::Bool(back)), "{saved:?}");
+            assert_eq!(d.on_sync_param("Pregnancy/HideBelly", 0.0, T0 + 62_000), SyncReport::Held);
+        }
+    }
+
+    #[test]
+    fn a_public_instance_keeps_the_belly_hidden_while_switching() {
+        let hide = |out: &[Send]| out.iter().find(|s| s.name == "Pregnancy/HideBelly").map(|s| s.value);
+        let mut d = Driver::new(Mapping::default());
+        let data = AppData::new();
+        d.set_auto_hide(true);
+        d.on_avatar_change("avtr_new", T0);
+        assert_eq!(hide(&d.tick(T0 + 10, &data)), Some(ParamValue::Bool(true)), "while it loads");
+        assert_eq!(hide(&d.tick(T0 + 600, &data)), Some(ParamValue::Bool(true)), "again and again");
+        assert_eq!(hide(&d.tick(T0 + SYNC_SETTLE_MS + 10, &data)), Some(ParamValue::Bool(true)));
     }
 
     #[test]

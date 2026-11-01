@@ -1,7 +1,7 @@
 // Browser-only stand-in for the Rust backend, so the UI can be previewed
 // with `npm run dev` in any browser. Data lives in localStorage.
 
-import type { AppData, AvatarProfile, JournalEntry, Keepsake, Mapping, MappingInfo, NewPregnancy, Partner, Person, Pregnancy, ResetKind, Settings, Status } from "./types";
+import type { AppData, AvatarProfile, InstanceKind, JournalEntry, Keepsake, Mapping, MappingInfo, NewPregnancy, Partner, Person, Pregnancy, ResetKind, Settings, Status } from "./types";
 import { emptyData, baby, defaultSettings } from "./testdata";
 import { newTimeline, progress } from "./timeline";
 import { chance, cycleDay, cycleMs, graceMs } from "./fertility";
@@ -89,8 +89,26 @@ const changed = () => {
   emit("data-changed");
 };
 
+/** VRChat's instance type from the part after `wrld_…:` (same as safety.rs). */
+function instanceKind(i: string | null): InstanceKind | null {
+  if (!i?.trim()) return null;
+  const has = (t: string) => i.includes(`~${t}`);
+  if (has("private(")) return has("canRequestInvite") ? "invitePlus" : "invite";
+  if (has("friends(")) return "friends";
+  if (has("hidden(")) return "friendsPlus";
+  if (has("group(")) return has("groupAccessType(public)") ? "groupPublic" : has("groupAccessType(plus)") ? "groupPlus" : "group";
+  return "public";
+}
+
+/** "Show here": the instance where you showed the belly. */
+let shownHere: string | null = null;
+
 function status(): Status {
   const p = pregnancyFor(data, data.currentAvatarId);
+  const here = data.settings.readLogs ? data.instance.instance : null;
+  if (shownHere !== here) shownHere = null;
+  const kind = instanceKind(here);
+  const safety = data.settings.safety;
   return {
     vrchatRunning: true,
     steamvrRunning: false,
@@ -140,6 +158,10 @@ function status(): Status {
     partnerHere: p && p.partner.name ? data.instance.present.some((x) => x.name === p.partner.name) : null,
     // The preview's labor just runs on the clock.
     laborPaused: p?.labor ? p.labor.paused : null,
+    instanceKind: kind,
+    autoHidden: !!kind && !!safety?.hideBellyIn.includes(kind) && shownHere == null,
+    shownHere: shownHere != null,
+    laborHeld: !!kind && !!safety?.laborWaitsIn.includes(kind),
     laborElapsedMs: p?.labor ? Math.min(Date.now() - p.labor.startedMs + p.labor.elapsedMs, data.settings.labor.minutes * 60_000) : null,
     mappingPath: "config/osc-parameters.json",
     dataDir: "(localStorage)",
@@ -514,6 +536,10 @@ export const mock = {
   async open_path() {},
   async set_sync_value({ name, value }: { name: string; value: number }) {
     data.syncValues = { ...data.syncValues, [name]: value };
+    changed();
+  },
+  async show_belly_here() {
+    shownHere = data.instance.instance;
     changed();
   },
   async open_system_page() {

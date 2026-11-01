@@ -54,11 +54,22 @@ export interface ChatboxSettings {
   status: boolean;
   statusText: string;
   statusPartner: boolean;
+  /** Keep the status on while the belly is hidden (off: no status then). */
+  statusWhenHidden?: boolean;
   messages: Record<string, ChatMessage>;
   debug: Record<string, boolean>;
 }
 
 export type LaborStart = "random" | "dueDate" | "manual";
+
+/** VRChat's instance types (see pregsys-core/src/safety.rs). */
+export type InstanceKind = "public" | "groupPublic" | "friendsPlus" | "groupPlus" | "friends" | "group" | "invitePlus" | "invite";
+
+/** Settings > Safety: where the belly is hidden and labor waits. */
+export interface SafetySettings {
+  hideBellyIn: InstanceKind[];
+  laborWaitsIn: InstanceKind[];
+}
 
 /** Where notifications show in your headset. SteamVR is only the fallback (see model.rs VrNotices). */
 export interface VrNotices {
@@ -145,6 +156,7 @@ export interface Settings {
   allowedKicks: { weak: boolean; strong: boolean; extreme: boolean };
   kicksWithPartner: boolean;
   labor: LaborSettings;
+  safety?: SafetySettings;
   sps: { enabled: boolean; types: Record<HoleType, boolean>; depth: number; seconds: number; gapSeconds: number };
   onboarded: boolean;
 }
@@ -381,6 +393,14 @@ export interface Status {
   laborElapsedMs?: number | null;
   /** Labor is waiting right now (live). */
   laborPaused?: boolean | null;
+  /** The instance you're in, from the log (null = not in a world, or no log). */
+  instanceKind?: InstanceKind | null;
+  /** Settings > Safety hides the belly in this instance. */
+  autoHidden?: boolean;
+  /** You showed the belly in this instance ("Show here"). */
+  shownHere?: boolean;
+  /** Settings > Safety: labor waits in this instance. */
+  laborHeld?: boolean;
   mappingPath: string;
   dataDir: string;
 }

@@ -26,6 +26,7 @@ Everyone you've been with, with fun stats: WooHoos, times pregnant by them, kids
 - **Detecting WooHoos**: **from SPS sockets** (pick sockets, how deep, how long). The avatar's own fertility trigger isn't used.
 - **Fertility**: on/off, chance at peak, **multiples** (Realistic / Playful / Lots), start a new cycle today.
 - **Avatar parameters** (shared names): each with name, on/off and a one-line explanation.
+- **Safety**: hide the belly / hold labor in picked instance types (default Public, Group Public), never changing your own Hide Belly.
 - Partner guess (logs, pictures), Starting up, Look, Backup.
 
 ## Avatar parameters
