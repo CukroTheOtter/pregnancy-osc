@@ -129,6 +129,7 @@ pub fn record_fun(data: &mut AppData, now_ms: i64, roll: f64) -> FunOutcome {
         partner_user_id: partner.user_id.clone(),
         avatar_id: data.current_avatar_id.clone(),
         world_name: data.instance.world_name.clone(),
+        took: (!data.settings.fertility).then_some(true),
     });
     if !data.settings.fertility {
         start_pregnancy(data, NewPregnancy { source: PregnancySource::Conception, partner: Some(partner), ..Default::default() }, now_ms);
@@ -146,17 +147,19 @@ pub fn record_fun(data: &mut AppData, now_ms: i64, roll: f64) -> FunOutcome {
     let world_name = data.instance.world_name.clone();
     match data.waiting.iter_mut().find(|w| global || w.avatar_id == owner) {
         // Another moment during the grace period: a new chance if the first didn't take.
-        Some(p) if !p.positive && positive => {
-            p.positive = true;
-            p.time_ms = now_ms;
-            p.chance = chance;
-            p.cycle_day = day;
-            // Its partner list and world are from this instance, not the first one.
-            p.partner = partner;
-            p.baby_count = babies;
-            p.world_name = world_name;
+        Some(p) => {
+            p.fun_times.push(now_ms);
+            if !p.positive && positive {
+                p.positive = true;
+                p.time_ms = now_ms;
+                p.chance = chance;
+                p.cycle_day = day;
+                // Its partner list and world are from this instance, not the first one.
+                p.partner = partner;
+                p.baby_count = babies;
+                p.world_name = world_name;
+            }
         }
-        Some(_) => {}
         None => data.waiting.push(PendingConception {
             time_ms: now_ms,
             reveal_ms,
@@ -167,6 +170,7 @@ pub fn record_fun(data: &mut AppData, now_ms: i64, roll: f64) -> FunOutcome {
             partner,
             avatar_id: owner,
             world_name,
+            fun_times: vec![now_ms],
         }),
     }
     FunOutcome::Pending
@@ -176,6 +180,10 @@ pub fn record_fun(data: &mut AppData, now_ms: i64, roll: f64) -> FunOutcome {
 pub fn resolve_due(data: &mut AppData, now_ms: i64) -> Option<bool> {
     let i = data.waiting.iter().position(|w| w.reveal_ms <= now_ms)?;
     let p = data.waiting.remove(i);
+    // The history: if it took, `time_ms` is the WooHoo that did it.
+    for f in data.fun_log.iter_mut().filter(|f| f.time_ms == p.time_ms || p.fun_times.contains(&f.time_ms)) {
+        f.took = Some(p.positive && f.time_ms == p.time_ms);
+    }
     if p.positive {
         // Counts from the moment it happened, so you're already a bit along.
         start_pregnancy(
@@ -885,6 +893,39 @@ mod tests {
         assert_eq!(resolve_due(&mut d, reveal), Some(false));
         assert!(d.pregnancies.is_empty());
         assert!(d.waiting.is_empty());
+    }
+
+    #[test]
+    fn the_history_saves_each_result_at_the_reveal() {
+        let took = |d: &AppData| d.fun_log.iter().map(|f| f.took).collect::<Vec<_>>();
+        let reveal = |d: &mut AppData| {
+            let at = d.waiting[0].reveal_ms;
+            resolve_due(d, at)
+        };
+        // The first didn't take, the second did.
+        let mut d = with_instance(&["Fox"]);
+        record_fun(&mut d, LATER, 0.999);
+        record_fun(&mut d, LATER + 1000, 0.0);
+        assert_eq!(took(&d), [None, None], "nothing shows before the reveal");
+        assert_eq!(reveal(&mut d), Some(true));
+        assert_eq!(took(&d), [Some(false), Some(true)]);
+        // The first took: another one in that wait didn't.
+        let mut d = with_instance(&["Fox"]);
+        record_fun(&mut d, LATER, 0.0);
+        record_fun(&mut d, LATER + 1000, 0.0);
+        assert_eq!(reveal(&mut d), Some(true));
+        assert_eq!(took(&d), [Some(true), Some(false)]);
+        // Neither took.
+        let mut d = with_instance(&["Fox"]);
+        record_fun(&mut d, LATER, 0.999);
+        record_fun(&mut d, LATER + 1000, 0.999);
+        assert_eq!(reveal(&mut d), Some(false));
+        assert_eq!(took(&d), [Some(false), Some(false)]);
+        // Fertility off: pregnant right away.
+        let mut d = with_instance(&["Fox"]);
+        d.settings.fertility = false;
+        record_fun(&mut d, LATER, 0.999);
+        assert_eq!(took(&d), [Some(true)]);
     }
 
     #[test]

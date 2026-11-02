@@ -58,6 +58,7 @@ export function defaultSettings(): Settings {
     showPictures: false,
     fertility: true,
     fertilityPeak: 0.6,
+    graceMinutes: null,
     cycleAnchorMs: null,
     multiples: "playful",
     biggerForMultiples: true,

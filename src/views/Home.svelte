@@ -8,6 +8,7 @@
   import AllPregnancies from "../components/AllPregnancies.svelte";
   import MovementCard from "../components/MovementCard.svelte";
   import LaborCard from "../components/LaborCard.svelte";
+  import FunHistory from "../components/FunHistory.svelte";
   import { app, currentPregnancy, currentPending, homeAvatarId, updatePregnancy, errorToast, toast, confirmAsk } from "../lib/app.svelte";
   import { api } from "../lib/api";
   import { avatarName, linkedGroup } from "../lib/scope";
@@ -154,13 +155,15 @@
       <ProgressRing value={Math.min(1, pr)} size={190} stroke={16}>
         <span class="pct">{Math.floor(Math.min(pr, 9.99) * 100)}%</span>
         <span class="muted small">Week {Math.floor(week)} of 40</span>
+        <!-- Weeks are scaled to the pregnancy length; this is the real time. -->
+        <span class="muted real" title="Real time left, whatever the pregnancy length">⏳ {#if isDue}{pr > 1.01 ? `${humanDuration(app.now - due)} late` : "any moment"}{:else}{humanDuration(due - app.now)} left{/if}</span>
       </ProgressRing>
       <div class="facts">
         <div class="fact">
           <span class="muted small">Due date</span>
           <strong>{paused ? "Paused ⏸" : dateFmt.format(due)}</strong>
           <span class="muted small">
-            {#if paused}while paused{:else if isDue}{pr > 1.01 ? `${humanDuration(app.now - due)} overdue` : "any moment now"}{:else}{humanDuration(due - app.now)} to go{/if}
+            {#if paused}while paused{:else}{humanDuration(p.timeline.durationMs)} in total{/if}
           </span>
         </div>
         <div class="fact">
@@ -240,6 +243,8 @@
       <button class="ghost small" onclick={start} disabled={busy}>Start a pregnancy now 💕</button>
     </div>
   {/if}
+
+  <FunHistory avatarId={aid} />
 
   <AllPregnancies />
 
@@ -322,6 +327,10 @@
     font-size: 2.8rem;
     font-weight: 900;
     line-height: 1;
+  }
+  .real {
+    font-size: 0.78rem;
+    margin-top: 2px;
   }
   .facts {
     display: grid;

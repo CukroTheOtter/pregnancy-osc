@@ -56,7 +56,7 @@ function load(): AppData {
     local: { name: "You", userId: "usr_demo_me", avatarName: "Bunny Base", lastSeenMs: Date.now() },
     worldId: "wrld_demo",
     worldName: "Cozy Cabin",
-    instance: "1~private",
+    instance: "1~private(usr_demo_me)",
     joinedMs: Date.now() - 3_600_000,
     present: [{ name: "You", userId: "usr_demo_me", avatarName: "Bunny Base", lastSeenMs: Date.now() }, ...DEMO_PEOPLE],
     history: DEMO_PEOPLE,
@@ -260,6 +260,9 @@ function resolveDue(force = false) {
   const i = data.waiting.findIndex((w) => force || w.revealMs <= now);
   if (i < 0) return;
   const w = data.waiting.splice(i, 1)[0];
+  for (const f of data.funLog) {
+    if (f.timeMs === w.timeMs || w.funTimes?.includes(f.timeMs)) f.took = w.positive && f.timeMs === w.timeMs;
+  }
   if (w.positive) createPregnancy({ startMs: w.timeMs, source: "conception", avatarId: w.avatarId, partner: w.partner, babyCount: w.babyCount });
   data.lastReveal = { timeMs: now, eventMs: w.timeMs, positive: w.positive, seen: false };
   changed();
@@ -696,7 +699,7 @@ async function woohoo(forced: boolean | null) {
       return;
     }
     const partner = funPartner(now);
-    data.funLog.push({ timeMs: now, partnerName: partner.name, partnerUserId: partner.userId, avatarId: data.currentAvatarId, worldName: data.instance.worldName });
+    data.funLog.push({ timeMs: now, partnerName: partner.name, partnerUserId: partner.userId, avatarId: data.currentAvatarId, worldName: data.instance.worldName, took: s.fertility ? null : true });
     if (!s.fertility) {
       createPregnancy({ source: "conception", partner });
       changed();
@@ -709,9 +712,10 @@ async function woohoo(forced: boolean | null) {
     const existing = pendingFor(data, data.currentAvatarId);
     const positive = forced ?? Math.random() < c;
     if (existing) {
+      existing.funTimes = [...(existing.funTimes ?? []), now];
       if (!existing.positive && positive) Object.assign(existing, { positive, timeMs: now, partner, worldName: data.instance.worldName });
     } else {
-      data.waiting.push({ timeMs: now, revealMs: now + graceMs(s), chance: c, cycleDay: day, positive, babyCount: rollBabies(), partner, avatarId: owner(data, data.currentAvatarId), worldName: data.instance.worldName });
+      data.waiting.push({ timeMs: now, revealMs: now + graceMs(s), chance: c, cycleDay: day, positive, babyCount: rollBabies(), partner, avatarId: owner(data, data.currentAvatarId), worldName: data.instance.worldName, funTimes: [now] });
     }
     changed();
     emit("fun");

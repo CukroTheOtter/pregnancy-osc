@@ -2,7 +2,7 @@
 //!
 //! Everything scales with the pregnancy length the user picked: a cycle is
 //! 1/10 of it (28 days vs 280, like real life) and the grace period before
-//! you find out is 1/20 (two pregnancy weeks).
+//! you find out is 1/20 (two pregnancy weeks), unless a fixed wait is picked.
 
 use crate::model::{AppData, Multiples, Settings};
 use crate::timeline::duration_for;
@@ -36,8 +36,16 @@ pub fn cycle_ms(s: &Settings) -> i64 {
     (term_ms(s) / 10).max(60_000)
 }
 
+/// Real time from a WooHoo until you find out. A fixed wait is capped at 1/4
+/// of the pregnancy: it counts from the WooHoo, so a long wait on a short
+/// pregnancy would reveal it nearly over.
 pub fn grace_ms(s: &Settings) -> i64 {
-    (term_ms(s) / 20).max(60_000)
+    let term = term_ms(s);
+    let wait = match s.grace_minutes {
+        Some(m) => (m as i64 * 60_000).min(term / 4),
+        None => term / 20,
+    };
+    wait.max(60_000)
 }
 
 /// Cycle day as a fraction, from 1.0 up to (not including) 29.0.
@@ -146,6 +154,15 @@ mod tests {
         let real = Settings { default_mode: DurationMode::Realtime, ..Default::default() };
         assert_eq!(cycle_ms(&real), 28 * DAY_MS);
         assert_eq!(grace_ms(&real), 14 * DAY_MS);
+    }
+
+    #[test]
+    fn a_fixed_wait_ignores_the_length_but_is_capped() {
+        let s = Settings { grace_minutes: Some(60), ..month() };
+        assert_eq!(grace_ms(&s), 60 * 60_000);
+        assert_eq!(cycle_ms(&s), 3 * DAY_MS, "the cycle doesn't change");
+        let day = Settings { grace_minutes: Some(24 * 60), default_custom_ms: Some(DAY_MS), ..month() };
+        assert_eq!(grace_ms(&day), DAY_MS / 4);
     }
 
     #[test]

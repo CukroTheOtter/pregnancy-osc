@@ -9,10 +9,10 @@
   import LinkInfo from "../components/LinkInfo.svelte";
   import { app, checkForUpdate, confirmAsk, errorToast, toast } from "../lib/app.svelte";
   import { api, inTauri, pickFolder, pickTextFile, saveTextFile } from "../lib/api";
-  import { MULTIPLES_LABEL } from "../lib/fertility";
+  import { MULTIPLES_LABEL, graceMs, termMs } from "../lib/fertility";
   import { HOLE_TYPES } from "../lib/sps";
   import { FEATURES, FIXED, PARAM_INFO, PARAM_ORDER, REQUIRED, SYNC_ROLES, hasParam, syncLabel } from "../lib/params";
-  import { week as weekOf } from "../lib/timeline";
+  import { humanDuration, week as weekOf } from "../lib/timeline";
   import { pregnancyFor } from "../lib/scope";
   import type { InstanceKind, LaborStart, MappingInfo, Multiples, ResetKind, SafetySettings, Settings, VrNotices, VrTarget } from "../lib/types";
   import { INSTANCE_KINDS, OPEN_KINDS } from "../lib/safety";
@@ -57,6 +57,7 @@
     { k: "dueDate", l: "Due date", h: "Right on the due date" },
     { k: "manual", l: "When I say", h: "You start it (Home or the avatar's menu)" },
   ];
+  const GRACE: [number | null, string][] = [[null, "Match pregnancy length"], [10, "10 min"], [60, "1 hour"], [360, "6 hours"], [1440, "1 day"]];
   const SHOW_FOR: [number, string][] = [[5, "5 s"], [8, "8 s"], [15, "15 s"], [30, "30 s"]];
   function withChatRows(x: Settings): Settings {
     // Empty texts show the default, typed out, so it can be edited.
@@ -587,6 +588,15 @@
             </button>
           {/each}
         </div>
+      </div>
+      <div class="field">
+        <strong>Find out after</strong>
+        <div class="kinds">
+          {#each GRACE as [m, l]}
+            <button class:on={(s.graceMinutes ?? null) === m} onclick={() => { s.graceMinutes = m; commit(); }}>{l}</button>
+          {/each}
+        </div>
+        <span class="hint">You'd wait {humanDuration(graceMs(s))} of real time. {s.graceMinutes == null ? `That's 1/20 of the pregnancy length you picked last (${humanDuration(termMs(s))}).` : s.graceMinutes * 60_000 > termMs(s) / 4 ? `Shortened to 1/4 of the pregnancy length you picked last (${humanDuration(termMs(s))}).` : ""} Applies from your next WooHoo.</span>
       </div>
       <button class="small soft" style="align-self:flex-start" onclick={newCycle}>Start a new cycle today</button>
     {/if}

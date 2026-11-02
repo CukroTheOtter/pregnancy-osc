@@ -145,6 +145,8 @@ export interface Settings {
   showPictures: boolean;
   fertility: boolean;
   fertilityPeak: number;
+  /** Minutes from a WooHoo until you find out (null = match the pregnancy length). */
+  graceMinutes?: number | null;
   cycleAnchorMs: number | null;
   multiples: Multiples;
   biggerForMultiples: boolean;
@@ -276,6 +278,8 @@ export interface PendingConception {
   partner: Partner;
   avatarId: string | null;
   worldName: string | null;
+  /** Every WooHoo in this wait, by its time (for the history). */
+  funTimes?: number[];
 }
 
 export interface RevealResult {
@@ -291,6 +295,8 @@ export interface FunEvent {
   partnerUserId: string | null;
   avatarId: string | null;
   worldName: string | null;
+  /** It led to a pregnancy (null = not known yet, or from before this was saved). */
+  took?: boolean | null;
 }
 
 export interface AvatarGroup {

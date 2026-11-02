@@ -1,7 +1,7 @@
 // Which pregnancy belongs to which avatar. Mirrors AppData::owner and
 // friends in crates/pregsys-core/src/model.rs.
 
-import type { AppData, PendingConception, Pregnancy, Person } from "./types";
+import type { AppData, FunEvent, PendingConception, Pregnancy, Person } from "./types";
 
 /** Who holds the pregnancy this avatar shows: its group's id, or the avatar itself. */
 export function owner(d: AppData, avatarId: string | null): string | null {
@@ -66,6 +66,21 @@ export function avatarName(d: AppData, id: string | null): string {
 }
 
 // ---------- partner stats ----------
+
+/** This avatar's WooHoos (its group's, sharing one pregnancy), newest first. */
+export function funHistory(d: AppData, avatarId: string | null): FunEvent[] {
+  const mine = (f: FunEvent) => {
+    if (!avatarId) return true;
+    return d.settings.syncScope === "global" ? f.avatarId === avatarId : !!f.avatarId && owner(d, f.avatarId) === owner(d, avatarId);
+  };
+  return d.funLog.filter(mine).sort((a, b) => b.timeMs - a.timeMs);
+}
+
+/** How a WooHoo turned out. Still waiting says nothing about which one took. */
+export function funResult(d: AppData, f: FunEvent): "waiting" | "pregnant" | "notPregnant" | "unknown" {
+  if (f.took != null) return f.took ? "pregnant" : "notPregnant";
+  return d.waiting.some((w) => w.timeMs === f.timeMs || w.funTimes?.includes(f.timeMs)) ? "waiting" : "unknown";
+}
 
 export interface PartnerStats {
   key: string;

@@ -18,7 +18,10 @@ export type Level = "low" | "medium" | "high" | "peak";
 
 export const termMs = (s: Settings) => durationFor(s.defaultMode, s.defaultSpeed, s.defaultCustomMs);
 export const cycleMs = (s: Settings) => Math.max(60_000, Math.floor(termMs(s) / 10));
-export const graceMs = (s: Settings) => Math.max(60_000, Math.floor(termMs(s) / 20));
+export const graceMs = (s: Settings) => {
+  const term = termMs(s);
+  return Math.max(60_000, Math.floor(s.graceMinutes != null ? Math.min(s.graceMinutes * 60_000, term / 4) : term / 20));
+};
 
 export function cycleDay(now: number, anchor: number, cycle: number): number {
   const into = (((now - anchor) % cycle) + cycle) % cycle;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { chance, cycleDay, cycleMs, graceMs, level, untilFertile } from "./fertility";
-import { linkedGroup, owner, partnerStats, pregnancyFor } from "./scope";
+import { funHistory, funResult, linkedGroup, owner, partnerStats, pregnancyFor } from "./scope";
 import { defaultSettings, emptyData, pregnancy } from "./testdata";
 import type { AvatarProfile } from "./types";
 
@@ -11,6 +11,13 @@ describe("fertility (matches the Rust engine)", () => {
     const s = defaultSettings(); // 1 month
     expect(cycleMs(s)).toBe(3 * DAY);
     expect(graceMs(s)).toBe(1.5 * DAY);
+  });
+
+  it("a fixed wait ignores the length but is capped", () => {
+    const s = { ...defaultSettings(), graceMinutes: 60 };
+    expect(graceMs(s)).toBe(3_600_000);
+    expect(cycleMs(s)).toBe(3 * DAY);
+    expect(graceMs({ ...s, graceMinutes: 24 * 60, defaultCustomMs: DAY })).toBe(DAY / 4);
   });
 
   it("cycle days and chances", () => {
@@ -68,5 +75,16 @@ describe("partner stats", () => {
     expect(first.fun).toBe(2);
     expect(first.pregnancies).toBe(2);
     expect(first.kids).toBe(2);
+  });
+
+  it("lists an avatar's WooHoos, newest first, with their results", () => {
+    const d = emptyData();
+    const fun = (timeMs: number, avatarId: string | null, took: boolean | null) => ({ timeMs, partnerName: null, partnerUserId: null, avatarId, worldName: null, took });
+    d.funLog = [fun(1, "avtr_a", null), fun(2, "avtr_b", true), fun(3, "avtr_a", false), fun(4, "avtr_a", null)];
+    d.waiting = [{ timeMs: 9, revealMs: 99, chance: 0, cycleDay: 1, positive: false, babyCount: 1, partner: { status: "unknown", name: null, userId: null, avatarName: null, species: null, speciesSource: "fallback", candidates: [] }, avatarId: null, worldName: null, funTimes: [4] }];
+    expect(funHistory(d, "avtr_a").map((f) => f.timeMs)).toEqual([4, 3, 1]);
+    expect(funHistory(d, null)).toHaveLength(4);
+    expect(funHistory(d, "avtr_a").map((f) => funResult(d, f))).toEqual(["waiting", "notPregnant", "unknown"]);
+    expect(funResult(d, d.funLog[1])).toBe("pregnant");
   });
 });

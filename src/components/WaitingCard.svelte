@@ -10,6 +10,7 @@
 
   const left = $derived(Math.max(0, w.revealMs - app.now));
   const timeFmt = new Intl.DateTimeFormat(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" });
+  const revealFmt = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
   const others = $derived(w.partner.candidates.filter((c) => c.name !== w.partner.name).length);
   let changing = $state(false);
 
@@ -50,6 +51,7 @@
   <div class="countdown">
     <span class="muted small">Find out if a little one is on the way in</span>
     <strong>{left > 0 ? humanDuration(left) : "a moment…"}</strong>
+    {#if left > 0}<span class="muted small">{revealFmt.format(w.revealMs)}</span>{/if}
   </div>
   <p class="muted small">Your belly stays flat until then. 🤫</p>
   {#if !inTauri}

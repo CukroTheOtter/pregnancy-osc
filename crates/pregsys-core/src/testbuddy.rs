@@ -43,6 +43,7 @@ pub fn add(data: &mut AppData, now_ms: i64) {
             partner_user_id: Some(USER_ID.into()),
             avatar_id: data.current_avatar_id.clone(),
             world_name: Some("Debug world".into()),
+            took: None,
         });
     }
     data.fun_log.sort_by_key(|f| f.time_ms);

@@ -240,6 +240,8 @@ pub struct Settings {
     pub fertility: bool,
     /// Chance of pregnancy on the most fertile day.
     pub fertility_peak: f64,
+    /// Minutes from a WooHoo until you find out (None = match the pregnancy length).
+    pub grace_minutes: Option<u32>,
     /// When the current cycle started (day 1).
     pub cycle_anchor_ms: Option<i64>,
     pub multiples: Multiples,
@@ -302,6 +304,7 @@ impl Default for Settings {
             show_pictures: false,
             fertility: true,
             fertility_peak: 0.6,
+            grace_minutes: None,
             cycle_anchor_ms: None,
             multiples: Multiples::Playful,
             bigger_for_multiples: true,
@@ -586,6 +589,8 @@ pub struct PendingConception {
     pub partner: Partner,
     pub avatar_id: Option<String>,
     pub world_name: Option<String>,
+    /// Every WooHoo in this wait, by its time (for the history).
+    pub fun_times: Vec<i64>,
 }
 
 /// One kick sent to the avatar.
@@ -608,6 +613,8 @@ pub struct FunEvent {
     pub partner_user_id: Option<String>,
     pub avatar_id: Option<String>,
     pub world_name: Option<String>,
+    /// It led to a pregnancy. None = not known yet, or from before this was saved.
+    pub took: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]

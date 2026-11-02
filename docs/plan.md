@@ -9,9 +9,10 @@ Agreed layout and features. Built in the order at the bottom.
 | State | Shows |
 |---|---|
 | Not pregnant | **Cycle card**: ring "Day 12 of 28", chance now (Low / Medium / High / Peak), "next fertile window in …". Length card. Small "start manually". |
-| Waiting | "💕 You WooHoo'd with **Ember** at Cozy Cabin." Countdown "You'll find out in 1 day 4 h". No hint of the outcome. Belly held flat. |
+| Waiting | "💕 You WooHoo'd with **Ember** at Cozy Cabin." Countdown "You'll find out in 1 day 4 h" (real time, with the date and time). No hint of the outcome. Belly held flat. |
+| Any state | **💕 WooHoo history** (folds away, only with WooHoos on this avatar or its group): each one's time, world, partner and result (⏳ Waiting / 🤰 Pregnant / 🤍 Not this time / – if none was saved). In one wait, only the WooHoo that took says Pregnant; none says anything until the reveal. |
 | Reveal (once) | "You're pregnant! 💕" + **estimated due date**, or "Not this time 🤍". OK button. |
-| Pregnant | Progress ring, **babies: "Too early to tell" → "It's twins! 👶👶"** (from about week 12), due date, Length, Partner (with "3rd time together · 2 kids"). At the due date: **"Welcome your baby 🍼"**. Small "End early". Shared avatars listed. |
+| Pregnant | Progress ring (week of 40, plus the real time left: weeks are scaled to the pregnancy length, hours and days are always real), **babies: "Too early to tell" → "It's twins! 👶👶"** (from about week 12), due date, Length, Partner (with "3rd time together · 2 kids"). At the due date: **"Welcome your baby 🍼"**. Small "End early". Shared avatars listed. |
 
 ## Partners (new tab)
 Everyone you've been with, with fun stats: WooHoos, times pregnant by them, kids together, first/last time. Profile picture if turned on.
