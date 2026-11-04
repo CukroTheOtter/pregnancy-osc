@@ -248,7 +248,16 @@ mod tests {
         assert_eq!(s.server_addr().to_ip().unwrap().port(), port, "web and OSC share the port");
         assert!((OSCQUERY_PORT..OSCQUERY_PORT + OSCQUERY_PORT_TRIES).contains(&port));
         drop((r, s));
-        let (r2, _s2) = Bridge::bind_oscquery_port().unwrap();
-        assert_eq!(r2.port, port, "freed right away, so the same port again");
+        // Windows can take a moment to free it, so give it a few seconds.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        loop {
+            let (r2, _s2) = Bridge::bind_oscquery_port().unwrap();
+            if r2.port == port {
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline, "the same port again once it's freed (got {})", r2.port);
+            drop((r2, _s2));
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
     }
 }
