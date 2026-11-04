@@ -1,0 +1,31 @@
+name: ✨ Feature suggestion
+description: An idea for something new, or a way to make something better.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea! 💕 It's worth a quick look through the [existing issues](https://github.com/CukroTheOtter/pregnancy-osc/issues?q=is%3Aissue) first, in case someone already suggested it.
+  - type: textarea
+    id: idea
+    attributes:
+      label: What's your idea?
+      description: What would you like the app to do?
+      placeholder: A setting for how long the wait after a WooHoo lasts.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why would it help?
+      description: What are you trying to do, or what's getting in the way today?
+      placeholder: On a long pregnancy, the wait to find out takes days.
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Sketches, screenshots, or how you've worked around it so far.
+    validations:
+      required: false

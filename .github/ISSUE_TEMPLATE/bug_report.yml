@@ -1,0 +1,62 @@
+name: 🐛 Bug report
+description: Something isn't working the way it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting this! 💕 If an avatar isn't being detected or a feature is missing after an upload, the [troubleshooting guide](https://github.com/CukroTheOtter/pregnancy-osc/blob/main/docs/troubleshooting.md) may fix it faster.
+
+        This page is public, so please leave out other people's names and anything else private.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you see, and what did you expect instead?
+      placeholder: I expected the belly to grow, but it stayed flat.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How can I make it happen?
+      description: The steps that lead to it. If it only happens sometimes, say that too.
+      placeholder: |
+        1. Switch to another avatar
+        2. Wait for it to load
+        3. Home shows the warning
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Copy details
+      description: In the app, go to Settings > 🩹 Troubleshooting > 📋 Copy details, then paste it here. It has your app version and the name and ID of the avatar you're wearing, but nothing about other people, your worlds or your WooHoos. Remove anything you'd rather not share.
+      render: text
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: Settings > Updates. Only needed if you didn't paste Copy details.
+      placeholder: 0.7.3
+    validations:
+      required: false
+  - type: dropdown
+    id: system
+    attributes:
+      label: What are you running it on?
+      options:
+        - Windows
+        - Linux
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Screenshots help a lot, like Avatars > Edit > What this avatar can do. Did you upload the avatar recently? Did Reset Config change anything?
+    validations:
+      required: false

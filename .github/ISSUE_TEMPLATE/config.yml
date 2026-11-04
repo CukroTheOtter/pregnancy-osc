@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 🩹 Troubleshooting guide
+    url: https://github.com/CukroTheOtter/pregnancy-osc/blob/main/docs/troubleshooting.md
+    about: Common problems and how to fix them.
+  - name: 🔒 Report a security problem
+    url: https://github.com/CukroTheOtter/pregnancy-osc/security
+    about: Please report these privately, not as a public issue.
