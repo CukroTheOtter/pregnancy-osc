@@ -74,6 +74,8 @@ The manifest grants: network (OSC/OSCQuery), read-only access to the VRChat fold
 2. Start the app. It finds VRChat automatically (OSCQuery) and shows **VRChat linked**.
 3. Your avatar needs a synced float for the belly. The default name is `Pregnancy/Stage`. If yours is different, change it in **Settings > OSC parameter names**. No code changes needed.
 
+**Something not working?** See **[docs/troubleshooting.md](docs/troubleshooting.md)**.
+
 **What each parameter does**, the sync cost, and how the "app active" flag and heartbeat work: **[docs/osc-parameters.md](docs/osc-parameters.md)**.
 
 **Minimum:** one synced float (8 bits). **Everything:** 49 synced bits. The app-active flag and heartbeat are local and free.
