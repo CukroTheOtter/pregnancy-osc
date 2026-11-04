@@ -130,6 +130,8 @@ pub fn record_fun(data: &mut AppData, now_ms: i64, roll: f64) -> FunOutcome {
         avatar_id: data.current_avatar_id.clone(),
         world_name: data.instance.world_name.clone(),
         took: (!data.settings.fertility).then_some(true),
+        wait_ms: None,
+        test_buddies_here: crate::testbuddy::here(data),
     });
     if !data.settings.fertility {
         start_pregnancy(data, NewPregnancy { source: PregnancySource::Conception, partner: Some(partner), ..Default::default() }, now_ms);
@@ -149,15 +151,18 @@ pub fn record_fun(data: &mut AppData, now_ms: i64, roll: f64) -> FunOutcome {
         // Another moment during the grace period: a new chance if the first didn't take.
         Some(p) => {
             p.fun_times.push(now_ms);
+            // A shorter wait picked since then counts, but it never gets longer.
+            p.reveal_ms = p.reveal_ms.min(reveal_ms);
             if !p.positive && positive {
                 p.positive = true;
-                p.time_ms = now_ms;
                 p.chance = chance;
                 p.cycle_day = day;
-                // Its partner list and world are from this instance, not the first one.
-                p.partner = partner;
                 p.baby_count = babies;
-                p.world_name = world_name;
+                p.later = Some(LaterTake { time_ms: now_ms, partner: partner.clone(), world_name });
+            }
+            // Nobody picked yet: "Who was it?" lists the people here now, took or not.
+            if p.partner.name.is_none() {
+                p.partner = partner;
             }
         }
         None => data.waiting.push(PendingConception {
@@ -171,6 +176,7 @@ pub fn record_fun(data: &mut AppData, now_ms: i64, roll: f64) -> FunOutcome {
             avatar_id: owner,
             world_name,
             fun_times: vec![now_ms],
+            later: None,
         }),
     }
     FunOutcome::Pending
@@ -180,31 +186,42 @@ pub fn record_fun(data: &mut AppData, now_ms: i64, roll: f64) -> FunOutcome {
 pub fn resolve_due(data: &mut AppData, now_ms: i64) -> Option<bool> {
     let i = data.waiting.iter().position(|w| w.reveal_ms <= now_ms)?;
     let p = data.waiting.remove(i);
-    // The history: if it took, `time_ms` is the WooHoo that did it.
-    for f in data.fun_log.iter_mut().filter(|f| f.time_ms == p.time_ms || p.fun_times.contains(&f.time_ms)) {
-        f.took = Some(p.positive && f.time_ms == p.time_ms);
+    // The WooHoo that took: a later one, or else the first. A later one nobody
+    // can name (or named at random), in the same world, is taken to be with who
+    // the card says.
+    let (took_ms, partner, world_name) = match p.later {
+        Some(l) if (l.partner.name.is_none() || l.partner.status == PartnerStatus::Random) && p.partner.name.is_some() && l.world_name == p.world_name => (l.time_ms, p.partner, l.world_name),
+        Some(l) => (l.time_ms, l.partner, l.world_name),
+        None => (p.time_ms, p.partner, p.world_name),
+    };
+    let first = p.fun_times.iter().copied().fold(p.time_ms, i64::min);
+    for f in data.fun_log.iter_mut().filter(|f| f.time_ms == took_ms || p.fun_times.contains(&f.time_ms)) {
+        f.took = Some(p.positive && f.time_ms == took_ms);
+        f.wait_ms = Some(first);
     }
     if p.positive {
+        // The history and Partners say who the pregnancy says.
+        credit_fun(data, took_ms, &partner);
         // Counts from the moment it happened, so you're already a bit along.
         start_pregnancy(
             data,
             NewPregnancy {
-                start_ms: Some(p.time_ms),
+                start_ms: Some(took_ms),
                 source: PregnancySource::Conception,
                 avatar_id: p.avatar_id.clone(),
-                partner: Some(p.partner.clone()),
+                partner: Some(partner),
                 baby_count: Some(p.baby_count.max(1)),
                 ..Default::default()
             },
             now_ms,
         );
-        if let Some(world) = p.world_name {
+        if let Some(world) = world_name {
             if let Some(last) = data.pregnancies.last_mut() {
                 last.world_name = Some(world);
             }
         }
     }
-    data.last_reveal = Some(RevealResult { time_ms: now_ms, event_ms: p.time_ms, positive: p.positive, seen: false });
+    data.last_reveal = Some(RevealResult { time_ms: now_ms, event_ms: took_ms, positive: p.positive, seen: false });
     Some(p.positive)
 }
 
@@ -460,7 +477,10 @@ pub fn reset_data(data: &mut AppData, kind: ResetKind) {
             data.instance.history.clear();
             data.species_answers.clear();
         }
-        ResetKind::Achievements => data.achievements.clear(),
+        ResetKind::Achievements => {
+            data.achievements.clear();
+            data.test_achievements.clear();
+        }
         ResetKind::Settings => data.settings = Default::default(),
         ResetKind::Everything => *data = AppData::new(),
     }
@@ -909,6 +929,7 @@ mod tests {
         assert_eq!(took(&d), [None, None], "nothing shows before the reveal");
         assert_eq!(reveal(&mut d), Some(true));
         assert_eq!(took(&d), [Some(false), Some(true)]);
+        assert!(d.fun_log.iter().all(|f| f.wait_ms == Some(LATER)), "one wait, known by its first WooHoo");
         // The first took: another one in that wait didn't.
         let mut d = with_instance(&["Fox"]);
         record_fun(&mut d, LATER, 0.0);
@@ -937,8 +958,52 @@ mod tests {
         assert_eq!(d.waiting.len(), 1);
         let p = &d.waiting[0];
         assert!(p.positive);
-        assert_eq!(p.time_ms, LATER + 1000);
+        assert_eq!(p.time_ms, LATER, "the card stays on the first one");
         assert_eq!(p.reveal_ms, first_reveal, "the reveal date doesn't move");
+        let reveal = p.reveal_ms;
+        resolve_due(&mut d, reveal);
+        let preg = d.current_pregnancy(None).unwrap();
+        assert_eq!(preg.timeline.start_ms, LATER + 1000, "counts from the one that took");
+        assert_eq!(d.last_reveal.as_ref().unwrap().event_ms, LATER + 1000);
+    }
+
+    #[test]
+    fn a_shorter_wait_counts_from_the_next_woohoo() {
+        let mut d = with_instance(&["Fox"]);
+        record_fun(&mut d, LATER, 0.999);
+        let long = d.waiting[0].reveal_ms;
+        d.settings.grace_minutes = Some(10);
+        assert_eq!(d.waiting[0].reveal_ms, long, "nothing moves until then");
+        record_fun(&mut d, LATER + 1000, 0.999);
+        assert_eq!(d.waiting[0].reveal_ms, LATER + 1000 + 10 * 60_000);
+        d.settings.grace_minutes = None;
+        record_fun(&mut d, LATER + 2000, 0.999);
+        assert_eq!(d.waiting[0].reveal_ms, LATER + 1000 + 10 * 60_000, "never longer");
+    }
+
+    #[test]
+    fn the_card_doesnt_give_the_result_away() {
+        let card = |d: &AppData| {
+            let w = &d.waiting[0];
+            (w.time_ms, w.world_name.clone(), w.partner.name.clone(), w.reveal_ms)
+        };
+        // Whether a second WooHoo takes or not, the card looks the same.
+        let mut took = with_instance(&["Fox", "Wolf"]);
+        let mut didnt = with_instance(&["Fox", "Wolf"]);
+        for d in [&mut took, &mut didnt] {
+            record_fun(d, LATER, 0.999);
+            let fox = d.waiting[0].partner.candidates.iter().find(|c| c.name == "Fox").cloned();
+            set_waiting_partner(d, LATER, fox, None);
+        }
+        record_fun(&mut took, LATER + 1000, 0.0);
+        record_fun(&mut didnt, LATER + 1000, 0.999);
+        assert_eq!(card(&took), card(&didnt));
+        assert_eq!(took.waiting[0].partner.name.as_deref(), Some("Fox"));
+        // It took, that one was only named at random (or not at all), same world: who you picked.
+        let reveal = took.waiting[0].reveal_ms;
+        resolve_due(&mut took, reveal);
+        assert_eq!(took.current_pregnancy(None).unwrap().partner.name.as_deref(), Some("Fox"));
+        assert_eq!(took.fun_log.iter().find(|f| f.took == Some(true)).unwrap().partner_name.as_deref(), Some("Fox"), "the history agrees");
     }
 
     #[test]
@@ -952,7 +1017,9 @@ mod tests {
             d.instance.apply(&LogEvent::PlayerJoined { name: n.into(), user_id: Some(format!("usr_{}", n.to_lowercase())) }, LATER + 30);
         }
         record_fun(&mut d, LATER + 1000, 0.0);
-        let p = &d.waiting[0];
+        let reveal = d.waiting[0].reveal_ms;
+        resolve_due(&mut d, reveal);
+        let p = d.current_pregnancy(None).unwrap();
         let names: Vec<&str> = p.partner.candidates.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(names, ["Wolf", "Rex"], "only people from the instance where it took");
         assert_eq!(p.world_name.as_deref(), Some("Neon"));

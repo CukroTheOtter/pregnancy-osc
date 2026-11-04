@@ -8,7 +8,7 @@ import { chance, cycleDay, cycleMs, graceMs } from "./fertility";
 import { groupMembers, owner, pendingFor, pregnancyFor, pregnancyIdOf } from "./scope";
 import { socketCounts, typeOf } from "./sps";
 import { FIXED } from "./params";
-import { TEST_BUDDY_ID, TEST_BUDDY_NAME, isTestBuddy } from "./testbuddy";
+import { TEST_BUDDIES, isTestBuddy } from "./testbuddy";
 
 const KEY = "pregsys-mock-data";
 type Listener = (payload: unknown) => void;
@@ -46,6 +46,8 @@ function load(): AppData {
       // Like the app: settings saved by an older version get the new ones filled in.
       const saved = JSON.parse(raw);
       const def = defaultSettings();
+      // Saves from when there was one Test Buddy.
+      if (saved.testBuddySince && !saved.testBuddies?.length) saved.testBuddies = [TEST_BUDDIES[0].id];
       return { ...emptyData(), ...saved, groups: saved.groups ?? {}, settings: { ...def, ...saved.settings, sps: { ...def.sps, ...saved.settings?.sps } } };
     }
   } catch {
@@ -260,11 +262,19 @@ function resolveDue(force = false) {
   const i = data.waiting.findIndex((w) => force || w.revealMs <= now);
   if (i < 0) return;
   const w = data.waiting.splice(i, 1)[0];
+  const later = w.later;
+  const tookMs = later?.timeMs ?? w.timeMs;
+  const partner = later && !((later.partner.name == null || later.partner.status === "random") && w.partner.name != null && later.worldName === w.worldName) ? later.partner : w.partner;
+  const first = Math.min(w.timeMs, ...(w.funTimes ?? []));
   for (const f of data.funLog) {
-    if (f.timeMs === w.timeMs || w.funTimes?.includes(f.timeMs)) f.took = w.positive && f.timeMs === w.timeMs;
+    if (f.timeMs === tookMs || w.funTimes?.includes(f.timeMs)) {
+      f.took = w.positive && f.timeMs === tookMs;
+      f.waitMs = first;
+      if (f.took) Object.assign(f, { partnerName: partner.name, partnerUserId: partner.userId });
+    }
   }
-  if (w.positive) createPregnancy({ startMs: w.timeMs, source: "conception", avatarId: w.avatarId, partner: w.partner, babyCount: w.babyCount });
-  data.lastReveal = { timeMs: now, eventMs: w.timeMs, positive: w.positive, seen: false };
+  if (w.positive) createPregnancy({ startMs: tookMs, source: "conception", avatarId: w.avatarId, partner, babyCount: w.babyCount });
+  data.lastReveal = { timeMs: now, eventMs: tookMs, positive: w.positive, seen: false };
   changed();
   emit("reveal", w.positive);
 }
@@ -322,15 +332,25 @@ function setAvatarGroup(avatarId: string, groupId: string | null) {
 
 let mapping: Mapping | null = null;
 
-/** Debug: Test Buddy and everything they touched go away. */
-function removeTestBuddy() {
-  for (const p of data.pregnancies.filter((x) => isTestBuddy(x.partner.userId))) endPregnancy(p.id);
-  data.pregnancies = data.pregnancies.filter((x) => !isTestBuddy(x.partner.userId));
-  data.waiting = data.waiting.filter((w) => !isTestBuddy(w.partner.userId));
-  data.funLog = data.funLog.filter((f) => !isTestBuddy(f.partnerUserId));
-  data.instance.present = data.instance.present.filter((x) => !isTestBuddy(x.userId));
-  data.instance.history = data.instance.history.filter((x) => !isTestBuddy(x.userId));
-  data.testBuddySince = null;
+/** Debug: a test buddy (or all of them) and everything they touched go away. */
+function removeTestBuddy(id?: string) {
+  const mine = (userId: string | null | undefined) => (id ? userId === id : isTestBuddy(userId));
+  const theirs = (p: Pregnancy) => mine(p.partner.userId) || (p.partner.name == null && p.partner.candidates.some((c) => mine(c.userId)));
+  for (const p of data.pregnancies.filter(theirs)) endPregnancy(p.id);
+  data.pregnancies = data.pregnancies.filter((x) => !theirs(x));
+  const gone = data.funLog.filter((f) => mine(f.partnerUserId) || (f.partnerName == null && f.testBuddiesHere?.some(mine))).map((f) => f.timeMs);
+  data.funLog = data.funLog.filter((f) => !gone.includes(f.timeMs));
+  data.waiting = data.waiting.filter((w) => !mine(w.partner.userId));
+  for (const w of data.waiting) {
+    if (w.later ? mine(w.later.partner.userId) || gone.includes(w.later.timeMs) : gone.includes(w.timeMs)) Object.assign(w, { later: null, positive: false });
+    w.funTimes = (w.funTimes ?? []).filter((t) => !gone.includes(t));
+    if (gone.includes(w.timeMs)) w.timeMs = w.funTimes[0] ?? w.timeMs;
+  }
+  data.waiting = data.waiting.filter((w) => !(gone.includes(w.timeMs) && !w.funTimes?.length));
+  data.instance.present = data.instance.present.filter((x) => !mine(x.userId));
+  data.instance.history = data.instance.history.filter((x) => !mine(x.userId));
+  data.testBuddies = (data.testBuddies ?? []).filter((x) => !mine(x));
+  if (!data.testBuddies.length) data.testBuddySince = null;
 }
 
 export const mock = {
@@ -501,7 +521,7 @@ export const mock = {
       data.instance.history = [];
       data.speciesAnswers = {};
     }
-    if (kind === "achievements") data.achievements = {};
+    if (kind === "achievements") Object.assign(data, { achievements: {}, testAchievements: [] });
     if (kind === "settings") data.settings = fresh.settings;
     changed();
   },
@@ -544,6 +564,25 @@ export const mock = {
   async show_belly_here() {
     shownHere = data.instance.instance;
     changed();
+  },
+  async copy_details() {
+    const st = status();
+    const a = st.avatarId ? data.avatars[st.avatarId] : undefined;
+    const line = (l?: string[] | null) => (l?.length ? `${l.length} parameters, belly ${l.includes("Pregnancy/Stage") ? "found" : "missing"}, ${l.filter((n) => n.startsWith("Pregnancy/")).length} for the app` : "not read yet");
+    return [
+      "Pregnancy OSC (preview)",
+      `Linked: ${st.oscActive ? "yes" : "no"}`,
+      `Avatar: ${a?.name ?? "none yet"}${a ? ` (${a.id})` : ""}`,
+      `VRChat live list: ${line(st.avatarParams)}`,
+      "VRChat's saved file: not found",
+      `Saved in the app: ${line(a?.params)}`,
+      `SPS sockets: ${st.spsFound.length}`,
+      `Instance type: ${st.instanceKind ?? "unknown"}`,
+      `Safety: belly hidden ${st.autoHidden ? "yes" : "no"}, labor waiting ${st.laborHeld ? "yes" : "no"}`,
+    ].join("\n");
+  },
+  async open_troubleshooting() {
+    window.open("https://github.com/CukroTheOtter/pregnancy-osc/blob/main/docs/troubleshooting.md", "_blank");
   },
   async open_system_page() {
     window.open("https://jinxxy.com/CukroTheOtt/VRChatPregnancySystem", "_blank");
@@ -596,15 +635,17 @@ export const mock = {
     changed();
     emit("instance-changed");
   },
-  async debug_test_buddy({ on }: { on: boolean }) {
-    if (on && !data.testBuddySince) {
+  async debug_test_buddy({ index, on }: { index: number; on: boolean }) {
+    const b = TEST_BUDDIES[index];
+    if (on && !data.testBuddies?.includes(b.id)) {
       const now = Date.now();
-      data.testBuddySince = now;
-      data.instance.present.push({ name: TEST_BUDDY_NAME, userId: TEST_BUDDY_ID, avatarName: "Test Bunny", lastSeenMs: now, worldName: "Debug world" });
+      data.testBuddySince ??= now;
+      data.testBuddies = [...(data.testBuddies ?? []), b.id];
+      data.instance.present.push({ name: b.name, userId: b.id, avatarName: b.avatar, lastSeenMs: now, worldName: "Debug world" });
       for (const days of [9, 6, 2]) {
-        data.funLog.push({ timeMs: now - days * 86_400_000, partnerName: TEST_BUDDY_NAME, partnerUserId: TEST_BUDDY_ID, avatarId: data.currentAvatarId, worldName: "Debug world" });
+        data.funLog.push({ timeMs: now - days * 86_400_000 - index * 60_000, partnerName: b.name, partnerUserId: b.id, avatarId: data.currentAvatarId, worldName: "Debug world" });
       }
-    } else if (!on) removeTestBuddy();
+    } else if (!on) removeTestBuddy(b.id);
     changed();
     emit("instance-changed");
   },
@@ -654,6 +695,11 @@ export const mock = {
   async debug_picture() {
     throw new Error("The browser preview can't reach vrchat.com. Try this in the installed app.");
   },
+  async debug_clear_test_achievements() {
+    for (const id of data.testAchievements ?? []) delete data.achievements[id];
+    data.testAchievements = [];
+    changed();
+  },
   async debug_kick({ strength }: { strength: "weak" | "strong" | "extreme" }) {
     const p = pregnancyFor(data, data.currentAvatarId);
     if (p) {
@@ -699,7 +745,7 @@ async function woohoo(forced: boolean | null) {
       return;
     }
     const partner = funPartner(now);
-    data.funLog.push({ timeMs: now, partnerName: partner.name, partnerUserId: partner.userId, avatarId: data.currentAvatarId, worldName: data.instance.worldName, took: s.fertility ? null : true });
+    data.funLog.push({ timeMs: now, partnerName: partner.name, partnerUserId: partner.userId, avatarId: data.currentAvatarId, worldName: data.instance.worldName, took: s.fertility ? null : true, testBuddiesHere: data.instance.present.map((x) => x.userId ?? "").filter(isTestBuddy) });
     if (!s.fertility) {
       createPregnancy({ source: "conception", partner });
       changed();
@@ -713,7 +759,9 @@ async function woohoo(forced: boolean | null) {
     const positive = forced ?? Math.random() < c;
     if (existing) {
       existing.funTimes = [...(existing.funTimes ?? []), now];
-      if (!existing.positive && positive) Object.assign(existing, { positive, timeMs: now, partner, worldName: data.instance.worldName });
+      existing.revealMs = Math.min(existing.revealMs, now + graceMs(s));
+      if (!existing.positive && positive) Object.assign(existing, { positive, later: { timeMs: now, partner, worldName: data.instance.worldName } });
+      if (existing.partner.name == null) existing.partner = partner;
     } else {
       data.waiting.push({ timeMs: now, revealMs: now + graceMs(s), chance: c, cycleDay: day, positive, babyCount: rollBabies(), partner, avatarId: owner(data, data.currentAvatarId), worldName: data.instance.worldName, funTimes: [now] });
     }

@@ -758,12 +758,14 @@ impl Engine {
             return;
         }
         self.shared.mark_dirty();
+        let test = self.shared.data.lock().unwrap().settings.debug;
         let body = match new.as_slice() {
             [one] => format!("🏆 {}", pregsys_core::achievements::title(one).unwrap_or(one)),
             many => format!("🏆 You unlocked {} achievements", many.len()),
         };
-        crate::notify(&self.app, "Achievement unlocked!", &body);
-        for id in &new {
+        crate::notify(&self.app, if test { "🛠 Test achievement" } else { "Achievement unlocked!" }, &body);
+        // Only a test: not one to tell the chatbox about.
+        for id in new.iter().filter(|_| !test) {
             let achievement = pregsys_core::achievements::title(id).unwrap_or(id).to_string();
             self.chat("achievement", Vars { achievement, ..Default::default() });
         }

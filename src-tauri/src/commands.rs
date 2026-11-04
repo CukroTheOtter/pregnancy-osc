@@ -58,7 +58,7 @@ pub fn save_settings(app: AppHandle, s: S, settings: Settings) -> R<Option<Strin
         let old = std::mem::replace(&mut d.settings, settings.clone());
         // Turning debug mode off removes Test Buddy and everything they touched.
         if old.debug && !settings.debug {
-            pregsys_core::testbuddy::remove(&mut d, now_ms());
+            pregsys_core::testbuddy::remove_all(&mut d, now_ms());
         }
         old
     };
@@ -415,11 +415,55 @@ pub fn open_path(app: AppHandle, path: String) -> R<()> {
 
 /// The avatar system that works with the app (Home's "not set up" note).
 const SYSTEM_PAGE: &str = "https://jinxxy.com/CukroTheOtt/VRChatPregnancySystem";
+const TROUBLESHOOTING_PAGE: &str = "https://github.com/CukroTheOtter/pregnancy-osc/blob/main/docs/troubleshooting.md";
 
 #[tauri::command]
 pub fn open_system_page(app: AppHandle) -> R<()> {
     use tauri_plugin_opener::OpenerExt;
     app.opener().open_url(SYSTEM_PAGE, None::<&str>).map_err(|e| e.to_string())
+}
+
+/// Settings > Troubleshooting > Copy details: a short report to paste when asking for help.
+#[tauri::command]
+pub fn copy_details(app: AppHandle, s: S) -> String {
+    use pregsys_core::{logwatch, mapping::SyncRole, report};
+    let st = s.status.lock().unwrap().clone();
+    let d = s.data.lock().unwrap().clone();
+    let mapping = s.mapping.lock().unwrap().clone();
+    let profile = st.avatar_id.as_deref().and_then(|id| d.avatars.get(id));
+    let dir = d.settings.log_dir.clone().map(std::path::PathBuf::from).or_else(logwatch::find_log_dir);
+    let file = st.avatar_id.as_deref().zip(dir).and_then(|(id, dir)| logwatch::osc_avatar_params(&dir, id));
+    let own = profile.map(|p| p.param_names.clone()).unwrap_or_default();
+    let version = app.package_info().version.to_string();
+    report::render(&report::Input {
+        version: &version,
+        vrchat_running: st.vrchat_running,
+        linked: st.osc_active,
+        oscquery: d.settings.osc.use_oscquery,
+        read_logs: d.settings.read_logs,
+        last_heard_secs: st.last_heard_ms.map(|t| (now_ms() - t) / 1000),
+        avatar_id: st.avatar_id.as_deref(),
+        avatar_name: profile.and_then(|p| p.name.as_deref()),
+        loading: st.avatar_loading,
+        live: st.avatar_params.as_deref(),
+        file: file.as_deref(),
+        saved: profile.map(|p| p.params.as_slice()),
+        own_names: &own,
+        mapping: &mapping,
+        sps_sockets: st.sps_found.len(),
+        instance_kind: st.instance_kind,
+        hide_belly: mapping.sync_role(SyncRole::HideBelly).and_then(|r| d.sync_values.get(&r.name)).is_some_and(|&v| v > 0.5),
+        auto_hidden: st.auto_hidden,
+        shown_here: st.shown_here,
+        labor_held: st.labor_held,
+    })
+}
+
+/// Opens the troubleshooting guide on GitHub.
+#[tauri::command]
+pub fn open_troubleshooting(app: AppHandle) -> R<()> {
+    use tauri_plugin_opener::OpenerExt;
+    app.opener().open_url(TROUBLESHOOTING_PAGE, None::<&str>).map_err(|e| e.to_string())
 }
 
 /// Debug: pretend a WooHoo happened. `outcome`: None = roll with your
@@ -467,16 +511,16 @@ pub fn debug_add_person(app: AppHandle, s: S, name: String, user_id: Option<Stri
     Ok(())
 }
 
-/// Debug: add Test Buddy (a pretend partner with a few stats), or remove
+/// Debug: add a test buddy (a pretend partner with a few stats), or remove
 /// them and everything they touched.
 #[tauri::command]
-pub fn debug_test_buddy(app: AppHandle, s: S, on: bool) {
+pub fn debug_test_buddy(app: AppHandle, s: S, index: usize, on: bool) {
     {
         let mut d = s.data.lock().unwrap();
         if on {
-            pregsys_core::testbuddy::add(&mut d, now_ms());
+            pregsys_core::testbuddy::add(&mut d, index, now_ms());
         } else {
-            pregsys_core::testbuddy::remove(&mut d, now_ms());
+            pregsys_core::testbuddy::remove(&mut d, index, now_ms());
         }
     }
     changed(&app, &s, true);
@@ -563,6 +607,13 @@ pub fn debug_reveal_now(app: AppHandle, s: S) {
     for w in s.data.lock().unwrap().waiting.iter_mut() {
         w.reveal_ms = now;
     }
+    changed(&app, &s, false);
+}
+
+/// Debug: takes back everything unlocked while debug mode was on.
+#[tauri::command]
+pub fn debug_clear_test_achievements(app: AppHandle, s: S) {
+    pregsys_core::achievements::clear_test(&mut s.data.lock().unwrap());
     changed(&app, &s, false);
 }
 

@@ -67,19 +67,46 @@ export function avatarName(d: AppData, id: string | null): string {
 
 // ---------- partner stats ----------
 
-/** This avatar's WooHoos (its group's, sharing one pregnancy), newest first. */
-export function funHistory(d: AppData, avatarId: string | null): FunEvent[] {
+export interface FunRow {
+  /** Its first WooHoo: stays put, so it never hints at which one took. */
+  timeMs: number;
+  worldName: string | null;
+  partnerName: string | null;
+  count: number;
+  result: "waiting" | "pregnant" | "notPregnant";
+}
+
+/**
+ * This avatar's history (its group's, sharing one pregnancy), newest first:
+ * one row per wait, since a wait has one result. WooHoos from before results
+ * were saved have none, so they aren't listed.
+ */
+export function funRows(d: AppData, avatarId: string | null): FunRow[] {
   const mine = (f: FunEvent) => {
     if (!avatarId) return true;
     return d.settings.syncScope === "global" ? f.avatarId === avatarId : !!f.avatarId && owner(d, f.avatarId) === owner(d, avatarId);
   };
-  return d.funLog.filter(mine).sort((a, b) => b.timeMs - a.timeMs);
-}
-
-/** How a WooHoo turned out. Still waiting says nothing about which one took. */
-export function funResult(d: AppData, f: FunEvent): "waiting" | "pregnant" | "notPregnant" | "unknown" {
-  if (f.took != null) return f.took ? "pregnant" : "notPregnant";
-  return d.waiting.some((w) => w.timeMs === f.timeMs || w.funTimes?.includes(f.timeMs)) ? "waiting" : "unknown";
+  const waits = new Map<number, FunEvent[]>();
+  const waitOf = (f: FunEvent) => d.waiting.find((w) => w.timeMs === f.timeMs || w.funTimes?.includes(f.timeMs));
+  for (const f of d.funLog) {
+    const w = waitOf(f);
+    const key = w ? Math.min(w.timeMs, ...(w.funTimes ?? [])) : (f.waitMs ?? (f.took != null ? f.timeMs : null));
+    if (key != null) waits.set(key, [...(waits.get(key) ?? []), f]);
+  }
+  return [...waits.values()]
+    .filter((list) => list.some(mine))
+    .map((list) => {
+      const fs = [...list].sort((a, b) => a.timeMs - b.timeMs);
+      const took = fs.find((f) => f.took);
+      return {
+        timeMs: fs[0].timeMs,
+        worldName: fs[0].worldName,
+        partnerName: took?.partnerName ?? fs.find((f) => f.partnerName)?.partnerName ?? null,
+        count: fs.length,
+        result: fs.some(waitOf) ? ("waiting" as const) : took ? ("pregnant" as const) : ("notPregnant" as const),
+      };
+    })
+    .sort((a, b) => b.timeMs - a.timeMs);
 }
 
 export interface PartnerStats {

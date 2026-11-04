@@ -1,11 +1,12 @@
 <script lang="ts">
   import PersonPic from "../components/PersonPic.svelte";
   import AvatarPic from "../components/AvatarPic.svelte";
+  import ShareCard from "../components/ShareCard.svelte";
   import { app } from "../lib/app.svelte";
   import { avatarName, partnerStats } from "../lib/scope";
   import { hasSystem } from "../lib/avatars";
   import { humanDuration } from "../lib/timeline";
-  import { ACHIEVEMENTS } from "../lib/achievements";
+  import { ACHIEVEMENTS, TIERS } from "../lib/achievements";
 
   const d = $derived(app.data!);
   const me = $derived(d.instance.local);
@@ -27,7 +28,10 @@
     };
   });
 
-  const unlocked = $derived(ACHIEVEMENTS.filter((a) => d.achievements?.[a.id] != null).length);
+  const isTest = (id: string) => !!d.testAchievements?.includes(id);
+  // Ones unlocked in debug mode don't count.
+  const unlocked = $derived(ACHIEVEMENTS.filter((a) => d.achievements?.[a.id] != null && !isTest(a.id)).length);
+  let sharing = $state(false);
 </script>
 
 <div class="page">
@@ -67,21 +71,26 @@
     <div class="row">
       <h2 class="grow">🏆 Achievements</h2>
       <span class="pill">{unlocked} / {ACHIEVEMENTS.length}</span>
+      <button class="small soft" onclick={() => (sharing = true)}>📤 Share</button>
     </div>
     <div class="achievements">
       {#each ACHIEVEMENTS as a (a.id)}
         {@const at = d.achievements?.[a.id]}
-        <div class="achievement" class:locked={at == null}>
+        <div class="achievement" class:locked={at == null} class:test={isTest(a.id)}>
           <span class="emoji" aria-hidden="true">{at == null ? "🔒" : a.emoji}</span>
           <span class="text">
             <strong>{a.title}</strong>
-            <span class="muted small">{at == null ? a.hint : `${a.hint} · ${dateFmt.format(at)}`}</span>
+            <span class="tier tier-{a.tier}" title={TIERS[a.tier]}>{"⭐".repeat(a.tier)} {TIERS[a.tier]}</span>
+            {#if isTest(a.id)}<span class="tier" title="Unlocked in debug mode, so it doesn't count">🛠 Test</span>{/if}
+            <span class="muted small">{at == null ? (a.secret ?? a.hint) : `${a.hint} · ${dateFmt.format(at)}`}</span>
           </span>
         </div>
       {/each}
     </div>
   </section>
 </div>
+
+{#if sharing}<ShareCard onclose={() => (sharing = false)} />{/if}
 
 <style>
   .page {
@@ -148,7 +157,8 @@
     border-radius: 14px;
     background: color-mix(in srgb, var(--accent) 14%, var(--bg));
   }
-  .achievement.locked {
+  .achievement.locked,
+  .achievement.test {
     background: var(--bg);
     opacity: 0.6;
   }
@@ -159,6 +169,23 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
+  }
+  .tier {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--muted);
+  }
+  .tier-2 {
+    color: var(--tier-uncommon);
+  }
+  .tier-3 {
+    color: var(--tier-rare);
+  }
+  .tier-4 {
+    color: var(--tier-epic);
+  }
+  .tier-5 {
+    color: var(--tier-legendary);
   }
   @media (max-width: 440px) {
     .nums,

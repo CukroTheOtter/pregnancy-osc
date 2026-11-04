@@ -5,11 +5,11 @@ Desktop app that drives the avatar's pregnancy over OSC. Tauri 2 + Rust + Svelte
 - Work inside `app/`; edit the SDK package only when the user asks (see the root `CLAUDE.md`).
 - Keep it simple and cute. Build what the user asks for; propose (don't build) extras.
 - Layout: `crates/pregsys-core` (pure logic + tests), `crates/pregsys-osc` (OSC, OSCQuery, bridge), `crates/belly-cli`, `src-tauri` (engine, commands), `src` (UI), `later/` (parked).
-- Docs: `README.md`, `docs/osc-parameters.md` (source of truth for parameters), `docs/plan.md`.
+- Docs: `README.md`, `docs/osc-parameters.md` (source of truth for parameters), `docs/plan.md`, `docs/troubleshooting.md` (short version in `components/TroubleshootCard.svelte`, keep them in step).
 - Parameters all use the `Pregnancy/` prefix (mapping in `config/osc-parameters.json`, versioned + upgraded in `mapping.rs`). App parameters vs the Sync list; app parameters can't be synced.
 - Every Rust command has a twin in `src/lib/mock.ts` (browser preview). Change both.
 - Wording: short and plain; "WooHoo" for in-game fun; in-app dialogs (`confirmAsk`), never `confirm()`.
-- UI: tabs Home / Me (stats + achievements) / Partners / Avatars / Settings. Settings cards use `components/Section.svelte` (collapsible). Achievements: logic in `pregsys-core/src/achievements.rs`, display list in `src/lib/achievements.ts` (keep ids/titles in step).
+- UI: tabs Home / Me (stats + achievements) / Partners / Avatars / Settings. Settings cards use `components/Section.svelte` (collapsible). Achievements: logic in `pregsys-core/src/achievements.rs`, display list, rarity (1 Common to 5 Legendary, by hand) and locked hints for surprises in `src/lib/achievements.ts` (keep ids/titles in step).
 - Debug mode: tap the title 5 times.
 
 ## VRChat facts learned the hard way

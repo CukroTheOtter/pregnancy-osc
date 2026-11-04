@@ -137,8 +137,17 @@
 
   {#if noSystem}
     <section class="card no-system">
-      <strong>🧩 This avatar doesn't have the Pregnancy System</strong>
+      <strong>🧩 VRChat isn't showing the Pregnancy System on this avatar</strong>
       <p class="muted small">The app can't show a belly on it. Add the Pregnancy System in Unity to use it here.</p>
+      <details class="wrong small">
+        <summary>Think this is wrong?</summary>
+        <ol>
+          <li>{viewingOther ? "Wear this avatar and wait about 30 seconds." : "Switch to another avatar and back, then wait about 30 seconds."}</li>
+          <li>In VRChat: Action Menu > Options > OSC > Reset Config, then switch avatars and back.</li>
+          <li>Check the system is on it in Unity, then upload it again.</li>
+        </ol>
+        <button class="small ghost" onclick={() => api.openTroubleshooting().catch(errorToast)}>📖 Full guide</button>
+      </details>
       <div class="row">
         <button class="small" onclick={() => api.openSystemPage().catch(errorToast)}>Get the Pregnancy System</button>
         <button class="small soft" onclick={() => (app.view = "avatars")}>Avatars</button>
@@ -277,6 +286,17 @@
   .no-system .row {
     gap: 8px;
     flex-wrap: wrap;
+  }
+  .wrong {
+    text-align: left;
+  }
+  .wrong summary {
+    cursor: pointer;
+    font-weight: 700;
+  }
+  .wrong ol {
+    margin: 6px 0;
+    padding-left: 20px;
   }
   .hidden-note {
     display: flex;

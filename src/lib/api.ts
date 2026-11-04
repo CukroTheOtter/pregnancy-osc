@@ -65,6 +65,9 @@ export const api = {
   reloadMapping: () => call<void>("reload_mapping"),
   openPath: (path: string) => call<void>("open_path", { path }),
   openSystemPage: () => call<void>("open_system_page"),
+  openTroubleshooting: () => call<void>("open_troubleshooting"),
+  /** A short report to paste when asking for help (see pregsys-core/src/report.rs). */
+  copyDetails: () => call<string>("copy_details"),
   setSyncValue: (name: string, value: number) => call<void>("set_sync_value", { name, value }),
   /** Shows the belly in this instance only (Settings > Safety hides it here). */
   showBellyHere: () => call<void>("show_belly_here"),
@@ -81,12 +84,13 @@ export const api = {
   debugWoohoo: (outcome: boolean | null) => call<void>("debug_woohoo", { outcome }),
   debugRevealNow: () => call<void>("debug_reveal_now"),
   /** Debug: add Test Buddy, or remove them and everything they touched. */
-  debugTestBuddy: (on: boolean) => call<void>("debug_test_buddy", { on }),
+  debugTestBuddy: (index: number, on: boolean) => call<void>("debug_test_buddy", { index, on }),
   /** Debug: start labor (null) or move it along. */
   debugLabor: (skip: "minute" | "nextPhase" | "birth" | null) => call<void>("debug_labor", { skip }),
   /** Debug: how many babies (1 to 4) on this pregnancy or grace period. */
   debugSetBabies: (count: number) => call<void>("debug_set_babies", { count }),
   debugKick: (strength: import("./types").KickStrength) => call<void>("debug_kick", { strength }),
+  debugClearTestAchievements: () => call<void>("debug_clear_test_achievements"),
   debugAddPerson: (name: string, userId: string | null) => call<void>("debug_add_person", { name, userId }),
   debugRemovePerson: (name: string, userId: string | null) => call<void>("debug_remove_person", { name, userId }),
   debugPicture: (userId: string) => call<string | null>("debug_picture", { userId }),

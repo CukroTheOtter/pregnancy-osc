@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { CUSTOM_VARS, HEX, customColors, ownIsDark } from "./lib/theme";
   import { onMount } from "svelte";
   import { app, init, toast, type View } from "./lib/app.svelte";
   import { api, inTauri } from "./lib/api";
@@ -30,14 +31,20 @@
     const theme = app.data?.settings.theme;
     const mode = theme?.mode ?? "system";
     const root = document.documentElement;
+    // A background of your own decides light or dark by itself.
+    const own = theme?.customAccent && mode !== "black" ? ownIsDark(theme.background) : null;
+    const dark = own ?? (mode === "dark" || mode === "black" || (mode === "system" && systemDark));
     root.dataset.palette = theme?.palette || "strawberry";
-    root.dataset.theme = mode === "dark" || mode === "black" || (mode === "system" && systemDark) ? "dark" : "light";
+    root.dataset.theme = dark ? "dark" : "light";
     // Black: dark with true black backgrounds, for OLED screens.
     if (mode === "black") root.dataset.black = "";
     else delete root.dataset.black;
-    // Your own accent color on top of the palette.
-    if (theme?.customAccent && /^#[0-9a-f]{6}$/i.test(theme.accent)) root.style.setProperty("--accent", theme.accent);
-    else root.style.removeProperty("--accent");
+    // Your own colors: a whole theme in place of the palette.
+    CUSTOM_VARS.forEach((v) => root.style.removeProperty(v));
+    if (theme?.customAccent && HEX.test(theme.accent)) {
+      const colors = customColors(theme.accent, theme.background, mode === "black" ? "black" : dark ? "dark" : "light");
+      Object.entries(colors).forEach(([v, c]) => root.style.setProperty(v, c));
+    }
   });
 
   const TABS: { id: View; label: string; icon: string }[] = [

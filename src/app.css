@@ -11,6 +11,10 @@
   --danger: #e2557a;
   --ok: #4fb38a;
   --warn: #e3a33a;
+  --tier-uncommon: #2a8f66;
+  --tier-rare: #2f78cc;
+  --tier-epic: #8a50d0;
+  --tier-legendary: #b87800;
   --skin: #f6d4c2;
   --skin-line: #e8a99a;
   --egg-line: #d9b99b;
@@ -84,6 +88,10 @@
 
 /* ---------- dark ---------- */
 :root[data-theme="dark"] {
+  --tier-uncommon: #6fd6ab;
+  --tier-rare: #7fb8f5;
+  --tier-epic: #b9a0ff;
+  --tier-legendary: #f5c451;
   color-scheme: dark;
   --bg: #1e1820;
   --bg-2: #2a2230;

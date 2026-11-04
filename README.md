@@ -132,7 +132,7 @@ npm run check            # type check the UI
 ```
 
 ### Debug mode (test in VRChat)
-Tap the **Pregnancy OSC** title 5 times. A 🛠 Debug section appears at the bottom of Settings: pretend a WooHoo (random, pregnant, or not), end the grace period now, jump the cycle to a day or the pregnancy to a week, and see live readouts of what's being sent. Tap 5 times again (or "Turn off") to hide it.
+Tap the **Pregnancy OSC** title 5 times. A 🛠 Debug section appears at the bottom of Settings: pretend a WooHoo (random, pregnant, or not), turn on up to 3 test buddies (pretend partners in your instance), end the grace period now, jump the cycle to a day or the pregnancy to a week, and see live readouts of what's being sent. Tap 5 times again (or "Turn off") to hide it.
 
 ### Test OSC by hand (`belly-cli`)
 ```bash

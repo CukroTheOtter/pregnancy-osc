@@ -10,7 +10,7 @@ export function defaultSettings(): Settings {
     userSpecies: "human",
     hybridChance: 0.05,
     spoilerMode: "surprise",
-    theme: { palette: "strawberry", mode: "system", accent: "#f59ac0", customAccent: false },
+    theme: { palette: "strawberry", mode: "system", accent: "#f59ac0", customAccent: false, background: null },
     startWithSteamvr: false,
     startWithOs: false,
     startInTray: false,

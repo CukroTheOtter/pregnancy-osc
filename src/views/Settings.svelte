@@ -7,7 +7,9 @@
   import DebugPanel from "../components/DebugPanel.svelte";
   import HeightDoubt from "../components/HeightDoubt.svelte";
   import LinkInfo from "../components/LinkInfo.svelte";
-  import { app, checkForUpdate, confirmAsk, errorToast, toast } from "../lib/app.svelte";
+  import TroubleshootCard from "../components/TroubleshootCard.svelte";
+  import { app, checkForUpdate, confirmAsk, errorToast, settingsChanged, settingsSaved, toast } from "../lib/app.svelte";
+  import { HEX } from "../lib/theme";
   import { api, inTauri, pickFolder, pickTextFile, saveTextFile } from "../lib/api";
   import { MULTIPLES_LABEL, graceMs, termMs } from "../lib/fertility";
   import { HOLE_TYPES } from "../lib/sps";
@@ -30,6 +32,20 @@
     { id: "notPregnant", label: "Not pregnant this time", def: "Not pregnant this time" },
     { id: "achievement", label: "Achievement unlocked", def: "🏆 {achievement}" },
   ];
+  // Your own background sets light or dark by itself, so picking a theme lets go of it.
+  function setThemeMode(mode: Settings["theme"]["mode"]) {
+    s.theme.mode = mode;
+    s.theme.background = null;
+    commit();
+  }
+
+  // Your own background starts from what's on screen now.
+  function ownBackground() {
+    const now = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
+    s.theme.background = s.theme.background || (HEX.test(now) ? now : s.theme.accent);
+    commit();
+  }
+
   // Your own accent color: Custom opens the picker (closes it again if open).
   let pickingColor = $state(false);
   function openCustom() {
@@ -69,6 +85,8 @@
   }
 
   let s = $state<Settings>(withChatRows(structuredClone($state.snapshot(app.data!.settings)) as Settings));
+  // Your own background sets light or dark, so no theme button is in charge and none looks picked.
+  const ownBackgroundOn = $derived(!!s.theme.customAccent && !!s.theme.background && s.theme.mode !== "black");
   let mapInfo = $state<MappingInfo | null>(null);
   /** The avatar you're wearing (for "this avatar can't show …" hints). */
   const worn = $derived(app.data?.currentAvatarId ? app.data.avatars[app.data.currentAvatarId] : null);
@@ -191,14 +209,19 @@
 
   function commit(now = false) {
     app.data!.settings = structuredClone($state.snapshot(s)) as Settings;
+    // One waiting save at a time: a newer one replaces it.
     if (timer) clearTimeout(timer);
+    else settingsChanged();
     const run = async () => {
+      timer = null;
       try {
         const note = await api.saveSettings($state.snapshot(s) as Settings);
         if (note) toast("Start with SteamVR", note, "info", 12000);
       } catch (e) {
         errorToast(e);
         s = structuredClone($state.snapshot(app.data!.settings)) as Settings;
+      } finally {
+        settingsSaved();
       }
     };
     if (now) run();
@@ -596,7 +619,7 @@
             <button class:on={(s.graceMinutes ?? null) === m} onclick={() => { s.graceMinutes = m; commit(); }}>{l}</button>
           {/each}
         </div>
-        <span class="hint">You'd wait {humanDuration(graceMs(s))} of real time. {s.graceMinutes == null ? `That's 1/20 of the pregnancy length you picked last (${humanDuration(termMs(s))}).` : s.graceMinutes * 60_000 > termMs(s) / 4 ? `Shortened to 1/4 of the pregnancy length you picked last (${humanDuration(termMs(s))}).` : ""} Applies from your next WooHoo.</span>
+        <span class="hint">You'd wait {humanDuration(graceMs(s))} of real time. {s.graceMinutes == null ? `That's 1/20 of the pregnancy length you picked last (${humanDuration(termMs(s))}).` : s.graceMinutes * 60_000 > termMs(s) / 4 ? `Shortened to 1/4 of the pregnancy length you picked last (${humanDuration(termMs(s))}).` : ""} A wait already running switches to this at your next WooHoo, if that ends it sooner.</span>
       </div>
       <button class="small soft" style="align-self:flex-start" onclick={newCycle}>Start a new cycle today</button>
     {/if}
@@ -776,7 +799,7 @@
       <strong>Theme</strong>
       <div class="segmented">
         {#each [["system", "Follow system"], ["light", "Light"], ["dark", "Dark"], ["black", "Black"]] as [m, l]}
-          <button class:on={s.theme.mode === m} onclick={() => { s.theme.mode = m as Settings["theme"]["mode"]; commit(); }}>{l}</button>
+          <button class:on={s.theme.mode === m && !ownBackgroundOn} onclick={() => setThemeMode(m as Settings["theme"]["mode"])}>{l}</button>
         {/each}
       </div>
       {#if s.theme.mode === "black"}<span class="hint">True black, for OLED screens.</span>{/if}
@@ -795,11 +818,32 @@
         </button>
       </div>
       {#if pickingColor && s.theme.customAccent}
+        <strong class="small">Accent</strong>
+        <span class="hint">Buttons, toggles and the progress ring.</span>
         <AccentPicker value={s.theme.accent} onchange={(c) => { s.theme.accent = c; commit(); }} />
+        <strong class="small">Background</strong>
+        {#if s.theme.mode === "black"}
+          <span class="hint">Black keeps its true black backgrounds. Pick another theme above to change them.</span>
+        {:else}
+          <div class="segmented">
+            <button class:on={!s.theme.background} onclick={() => { s.theme.background = null; commit(); }}>Follow accent</button>
+            <button class:on={!!s.theme.background} onclick={ownBackground}>My own</button>
+          </div>
+          {#if s.theme.background}
+            <span class="hint">The page and cards use exactly this color. A dark one gives the dark look and a light one the light look; picking a theme above goes back to Follow accent.</span>
+            <AccentPicker value={s.theme.background} onchange={(c) => { s.theme.background = c; commit(); }} />
+          {/if}
+        {/if}
+        <span class="hint">Text and borders follow by themselves, so they stay readable.</span>
+      {:else if s.theme.customAccent}
+        <span class="hint">Your own colors. Tap Custom to change them.</span>
+      {:else}
+        <span class="hint">A full set of matching colors, or Custom to pick your own.</span>
       {/if}
-      <span class="hint">Buttons, toggles and the progress ring.</span>
     </div>
   </Section>
+
+  <TroubleshootCard />
 
   <Section id="updates" title="✨ Updates">
     {#snippet extra()}{#if app.update}<span class="pill">New!</span>{/if}{/snippet}

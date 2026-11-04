@@ -47,6 +47,7 @@ pub fn parse(json: &str) -> Result<AppData, StorageError> {
     let migrated = migrate(raw)?;
     let mut data: AppData = serde_json::from_value(migrated)?;
     data.upgrade_links();
+    crate::testbuddy::upgrade(&mut data);
     Ok(data)
 }
 

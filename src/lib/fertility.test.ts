@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { chance, cycleDay, cycleMs, graceMs, level, untilFertile } from "./fertility";
-import { funHistory, funResult, linkedGroup, owner, partnerStats, pregnancyFor } from "./scope";
+import { funRows, linkedGroup, owner, partnerStats, pregnancyFor } from "./scope";
 import { defaultSettings, emptyData, pregnancy } from "./testdata";
 import type { AvatarProfile } from "./types";
 
@@ -77,14 +77,25 @@ describe("partner stats", () => {
     expect(first.kids).toBe(2);
   });
 
-  it("lists an avatar's WooHoos, newest first, with their results", () => {
+  it("the history has one row per wait, newest first", () => {
     const d = emptyData();
-    const fun = (timeMs: number, avatarId: string | null, took: boolean | null) => ({ timeMs, partnerName: null, partnerUserId: null, avatarId, worldName: null, took });
-    d.funLog = [fun(1, "avtr_a", null), fun(2, "avtr_b", true), fun(3, "avtr_a", false), fun(4, "avtr_a", null)];
-    d.waiting = [{ timeMs: 9, revealMs: 99, chance: 0, cycleDay: 1, positive: false, babyCount: 1, partner: { status: "unknown", name: null, userId: null, avatarName: null, species: null, speciesSource: "fallback", candidates: [] }, avatarId: null, worldName: null, funTimes: [4] }];
-    expect(funHistory(d, "avtr_a").map((f) => f.timeMs)).toEqual([4, 3, 1]);
-    expect(funHistory(d, null)).toHaveLength(4);
-    expect(funHistory(d, "avtr_a").map((f) => funResult(d, f))).toEqual(["waiting", "notPregnant", "unknown"]);
-    expect(funResult(d, d.funLog[1])).toBe("pregnant");
+    const fun = (timeMs: number, avatarId: string, partnerName: string | null, took: boolean | null, waitMs: number | null) => ({ timeMs, partnerName, partnerUserId: null, avatarId, worldName: "W" + timeMs, took, waitMs });
+    d.funLog = [
+      fun(1, "avtr_a", "Old", null, null), // from before results were saved
+      fun(2, "avtr_a", null, false, 2),
+      fun(3, "avtr_a", "Fox", true, 2),
+      fun(4, "avtr_b", null, false, 4),
+      fun(5, "avtr_a", null, false, 5),
+      fun(6, "avtr_a", "Rex", null, null),
+      fun(7, "avtr_a", null, null, null),
+    ];
+    d.waiting = [{ timeMs: 7, revealMs: 99, chance: 0, cycleDay: 1, positive: true, babyCount: 1, partner: { status: "unknown", name: null, userId: null, avatarName: null, species: null, speciesSource: "fallback", candidates: [] }, avatarId: null, worldName: null, funTimes: [6, 7] }];
+    const pick = (a: string | null) => funRows(d, a).map((r) => [r.timeMs, r.worldName, r.partnerName, r.count, r.result]);
+    expect(pick("avtr_a")).toEqual([
+      [6, "W6", "Rex", 2, "waiting"],
+      [5, "W5", null, 1, "notPregnant"],
+      [2, "W2", "Fox", 2, "pregnant"],
+    ]);
+    expect(pick(null)).toHaveLength(4);
   });
 });

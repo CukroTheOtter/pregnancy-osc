@@ -8,11 +8,14 @@ Agreed layout and features. Built in the order at the bottom.
 ## Home (one avatar, or a linked group)
 | State | Shows |
 |---|---|
-| Not pregnant | **Cycle card**: ring "Day 12 of 28", chance now (Low / Medium / High / Peak), "next fertile window in …". Length card. Small "start manually". |
+| Not pregnant | **Cycle card**: ring "Day 12 of 28" with the real time left in the cycle, chance now (Low / Medium / High / Peak), "next fertile window in …". Length card. Small "start manually". |
 | Waiting | "💕 You WooHoo'd with **Ember** at Cozy Cabin." Countdown "You'll find out in 1 day 4 h" (real time, with the date and time). No hint of the outcome. Belly held flat. |
-| Any state | **💕 WooHoo history** (folds away, only with WooHoos on this avatar or its group): each one's time, world, partner and result (⏳ Waiting / 🤰 Pregnant / 🤍 Not this time / – if none was saved). In one wait, only the WooHoo that took says Pregnant; none says anything until the reveal. |
+| Any state | **💕 WooHoo history** (folds away, only with a result on this avatar or its group): one row per wait, since a wait has one result. Its first WooHoo's time and world, the partner ("Partner unknown" if nobody was picked), how many WooHoos, and ⏳ Waiting / 🤰 Pregnant / 🤍 Not this time. WooHoos from before results were saved aren't listed (the totals still count them). |
 | Reveal (once) | "You're pregnant! 💕" + **estimated due date**, or "Not this time 🤍". OK button. |
 | Pregnant | Progress ring (week of 40, plus the real time left: weeks are scaled to the pregnancy length, hours and days are always real), **babies: "Too early to tell" → "It's twins! 👶👶"** (from about week 12), due date, Length, Partner (with "3rd time together · 2 kids"). At the due date: **"Welcome your baby 🍼"**. Small "End early". Shared avatars listed. |
+
+## Me
+Stats and achievements (1 Common to 5 Legendary; surprises show a vague hint until unlocked). **📤 Share** draws a picture on your PC, in your app theme: your name and picture, counts, your 3 rarest as rows, and the rest as small icons. Copy or download it. Achievements unlocked while debug mode is on get a 🛠 and stay out of the count and the picture (Debug can clear them). Name, picture and WooHoo count can be left off; partners, worlds and avatars are never on it.
 
 ## Partners (new tab)
 Everyone you've been with, with fun stats: WooHoos, times pregnant by them, kids together, first/last time. Profile picture if turned on.
@@ -28,7 +31,8 @@ Everyone you've been with, with fun stats: WooHoos, times pregnant by them, kids
 - **Fertility**: on/off, chance at peak, **multiples** (Realistic / Playful / Lots), start a new cycle today.
 - **Avatar parameters** (shared names): each with name, on/off and a one-line explanation.
 - **Safety**: hide the belly / hold labor in picked instance types (default Public, Group Public), never changing your own Hide Belly.
-- Partner guess (logs, pictures), Starting up, Look, Backup.
+- **Look**: a palette, or Custom: an accent and (optionally) a background, picked on a color wheel (ring for the color, square for paler or vivid, brighter or darker). The rest of the theme is worked out from them (`src/lib/theme.ts`), and your own background decides light or dark by itself.
+- Partner guess (logs, pictures), Starting up, Backup.
 
 ## Avatar parameters
 Everything uses the `Pregnancy/` prefix (old names still work as backups). Full list: [osc-parameters.md](osc-parameters.md).

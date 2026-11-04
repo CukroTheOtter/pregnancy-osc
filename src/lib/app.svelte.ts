@@ -75,9 +75,26 @@ export function currentPending(): PendingConception | undefined {
   return app.data ? pendingFor(app.data, homeAvatarId()) : undefined;
 }
 
+// Settings changed here and not saved yet: a reload (they happen all the time,
+// like on every new VRChat log line) mustn't bring the old ones back.
+let unsaved = 0;
+let settingsEpoch = 0;
+export function settingsChanged() {
+  unsaved++;
+  settingsEpoch++;
+}
+export function settingsSaved() {
+  unsaved = Math.max(0, unsaved - 1);
+  settingsEpoch++;
+}
+
 export async function refresh() {
   try {
-    app.data = await api.getData();
+    const epoch = settingsEpoch;
+    const data = await api.getData();
+    // Also keeps ours if the settings changed while this reload was on its way.
+    if (app.data && (unsaved > 0 || epoch !== settingsEpoch)) data.settings = app.data.settings;
+    app.data = data;
   } catch (e) {
     errorToast(e);
   }
@@ -127,7 +144,7 @@ export async function init() {
   });
   await listen<string[]>("achievements", (ids) => {
     const one = ids.length === 1 ? ACHIEVEMENTS.find((a) => a.id === ids[0]) : null;
-    toast("Achievement unlocked! 🏆", one ? `${one.emoji} ${one.title}` : `You unlocked ${ids.length} achievements. See them on the Me tab.`, "success", 8000);
+    toast(app.data?.settings.debug ? "Test achievement 🛠" : "Achievement unlocked! 🏆", one ? `${one.emoji} ${one.title}` : `You unlocked ${ids.length} achievements. See them on the Me tab.`, "success", 8000);
     refresh();
   });
   await listen("reveal", () => {

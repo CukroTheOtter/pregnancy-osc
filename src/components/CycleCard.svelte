@@ -15,6 +15,8 @@
   const R = 70;
   const C = 2 * Math.PI * R;
   const frac = (d: number) => (d - 1) / CYCLE_DAYS;
+  // Days are scaled to the pregnancy length; this is the real time until the next cycle.
+  const left = $derived(Math.max(60_000, cycle * (1 - frac(day))));
   const windowLen = $derived((frac(WINDOW.end + 1) - frac(WINDOW.start)) * C);
   const dot = $derived.by(() => {
     const a = frac(day) * 2 * Math.PI - Math.PI / 2;
@@ -42,8 +44,9 @@
         stroke-linecap="round"
       />
       <circle cx={dot.x} cy={dot.y} r="10" fill="var(--accent)" stroke="var(--bg-2)" stroke-width="4" />
-      <text x="90" y="86" text-anchor="middle" class="big">Day {Math.floor(day)}</text>
-      <text x="90" y="108" text-anchor="middle" class="sub">of {CYCLE_DAYS}</text>
+      <text x="90" y="80" text-anchor="middle" class="big">Day {Math.floor(day)}</text>
+      <text x="90" y="99" text-anchor="middle" class="sub">of {CYCLE_DAYS}</text>
+      <text x="90" y="116" text-anchor="middle" class="real"><title>Real time left in this cycle, whatever the pregnancy length</title>⏳ {humanDuration(left)} left</text>
     </svg>
     <div class="info">
       <span class="pill level {lv}">{LEVEL_LABEL[lv]}</span>
@@ -82,6 +85,10 @@
   }
   .sub {
     font-size: 13px;
+    fill: var(--muted);
+  }
+  .real {
+    font-size: 11px;
     fill: var(--muted);
   }
   .pct {

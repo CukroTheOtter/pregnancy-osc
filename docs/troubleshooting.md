@@ -89,7 +89,9 @@ By default the status is off while your belly is hidden, including when it's hid
 
 ## Asking for help
 
-Screenshots of these help a lot:
+Tap **Copy details** in **Settings > 🩹 Troubleshooting** and paste it with your question. You'll see the text before you copy it. It has the name and ID of the avatar you're wearing, but nothing about other people, your worlds or your WooHoos.
+
+Screenshots of these help too:
 
 - **Avatars > Edit > What this avatar can do**, for the avatar with the problem
 - The link details at the top of **Settings > VRChat**

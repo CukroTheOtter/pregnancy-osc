@@ -75,11 +75,13 @@ pub struct Theme {
     /// Your own accent color, used when `custom_accent` is on.
     pub accent: String,
     pub custom_accent: bool,
+    /// Your own background color (None = follows the accent).
+    pub background: Option<String>,
 }
 
 impl Default for Theme {
     fn default() -> Self {
-        Self { palette: "strawberry".into(), mode: ThemeMode::System, accent: "#f59ac0".into(), custom_accent: false }
+        Self { palette: "strawberry".into(), mode: ThemeMode::System, accent: "#f59ac0".into(), custom_accent: false, background: None }
     }
 }
 
@@ -591,6 +593,18 @@ pub struct PendingConception {
     pub world_name: Option<String>,
     /// Every WooHoo in this wait, by its time (for the history).
     pub fun_times: Vec<i64>,
+    /// A later WooHoo took, when the first didn't. Hidden until the reveal:
+    /// the card stays on the first one, so it never gives the result away.
+    pub later: Option<LaterTake>,
+}
+
+/// The WooHoo that took, when it wasn't the first in the wait.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct LaterTake {
+    pub time_ms: i64,
+    pub partner: Partner,
+    pub world_name: Option<String>,
 }
 
 /// One kick sent to the avatar.
@@ -615,6 +629,11 @@ pub struct FunEvent {
     pub world_name: Option<String>,
     /// It led to a pregnancy. None = not known yet, or from before this was saved.
     pub took: Option<bool>,
+    /// The wait it was part of (its first WooHoo's time), saved at the reveal.
+    pub wait_ms: Option<i64>,
+    /// Debug: test buddies in the instance then. A WooHoo with nobody named
+    /// goes when they do (see `testbuddy`).
+    pub test_buddies_here: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -654,8 +673,14 @@ pub struct AppData {
     pub sync_values: BTreeMap<String, f64>,
     /// Unlocked achievements: id -> when (see `achievements`).
     pub achievements: BTreeMap<String, i64>,
-    /// Debug: when Test Buddy was added (see `testbuddy`), until removed.
+    /// Debug: achievements unlocked while debug mode was on. Marked on the Me
+    /// tab and left out of the count and the Share picture.
+    pub test_achievements: Vec<String>,
+    /// Debug: when the first test buddy was added (see `testbuddy`), until
+    /// the last is removed.
     pub test_buddy_since: Option<i64>,
+    /// Debug: the test buddies that are on, by user ID.
+    pub test_buddies: Vec<String>,
     /// Your headset's height above the floor when standing, learned from
     /// SteamVR (see `posture`), so starting seated still counts as resting.
     pub vr_standing_m: Option<f32>,

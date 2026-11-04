@@ -1,13 +1,13 @@
 <script lang="ts">
-  // Every WooHoo on this avatar (or its group) and how it turned out.
+  // What came of each wait on this avatar (or its group): one row per wait, one result.
   import { app } from "../lib/app.svelte";
-  import { funHistory, funResult } from "../lib/scope";
+  import { funRows } from "../lib/scope";
   import Section from "./Section.svelte";
 
   let { avatarId }: { avatarId: string | null } = $props();
 
-  const LABEL = { waiting: "⏳ Waiting", pregnant: "🤰 Pregnant", notPregnant: "🤍 Not this time", unknown: "–" };
-  const rows = $derived(app.data ? funHistory(app.data, avatarId).map((f) => ({ f, result: funResult(app.data!, f) })) : []);
+  const LABEL = { waiting: "⏳ Waiting", pregnant: "🤰 Pregnant", notPregnant: "🤍 Not this time" };
+  const rows = $derived(app.data ? funRows(app.data, avatarId) : []);
   const fmt = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 </script>
 
@@ -15,19 +15,16 @@
   <Section id="woohoo-history" title="💕 WooHoo history">
     {#snippet extra()}<span class="pill">{rows.length}</span>{/snippet}
     <ul class="list">
-      {#each rows as { f, result } (f.timeMs)}
+      {#each rows as r (r.timeMs)}
         <li>
           <div class="grow">
-            <strong class="small">{fmt.format(f.timeMs)}</strong>
-            <div class="muted small">{[f.worldName, f.partnerName && `with ${f.partnerName}`].filter(Boolean).join(" · ") || "Nobody picked"}</div>
+            <strong class="small">{fmt.format(r.timeMs)}</strong>
+            <div class="muted small">{[r.worldName, r.partnerName ? `with ${r.partnerName}` : "Partner unknown", r.count > 1 ? `💕 ${r.count}` : null].filter(Boolean).join(" · ")}</div>
           </div>
-          <span class="small result">{LABEL[result]}</span>
+          <span class="small result">{LABEL[r.result]}</span>
         </li>
       {/each}
     </ul>
-    {#if rows.some((r) => r.result === "unknown")}
-      <span class="muted small">– means no result was saved (older WooHoos).</span>
-    {/if}
   </Section>
 {/if}
 

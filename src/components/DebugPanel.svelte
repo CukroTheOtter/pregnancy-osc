@@ -5,6 +5,8 @@
   import { setProgress, progress, TERM_WEEKS } from "../lib/timeline";
   import type { Settings } from "../lib/types";
   import { hipWarning } from "../lib/posture";
+  import { TEST_BUDDIES } from "../lib/testbuddy";
+  import PersonPic from "./PersonPic.svelte";
 
   const d = $derived(app.data!);
   const st = $derived(app.status);
@@ -121,15 +123,27 @@
   </div>
 
   <div class="group">
-    <strong>🐰 Test Buddy</strong>
-    <span class="muted small">A pretend partner in your instance, with a made-up picture, a few past WooHoos and a past baby. Test with them so your real partner stats stay clean.</span>
-    <label class="note">
-      <input type="checkbox" checked={!!d.testBuddySince} onchange={(e) => run(e.currentTarget.checked ? "Test Buddy is here" : "Test Buddy removed", () => api.debugTestBuddy(e.currentTarget.checked))} />
-      <span>Test Buddy is here</span>
-    </label>
-    {#if d.testBuddySince}
-      <span class="muted small">Turning this off (or debug mode) removes Test Buddy and everything with them: WooHoos, pregnancies, grace periods, and achievements they unlocked.</span>
-      <button class="small soft" style="align-self:flex-start" onclick={() => run("Test Buddy's stats cleared", async () => { await api.debugTestBuddy(false); await api.debugTestBuddy(true); })}>🧹 Reset their stats</button>
+    <strong>🏆 Test achievements</strong>
+    <span class="muted small">Debug tools count as if it all really happened, so anything unlocked while debug mode is on gets a 🛠 and stays out of your count and Share picture. Clearing them leaves your test data, so what it still qualifies for can unlock again.</span>
+    <button class="small soft" style="align-self:flex-start" disabled={!d.testAchievements?.length} onclick={() => run("Test achievements cleared", () => api.debugClearTestAchievements())}>🧹 Clear {d.testAchievements?.length ?? 0} test {d.testAchievements?.length === 1 ? "achievement" : "achievements"}</button>
+  </div>
+
+  <div class="group">
+    <strong>🐰 Test buddies</strong>
+    <span class="muted small">Pretend partners in your instance, each with a made-up picture, a few past WooHoos and a past baby. Test with them so your real partner stats stay clean. One on is a 1-on-1 (the partner is guessed); two or more means the app can't tell who it was.</span>
+    {#each TEST_BUDDIES as b, i (b.id)}
+      {@const on = !!d.testBuddies?.includes(b.id)}
+      <div class="row buddy">
+        <label class="note">
+          <input type="checkbox" checked={on} onchange={(e) => run(e.currentTarget.checked ? `${b.name} is here` : `${b.name} removed`, () => api.debugTestBuddy(i, e.currentTarget.checked))} />
+          <PersonPic name={b.name} userId={b.id} size={24} />
+          <span>{b.name} is here</span>
+        </label>
+        {#if on}<button class="small soft" onclick={() => run(`${b.name}'s stats cleared`, async () => { await api.debugTestBuddy(i, false); await api.debugTestBuddy(i, true); })}>🧹 Reset stats</button>{/if}
+      </div>
+    {/each}
+    {#if d.testBuddies?.length}
+      <span class="muted small">Turning one off (or debug mode) removes them and everything with them: WooHoos, pregnancies, grace periods, and achievements they unlocked.</span>
     {/if}
   </div>
 
@@ -263,6 +277,10 @@
 </section>
 
 <style>
+  .buddy {
+    justify-content: space-between;
+    gap: 8px;
+  }
   .note {
     display: flex;
     align-items: center;

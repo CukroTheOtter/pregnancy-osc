@@ -32,6 +32,8 @@ export interface Theme {
   /** Your own accent color, used when customAccent is on. */
   accent: string;
   customAccent?: boolean;
+  /** Your own background color (null = follows the accent). */
+  background?: string | null;
 }
 
 export interface OscSettings {
@@ -280,6 +282,8 @@ export interface PendingConception {
   worldName: string | null;
   /** Every WooHoo in this wait, by its time (for the history). */
   funTimes?: number[];
+  /** Secret until the reveal: a later WooHoo took, when the first didn't. */
+  later?: { timeMs: number; partner: Partner; worldName: string | null } | null;
 }
 
 export interface RevealResult {
@@ -297,6 +301,10 @@ export interface FunEvent {
   worldName: string | null;
   /** It led to a pregnancy (null = not known yet, or from before this was saved). */
   took?: boolean | null;
+  /** The wait it was part of (its first WooHoo's time), saved at the reveal. */
+  waitMs?: number | null;
+  /** Debug: test buddies in the instance then. A WooHoo with nobody named goes when they do. */
+  testBuddiesHere?: string[];
 }
 
 export interface AvatarGroup {
@@ -323,8 +331,12 @@ export interface AppData {
   funLog: FunEvent[];
   syncValues: Record<string, number>;
   achievements: Record<string, number>;
+  /** Debug: unlocked while debug mode was on. Marked on Me, left out of the count and Share. */
+  testAchievements?: string[];
   /** Debug: when Test Buddy was added (null = not there). */
   testBuddySince?: number | null;
+  /** Debug: the test buddies that are on, by user ID. */
+  testBuddies?: string[];
   /** Your standing headset height above the floor, learned from SteamVR. */
   vrStandingM?: number | null;
 }
