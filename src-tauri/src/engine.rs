@@ -84,6 +84,9 @@ struct Engine {
     last_snap_note: Option<Instant>,
     /// Starts labor when it's due and moves it along.
     labor: pregsys_core::labor::Watch,
+    /// The pregnancy whose labor start was announced (chatbox, notification),
+    /// so a start from a button gets the same messages as one on its own.
+    labor_announced: Option<String>,
     /// VRChat's built-in AFK parameter (labor waits while it's on).
     afk: bool,
     /// VRChat's built-in posture values: Upright (None until heard), Seated,
@@ -189,6 +192,7 @@ impl Engine {
             linked: false,
             last_snap_note: None,
             labor: Default::default(),
+            labor_announced: None,
             afk: false,
             posture: Posture::default(),
             last_params_fill: past,
@@ -363,6 +367,7 @@ impl Engine {
             self.shared.data.lock().unwrap().instance.vrchat_closed(pregsys_core::now_ms());
             self.afk = false;
             self.posture = Posture::default();
+            self.controls.reset();
             self.shared.mark_dirty();
             let _ = self.app.emit("instance-changed", ());
         } else if !self.vrchat && r.vrchat && self.bridge.is_some() {
@@ -441,7 +446,10 @@ impl Engine {
 
     /// Notices VRChat's OSC going off and on (Action Menu toggle).
     fn check_link(&mut self) {
-        let linked = self.vrchat && self.bridge.as_ref().is_some_and(|b| b.linked());
+        // While a new avatar loads, VRChat's OSCQuery shows no avatar for a
+        // moment, as it does with OSC off: that isn't OSC going off.
+        let loading = self.linked && self.driver.loading();
+        let linked = self.vrchat && self.bridge.as_ref().is_some_and(|b| b.linked() || loading);
         if linked == self.linked {
             return;
         }
@@ -491,6 +499,10 @@ impl Engine {
         for m in msgs {
             if m.addr == "/avatar/change" {
                 if let OscValue::Str(id) = &m.value {
+                    if !actions::is_avatar_id(id) {
+                        self.trace.note("avatarChange", "Ignored: not an avatar ID");
+                        continue;
+                    }
                     if !self.refused.believe(id) {
                         self.trace.note("avatarChange", &format!("{id} ignored (VRChat refused it)"));
                         continue;
@@ -615,10 +627,22 @@ impl Engine {
     }
 
     fn on_avatar_change(&mut self, id: &str, now: i64) {
-        let added = !self.shared.data.lock().unwrap().avatars.contains_key(id);
+        let (added, left_behind) = {
+            let d = self.shared.data.lock().unwrap();
+            let left = d.avatars.get(id).is_some_and(|a| actions::belly_left_behind(&d, id, a.last_seen_ms));
+            (!d.avatars.contains_key(id), left)
+        };
+        let new = self.driver.avatar_id() != Some(id);
         self.last_change = Some((self.driver.avatar_id().map(str::to_string), added));
         self.trace.new_avatar();
+        if new {
+            self.controls.reset();
+        }
         self.driver.on_avatar_change(id, now);
+        if left_behind {
+            self.trace.note("avatarChange", "Its belly is from a pregnancy that ended: flattening it");
+            self.driver.flatten_left_belly();
+        }
         self.sps.reset();
         self.last_avatar_change = Some(Instant::now());
         if !self.name_avatar_from_vrchat() {
@@ -689,7 +713,7 @@ impl Engine {
         self.pending_params_fetch = Some(Instant::now() + every);
         // Already wearing an avatar when the app linked up: pick it up now
         // instead of waiting for the next avatar switch.
-        if let Some(id) = info.avatar_id.as_deref().filter(|id| self.refused.believe(id)) {
+        if let Some(id) = info.avatar_id.as_deref().filter(|id| actions::is_avatar_id(id) && self.refused.believe(id)) {
             if self.driver.avatar_id() != Some(id) {
                 self.trace.note("avatarChange", &format!("{id} (from OSCQuery)"));
                 self.on_avatar_change(id, now_ms());
@@ -832,7 +856,8 @@ impl Engine {
     /// us, or the app started late): the log has the avatar's name, so pick the
     /// one known avatar with exactly that name.
     fn avatar_from_log_name(&mut self, now: i64) {
-        if self.driver.avatar_id().is_some() {
+        // An old log read with VRChat closed: nothing is worn.
+        if !self.vrchat || self.driver.avatar_id().is_some() {
             return;
         }
         let Some((name, _)) = self.log_avatar_name.clone() else { return };
@@ -1020,12 +1045,22 @@ impl Engine {
     /// it) and moves it along to the birth.
     fn tick_labor(&mut self, now: i64) {
         let ctx = self.labor_ctx();
-        let (events, running) = {
+        let (mut events, running, started) = {
             let mut d = self.shared.data.lock().unwrap();
             let events = self.labor.tick(&mut d, &ctx, now, pregsys_core::fertility::roll());
-            let running = d.current_pregnancy(self.driver.avatar_id()).and_then(|p| p.labor.as_ref()).is_some_and(|l| !l.paused);
-            (events, running)
+            let cur = d.current_pregnancy(self.driver.avatar_id());
+            let running = cur.and_then(|p| p.labor.as_ref()).is_some_and(|l| !l.paused);
+            let started = cur.and_then(|p| p.labor.as_ref().map(|l| (p.id.clone(), l.started_ms, l.water_first)));
+            (events, running, started)
         };
+        // Started by a button (the avatar's menu or the app) just now: say so too.
+        if let Some((id, started_ms, water_first)) = started {
+            let said = events.iter().any(|e| matches!(e, pregsys_core::labor::Event::Started { .. }));
+            if self.labor_announced.as_ref() != Some(&id) && !said && now - started_ms < 10_000 {
+                events.insert(0, pregsys_core::labor::Event::Started { water_first });
+            }
+            self.labor_announced = Some(id);
+        }
         // Labor time is saved now and then, so a crash loses little of it.
         if running && self.last_labor_save.elapsed() >= Duration::from_secs(15) {
             self.last_labor_save = Instant::now();
@@ -1072,6 +1107,9 @@ impl Engine {
             self.trace.note("labor", &format!("{e:?}"));
             match e {
                 Event::Started { water_first } => {
+                    let d = self.shared.data.lock().unwrap();
+                    self.labor_announced = d.current_pregnancy_id(self.driver.avatar_id());
+                    drop(d);
                     self.chat("labor", vars.clone());
                     if water_first {
                         self.chat("waterBroke", vars.clone());
@@ -1198,6 +1236,11 @@ impl Engine {
                     }
                 }
             }
+        }
+        // An old log read with VRChat closed: you're not in that instance any more.
+        if poll.new_file && !self.vrchat {
+            let last = poll.lines.iter().rev().find_map(|l| l.time_ms).unwrap_or(now);
+            d.instance.vrchat_closed(last);
         }
         drop(d);
         self.undo_refused_avatar(now);
