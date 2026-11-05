@@ -35,4 +35,6 @@ Desktop app that drives the avatar's pregnancy over OSC. Tauri 2 + Rust + Svelte
 - Preview: `preview_start` with "app-preview" (root `.claude/launch.json`). Clear `pregsys-mock-data` / `pregsys-open-sections` from localStorage and stop it afterwards.
 - `target/debug/belly-cli.exe --query` (add `--no-oscquery` for fixed ports) reads the worn avatar; `--listen 10` prints what VRChat sends. Both read-only.
 
+- `--no-save`: real data is read, nothing changes on disk for that run (`Store::read_only`; pictures, debug files and a mapping copy go to `<temp>/pregnancy-osc-no-save`). The user's install launches with VRChat, so start this first: single-instance then stops the install. Debug mode can be turned on with `save_settings` (kept in memory only).
+
 Don't launch the installed app or touch its data folder unless asked.

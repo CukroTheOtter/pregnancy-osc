@@ -136,6 +136,17 @@ Tap the **Pregnancy OSC** title 5 times. A 🛠 Debug section appears at the bot
 
 While debug mode is on, the app also writes a `debug` folder in your data folder: `state.json` (what it's thinking right now, updated every second) and `trace.jsonl` (what came in, what went out and why, up to about 10 MB in all). Both include your avatars' names and IDs, but not who's in your instance.
 
+### Test without saving (`--no-save`)
+Start the app with `--no-save` to test on your real data without keeping any of it:
+
+```bash
+pregsys-companion --no-save
+```
+
+It reads your data and mapping as usual, but nothing is changed on disk for that whole run: no saves, no daily backup, no change to starting with Windows or SteamVR. Pictures, the debug files and a copy of the mapping go to a `pregnancy-osc-no-save` folder in your temp folder instead. Everything you do is gone when the app closes.
+
+Only one copy of the app runs at a time, so start it this way **before** anything else launches the app (such as VRChat auto-launching it). If the app is already running, close it first from the tray: a second launch just opens the running one, and the option is ignored.
+
 ### Test OSC by hand (`belly-cli`)
 ```bash
 cargo run -p belly-cli -- --stage 0.5               # half belly
