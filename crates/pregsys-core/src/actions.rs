@@ -379,6 +379,12 @@ pub fn end_pregnancy(data: &mut AppData, preg_id: &str, now_ms: i64) {
             image: None,
         });
     }
+    // "You're pregnant!" was about this one: it's over, so the card goes.
+    if let (Some(r), Some(p)) = (data.last_reveal.as_mut(), data.pregnancies.iter().find(|p| p.id == preg_id)) {
+        if r.positive && p.source == PregnancySource::Conception && p.timeline.start_ms == r.event_ms {
+            r.seen = true;
+        }
+    }
     if data.active_pregnancy_id.as_deref() == Some(preg_id) {
         data.active_pregnancy_id = None;
     }
@@ -484,6 +490,25 @@ pub fn reset_data(data: &mut AppData, kind: ResetKind) {
         ResetKind::Settings => data.settings = Default::default(),
         ResetKind::Everything => *data = AppData::new(),
     }
+}
+
+/// What VRChat sends as an avatar ID: `avtr_...`, or `local:...` for an
+/// avatar tested from Unity. Anything else isn't an avatar.
+pub fn is_avatar_id(id: &str) -> bool {
+    (id.starts_with("avtr_") || id.starts_with("local:")) && id.len() < 200 && !id.chars().any(char::is_control)
+}
+
+/// A pregnancy this avatar showed ended since it was last worn
+/// (`last_seen_ms`, before this switch). VRChat kept the belly it had then,
+/// so it's flattened once when the avatar loads. Avatars that never showed a
+/// pregnancy keep their own belly.
+pub fn belly_left_behind(data: &AppData, avatar_id: &str, last_seen_ms: i64) -> bool {
+    if data.current_pregnancy(Some(avatar_id)).is_some() || data.pending_for(Some(avatar_id)).is_some() {
+        return false;
+    }
+    let owner = data.owner(Some(avatar_id));
+    // Saved on a group or on one of its avatars: either way the group showed it.
+    data.pregnancies.iter().any(|p| p.ended_ms.is_some_and(|e| e >= last_seen_ms) && (owner.is_none() || data.owner(p.avatar_id.as_deref()) == owner))
 }
 
 /// Records an avatar switch from OSC.
@@ -789,6 +814,46 @@ mod tests {
         delete_pregnancy(&mut d, &id);
         assert!(d.pregnancies.is_empty());
         assert!(d.journal.is_empty());
+    }
+
+    #[test]
+    fn ending_the_revealed_pregnancy_hides_its_card() {
+        let mut d = with_instance(&["Fox"]);
+        record_fun(&mut d, LATER, 0.0);
+        let reveal = d.waiting[0].reveal_ms;
+        resolve_due(&mut d, reveal);
+        let other = start_pregnancy(&mut d, NewPregnancy { avatar_id: Some("avtr_b".into()), ..Default::default() }, reveal);
+        end_pregnancy(&mut d, &other, reveal + 1);
+        assert!(!d.last_reveal.as_ref().unwrap().seen, "another pregnancy ending keeps the card");
+        let id = d.pregnancies.iter().find(|p| p.source == PregnancySource::Conception).unwrap().id.clone();
+        give_birth(&mut d, &id, reveal + 2);
+        assert!(d.last_reveal.as_ref().unwrap().seen, "\"You're pregnant!\" is gone after the birth");
+    }
+
+    #[test]
+    fn avatar_ids_are_checked() {
+        assert!(is_avatar_id("avtr_06a3bf1f-74cd-468a-8482-3c76266549c4"));
+        assert!(is_avatar_id("local:sdk_Fox - PC"));
+        assert!(!is_avatar_id(""));
+        assert!(!is_avatar_id("not-an-avatar"));
+    }
+
+    #[test]
+    fn a_belly_left_behind_by_an_ended_pregnancy_is_noticed() {
+        let mut d = AppData::new();
+        d.settings.sync_scope = SyncScope::PerAvatar;
+        touch_avatar(&mut d, "avtr_a", 100);
+        touch_avatar(&mut d, "avtr_b", 100);
+        let id = start_pregnancy(&mut d, NewPregnancy { avatar_id: Some("avtr_a".into()), ..Default::default() }, 200);
+        assert!(!belly_left_behind(&d, "avtr_a", 100), "still pregnant");
+        give_birth(&mut d, &id, 500);
+        assert!(belly_left_behind(&d, "avtr_a", 300), "ended after it was last worn");
+        assert!(!belly_left_behind(&d, "avtr_a", 600), "worn since: already flat or set by you");
+        assert!(!belly_left_behind(&d, "avtr_b", 100), "never showed it");
+        // In a group, a pregnancy saved on one avatar was on all of them.
+        let g = create_group(&mut d, "Foxes", &["avtr_a".into(), "avtr_b".into()]).unwrap();
+        assert!(d.groups.contains_key(&g));
+        assert!(belly_left_behind(&d, "avtr_b", 100), "a group-mate showed it too");
     }
 
     #[test]

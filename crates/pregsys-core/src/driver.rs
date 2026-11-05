@@ -180,6 +180,9 @@ pub struct Driver {
     partner_was_here: bool,
     /// Just born: the belly goes down from (when, belly, extra size).
     birth: Option<(i64, f32, f32)>,
+    /// A pregnancy this avatar showed ended while it wasn't worn: VRChat kept
+    /// its belly, so flatten it with each full send until the last one after loading.
+    flatten_left: bool,
     /// Sends produced by helpers during a tick.
     extra: Vec<Send>,
 }
@@ -226,6 +229,7 @@ impl Driver {
             next_contraction_ms: None,
             partner_was_here: false,
             birth: None,
+            flatten_left: false,
             extra: Vec::new(),
         }
     }
@@ -359,6 +363,11 @@ impl Driver {
     }
 
     pub fn on_avatar_change(&mut self, id: &str, now_ms: i64) {
+        if self.avatar_id.as_deref() != Some(id) {
+            // The birth's belly going down was the old avatar's, not this one's.
+            self.birth = None;
+            self.flatten_left = false;
+        }
         self.sync_until_ms = Some(now_ms + SYNC_SETTLE_MS);
         self.sync_ignore_until_ms = Some(now_ms + LOAD_CAP_MS);
         self.hide_until_ms = Some(now_ms + LOAD_CAP_MS);
@@ -375,6 +384,12 @@ impl Driver {
         self.last_rx_stage = None;
         self.connected = true;
         self.resync();
+    }
+
+    /// The avatar just switched to still has the belly of a pregnancy that
+    /// ended (see `actions::belly_left_behind`): flatten it once it's loaded.
+    pub fn flatten_left_belly(&mut self) {
+        self.flatten_left = true;
     }
 
     /// Avatar parameter list from OSCQuery, with current values when known.
@@ -706,6 +721,15 @@ impl Driver {
                 self.push(&mut out, "stage", ParamValue::Float(0.0), true);
                 self.last_stage_ms = now_ms;
                 self.need_snap = false;
+            }
+        } else if self.flatten_left && self.need_snap {
+            // A belly left from an ended pregnancy: sent with each full send
+            // (values sent while the avatar loads can be lost), the last time after loading.
+            self.push(&mut out, "stage", ParamValue::Float(0.0), true);
+            self.last_stage_ms = now_ms;
+            self.need_snap = false;
+            if self.resend_at_ms.is_none() && !self.loading {
+                self.flatten_left = false;
             }
         } else if self.belly_up || last.is_some_and(|l| l > 0.0) {
             // Pregnancy ended (birth) or removed: flatten once, then leave the belly alone.
@@ -1510,5 +1534,38 @@ mod tests {
         assert_eq!(stage_of(&out), Some(0.0));
         assert_eq!(out.iter().find(|s| s.key == "labor").map(|s| s.value), Some(ParamValue::Int(0)));
         assert_eq!(stage_of(&d.tick(t + 100_000, &data)), None, "then left alone");
+    }
+
+    #[test]
+    fn switching_away_mid_birth_doesnt_shrink_the_next_avatar() {
+        let mut d = Driver::new(Mapping::default());
+        let mut data = AppData::new();
+        data.settings.sync_scope = SyncScope::PerAvatar;
+        let a = crate::actions::start_pregnancy(&mut data, crate::actions::NewPregnancy { avatar_id: Some("avtr_a".into()), ..Default::default() }, T0);
+        crate::actions::start_pregnancy(&mut data, crate::actions::NewPregnancy { avatar_id: Some("avtr_b".into()), ..Default::default() }, T0);
+        let t = T0 + 200 * DAY_MS;
+        d.on_avatar_change("avtr_a", t);
+        d.tick(t + SYNC_SETTLE_MS, &data);
+        crate::actions::give_birth(&mut data, &a, t + 5_000);
+        d.tick(t + 5_100, &data);
+        d.on_avatar_change("avtr_b", t + 6_000);
+        let out = d.tick(t + 6_000 + SYNC_SETTLE_MS, &data);
+        assert!(stage_of(&out).unwrap() > 0.6, "B shows its own pregnancy");
+        assert_eq!(out.iter().find(|s| s.key == "labor").map(|s| s.value), Some(ParamValue::Int(0)), "no birth on B");
+    }
+
+    #[test]
+    fn a_belly_left_behind_is_flattened_until_the_avatar_has_loaded() {
+        let mut d = Driver::new(Mapping::default());
+        let data = AppData::new();
+        d.on_avatar_change("avtr_a", T0);
+        d.flatten_left_belly();
+        assert_eq!(stage_of(&d.tick(T0 + SYNC_SETTLE_MS, &data)), Some(0.0), "after the settle");
+        assert_eq!(stage_of(&d.tick(T0 + SYNC_SETTLE_MS + 200, &data)), None, "not every tick");
+        d.set_avatar_params(vec![("Pregnancy/Stage".into(), Some(0.9))], T0 + 4_000);
+        assert_eq!(stage_of(&d.tick(T0 + 4_200, &data)), Some(0.0), "again once loaded");
+        assert_eq!(stage_of(&d.tick(T0 + RESEND_AFTER_MS, &data)), Some(0.0), "and at the last full send");
+        d.resync();
+        assert_eq!(stage_of(&d.tick(T0 + 20_000, &data)), None, "then it's yours to set in-game");
     }
 }
