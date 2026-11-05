@@ -1,0 +1,3 @@
+# These log samples test line endings: each must keep its own on every OS.
+crates/pregsys-core/tests/fixtures/windows_sample.txt text eol=crlf
+crates/pregsys-core/tests/fixtures/proton_sample.txt text eol=lf
