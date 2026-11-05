@@ -287,6 +287,9 @@ setInterval(() => {
 function endPregnancy(id: string) {
   const p = data.pregnancies.find((x) => x.id === id);
   if (p) p.endedMs = Date.now();
+  // "You're pregnant!" was about this one: same rule as end_pregnancy in actions.rs.
+  const r = data.lastReveal;
+  if (p && r?.positive && p.source === "conception" && p.timeline.startMs === r.eventMs) r.seen = true;
   if (data.activePregnancyId === id) data.activePregnancyId = null;
   Object.values(data.avatars).forEach((a) => a.pregnancyId === id && (a.pregnancyId = null));
   Object.values(data.groups).forEach((g) => g.pregnancyId === id && (g.pregnancyId = null));

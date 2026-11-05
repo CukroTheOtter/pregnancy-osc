@@ -20,7 +20,7 @@
   {#if r.positive}
     <div class="big" aria-hidden="true">💕</div>
     <h1>You're pregnant!</h1>
-    <p class="muted">From your WooHoo {humanDuration(app.now - r.eventMs)} ago.</p>
+    <p class="muted">From your WooHoo {app.now - r.eventMs < 60_000 ? "just now" : `${humanDuration(app.now - r.eventMs)} ago`}.</p>
     {#if p}
       <div class="due">
         <span class="muted small">Estimated due date</span>

@@ -54,6 +54,12 @@ impl Controls {
         (c != Control::Stop).then_some(c)
     }
 
+    /// The avatar changed: a button still held was on the old one (VRChat
+    /// never says it was let go), so it mustn't act on the new one.
+    pub fn reset(&mut self) {
+        self.held.clear();
+    }
+
     /// Stop (and Start held) fire here once held long enough.
     pub fn tick(&mut self, now_ms: i64) -> Option<Control> {
         for (c, fired) in [(Control::Stop, Control::Stop), (Control::Start, Control::StartHeld)] {
@@ -137,6 +143,14 @@ mod tests {
         c.on_param(Control::Stop, 1.0, 4_000);
         c.on_param(Control::Stop, 0.0, 4_300);
         assert_eq!(c.tick(10_000), None);
+    }
+
+    #[test]
+    fn a_hold_ends_with_the_avatar() {
+        let mut c = Controls::default();
+        c.on_param(Control::Stop, 1.0, 0);
+        c.reset();
+        assert_eq!(c.tick(STOP_HOLD_MS * 2), None, "Stop held on the old avatar never fires");
     }
 
     #[test]
