@@ -19,6 +19,8 @@ pub enum StorageError {
 
 pub struct Store {
     pub path: PathBuf,
+    /// `--no-save`: loads as usual, but never changes anything on disk.
+    read_only: bool,
 }
 
 /// Upgrades raw JSON from any older version to the current one.
@@ -57,7 +59,16 @@ pub fn to_json(data: &AppData) -> Result<String, StorageError> {
 
 impl Store {
     pub fn new(dir: &Path) -> Self {
-        Self { path: dir.join("data.json") }
+        Self { path: dir.join("data.json"), read_only: false }
+    }
+
+    /// For `--no-save`: everything stays in memory for this run.
+    pub fn read_only(dir: &Path) -> Self {
+        Self { path: dir.join("data.json"), read_only: true }
+    }
+
+    pub fn is_read_only(&self) -> bool {
+        self.read_only
     }
 
     fn backup_dir(&self) -> PathBuf {
@@ -75,6 +86,7 @@ impl Store {
         match parse(&text) {
             Ok(d) => Ok((d, None)),
             Err(StorageError::TooNew(v)) => Err(StorageError::TooNew(v)),
+            Err(e) if self.read_only => Ok((AppData::new(), Some(format!("Saved data could not be read ({e}). Using empty data for this run.")))),
             Err(e) => {
                 let aside = self.path.with_file_name(format!("data.broken-{}.json", crate::now_ms()));
                 fs::rename(&self.path, &aside)?;
@@ -85,6 +97,9 @@ impl Store {
 
     /// Writes to a temp file then renames, so a crash never leaves half a file.
     pub fn save(&self, data: &AppData) -> Result<(), StorageError> {
+        if self.read_only {
+            return Ok(());
+        }
         if let Some(dir) = self.path.parent() {
             fs::create_dir_all(dir)?;
         }
@@ -96,7 +111,7 @@ impl Store {
 
     /// Keeps one backup per day, newest `KEEP_BACKUPS` days.
     pub fn daily_backup(&self, today: &str) -> Result<(), StorageError> {
-        if !self.path.exists() {
+        if self.read_only || !self.path.exists() {
             return Ok(());
         }
         let dir = self.backup_dir();
@@ -150,6 +165,21 @@ mod tests {
         assert!(warn.is_some());
         assert!(d.pregnancies.is_empty());
         assert!(fs::read_dir(dir.path()).unwrap().any(|e| e.unwrap().file_name().to_string_lossy().starts_with("data.broken-")));
+    }
+
+    #[test]
+    fn read_only_never_touches_the_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = Store::read_only(dir.path());
+        s.save(&AppData::new()).unwrap();
+        s.daily_backup("2025-01-01").unwrap();
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0, "nothing written");
+        // A broken file stays where it is, too.
+        fs::write(&s.path, "{ not json").unwrap();
+        let (_, warn) = s.load().unwrap();
+        assert!(warn.is_some());
+        assert_eq!(fs::read_to_string(&s.path).unwrap(), "{ not json");
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
     }
 
     #[test]

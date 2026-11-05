@@ -67,10 +67,12 @@ pub fn save_settings(app: AppHandle, s: S, settings: Settings) -> R<Option<Strin
         s.send(EngineCmd::Restart);
     }
     let mut note = None;
-    if old.start_with_os != settings.start_with_os {
+    // --no-save: start-up settings live outside the data folder, so leave them be.
+    let saving = !s.store.is_read_only();
+    if saving && old.start_with_os != settings.start_with_os {
         crate::set_os_autostart(&app, settings.start_with_os)?;
     }
-    if old.start_with_steamvr != settings.start_with_steamvr {
+    if saving && old.start_with_steamvr != settings.start_with_steamvr {
         let running = s.status.lock().unwrap().steamvr_running;
         note = Some(crate::system::set_steamvr_autostart(&s.data_dir, settings.start_with_steamvr, running)?);
     }

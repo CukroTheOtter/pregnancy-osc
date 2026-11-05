@@ -99,6 +99,8 @@ pub fn run() {
     let args: Vec<String> = std::env::args().collect();
     let tray_arg = args.iter().any(|a| a == "--tray");
     let autostart_arg = args.iter().any(|a| a == "--autostart");
+    // Testing: real data is read, nothing is changed on disk for this whole run.
+    let no_save = args.iter().any(|a| a == "--no-save");
 
     let app = tauri::Builder::default()
         // Must be first: a second launch just focuses the running window.
@@ -112,17 +114,28 @@ pub fn run() {
         .setup(move |app| {
             let handle = app.handle().clone();
             // App dirs follow the OS (XDG on Linux, Flatpak-aware).
-            let data_dir = app.path().app_data_dir()?;
-            let config_dir = app.path().app_config_dir()?;
+            let real_dir = app.path().app_data_dir()?;
+            let real_mapping = app.path().app_config_dir()?.join("osc-parameters.json");
+            // --no-save: what would be written (pictures, the debug trace, a copy
+            // of the mapping) goes to a temp folder instead.
+            let data_dir = if no_save { std::env::temp_dir().join("pregnancy-osc-no-save") } else { real_dir.clone() };
             std::fs::create_dir_all(&data_dir)?;
-            let mapping_path = config_dir.join("osc-parameters.json");
+            let mapping_path = if no_save {
+                let copy = data_dir.join("osc-parameters.json");
+                let _ = std::fs::remove_file(&copy);
+                let _ = std::fs::copy(&real_mapping, &copy);
+                copy
+            } else {
+                real_mapping
+            };
             let mapping = Mapping::load_or_create(&mapping_path).unwrap_or_default();
 
-            let store = Store::new(&data_dir);
+            let store = if no_save { Store::read_only(&real_dir) } else { Store::new(&real_dir) };
             let (data, warning) = match store.load() {
                 Ok(x) => x,
                 Err(e) => return Err(e.to_string().into()),
             };
+            let warning = if no_save { warning.or(Some("Started with --no-save: nothing is saved until you restart the app normally.".into())) } else { warning };
             let mut data = data;
             pregsys_core::actions::ensure_cycle(&mut data, pregsys_core::now_ms());
             pregsys_core::actions::ensure_all_genders(&mut data);
