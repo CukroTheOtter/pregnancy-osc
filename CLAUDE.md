@@ -10,7 +10,7 @@ Desktop app that drives the avatar's pregnancy over OSC. Tauri 2 + Rust + Svelte
 - Every Rust command has a twin in `src/lib/mock.ts` (browser preview). Change both.
 - Wording: short and plain; "WooHoo" for in-game fun; in-app dialogs (`confirmAsk`), never `confirm()`.
 - UI: tabs Home / Me (stats + achievements) / Partners / Avatars / Settings. Settings cards use `components/Section.svelte` (collapsible). Achievements: logic in `pregsys-core/src/achievements.rs`, display list, rarity (1 Common to 5 Legendary, by hand) and locked hints for surprises in `src/lib/achievements.ts` (keep ids/titles in step).
-- Debug mode: tap the title 5 times.
+- Debug mode: tap the title 5 times. While it's on, `src-tauri/src/trace.rs` writes `<data folder>/debug/state.json` (engine and driver state, every second) and `trace.jsonl` (what came in, what went out, why). New engine decisions get a `trace.note`.
 
 ## VRChat facts learned the hard way
 - VRChat looks for OSCQuery apps only at its start-up or when OSC is toggled in its Action Menu. So the app also listens on 9001 (when free) and polls OSCQuery for the worn avatar (1 s until found, 5 s after, 2 s after a log "Switching" line).
@@ -24,6 +24,7 @@ Desktop app that drives the avatar's pregnancy over OSC. Tauri 2 + Rust + Svelte
 - After an avatar change VRChat isn't ready yet: the driver sends nothing for 3 s, then everything, again when the params show up, and again at 10 s. When the avatar finishes loading, VRChat reports its DEFAULTS for every parameter: Sync values aren't remembered while it loads: until 1.5 s after its params show up (OSCQuery polled every 1 s while loading; the old avatar's identical list in the first 5 s doesn't count), capped at 30 s.
 - Avatar names: VRChat's `LocalLow\VRChat\VRChat\OSC\usr_*\Avatars\<avtr_id>.json` has the exact name; the log only has names, logged when loading STARTS. `auto_name` marks names the app picked (user-typed names are never changed).
 - The log writes "Entering Room" BEFORE "Joining wrld_…" (see `instance.rs`).
+- Sending `/avatar/change` for an avatar you can't wear: the log says "Trying to change to an inaccessible avatar" and VRChat keeps the old one, but its OSCQuery reports the new ID. So the app doubts that ID (`refused.rs`) and goes back to the avatar before it.
 - After uploading an avatar update, VRChat can keep reporting the OLD parameter list (its OSC config is stale). Fix: reset the avatar's OSC config in VRChat (Action Menu > Options > OSC > Reset Config), then switch avatars.
 - "Belly not changing" is often Hide Belly on, or Settings > Safety hiding it in a public instance (Home shows a 🙈 note with Show / Show here). `belly-cli --query` shows live values.
 

@@ -3,6 +3,7 @@
 
 use crate::state::{EngineCmd, Shared};
 use crate::system::Procs;
+use crate::trace::Trace;
 use pregsys_core::actions;
 use pregsys_core::chatbox::Vars;
 use pregsys_core::driver::{Driver, ParamValue, Send, SyncReport};
@@ -97,6 +98,12 @@ struct Engine {
     /// "Show here": the instance where you showed the belly (Settings > Safety
     /// hides it there otherwise). Forgotten when you leave it.
     shown_here: Option<String>,
+    /// Debug mode: what the engine is thinking, written to files.
+    trace: Trace,
+    /// An avatar VRChat refused to change to, whatever its OSCQuery says.
+    refused: pregsys_core::refused::Refused,
+    /// The last avatar change: the avatar before it, and whether it added this one to the list.
+    last_change: Option<(Option<String>, bool)>,
 }
 
 /// VRChat's built-in posture values.
@@ -148,7 +155,11 @@ impl Engine {
     fn new(app: AppHandle, shared: Arc<Shared>) -> Self {
         let mapping = shared.mapping.lock().unwrap().clone();
         let past = Instant::now() - Duration::from_secs(3600);
+        let trace = Trace::new(&shared.data_dir);
         Self {
+            trace,
+            refused: Default::default(),
+            last_change: None,
             app,
             shared,
             driver: Driver::new(mapping),
@@ -190,20 +201,38 @@ impl Engine {
     fn run(mut self, rx: Receiver<EngineCmd>) {
         loop {
             match rx.recv_timeout(TICK) {
-                Ok(EngineCmd::Resync) => self.driver.resync(),
+                Ok(EngineCmd::Resync) => {
+                    self.trace.note("command", "Send everything again (the app changed something)");
+                    self.driver.resync();
+                }
                 Ok(EngineCmd::SyncSet(name)) => {
+                    self.trace.note("command", &format!("Sync set in the app: {name}"));
                     self.driver.drop_held_sync(&name);
                     self.driver.resync();
                 }
-                Ok(EngineCmd::Restart) => self.restart(),
-                Ok(EngineCmd::Pulse(key, ms)) => self.driver.pulse(&key, now_ms(), ms),
-                Ok(EngineCmd::DebugWoohoo(roll)) => self.woohoo(now_ms(), roll),
-                Ok(EngineCmd::DebugKick(s)) => self.driver.kick_now(s),
+                Ok(EngineCmd::Restart) => {
+                    self.trace.note("command", "Mapping or OSC settings changed");
+                    self.restart();
+                }
+                Ok(EngineCmd::Pulse(key, ms)) => {
+                    self.trace.note("command", &format!("Pulse {key} for {ms} ms"));
+                    self.driver.pulse(&key, now_ms(), ms);
+                }
+                Ok(EngineCmd::DebugWoohoo(roll)) => {
+                    self.trace.note("command", &format!("Debug WooHoo (roll {roll:?})"));
+                    self.woohoo(now_ms(), roll);
+                }
+                Ok(EngineCmd::DebugKick(s)) => {
+                    self.trace.note("command", &format!("Debug kick: {s:?}"));
+                    self.driver.kick_now(s);
+                }
                 Ok(EngineCmd::ShowHere) => {
+                    self.trace.note("command", "Show here");
                     self.shown_here = self.shared.data.lock().unwrap().instance.instance.clone();
                     self.update_safety();
                 }
                 Ok(EngineCmd::Shutdown(reply)) => {
+                    self.trace.note("command", "App closing");
                     self.handoff();
                     let _ = self.shared.save_if_dirty();
                     let _ = reply.send(());
@@ -240,16 +269,19 @@ impl Engine {
         self.send_all(&sends);
     }
 
-    fn send_all(&self, sends: &[Send]) {
+    fn send_all(&mut self, sends: &[Send]) {
         if let Some(b) = &self.bridge {
             for s in sends {
                 b.send(&format!("{OSC_PARAM_PREFIX}{}", s.name), to_osc(s.value));
             }
+            self.trace.sent(sends);
         }
     }
 
     fn step(&mut self) {
         let now = now_ms();
+        let debug = self.shared.data.lock().unwrap().settings.debug;
+        self.trace.set_on(debug);
         if self.last_proc.elapsed() >= Duration::from_secs(3) {
             self.last_proc = Instant::now();
             self.check_processes();
@@ -325,6 +357,7 @@ impl Engine {
         if self.vrchat && !r.vrchat {
             // VRChat closed: release the avatar and go quiet. The bridge stays
             // up so the next VRChat finds it at start-up.
+            self.trace.note("vrchat", "VRChat closed");
             self.handoff();
             self.driver.set_connected(false);
             self.shared.data.lock().unwrap().instance.vrchat_closed(pregsys_core::now_ms());
@@ -333,6 +366,8 @@ impl Engine {
             self.shared.mark_dirty();
             let _ = self.app.emit("instance-changed", ());
         } else if !self.vrchat && r.vrchat && self.bridge.is_some() {
+            self.trace.note("vrchat", "VRChat started");
+            self.driver.wait_for_avatar(now_ms());
             self.driver.set_connected(true);
             self.pending_params_fetch = Some(Instant::now() + Duration::from_secs(3));
         }
@@ -362,6 +397,7 @@ impl Engine {
         // launching both at once).
         // Rebuilt only when the OSC settings change (on/off, mode, ports).
         if self.bridge.is_some() && (!osc.enabled || self.bridge_osc.as_ref() != Some(&osc)) {
+            self.trace.note("bridge", "Stopped (OSC settings changed)");
             self.handoff();
             self.bridge = None;
             self.bridge_osc = None;
@@ -385,15 +421,18 @@ impl Engine {
         };
         match Bridge::start(&cfg) {
             Ok(b) => {
+                self.trace.note("bridge", "Started");
                 self.bridge = Some(b);
                 self.bridge_osc = Some(osc);
                 self.bridge_error = None;
+                self.driver.wait_for_avatar(now_ms());
                 self.driver.set_connected(self.vrchat);
                 if self.vrchat {
                     self.pending_params_fetch = Some(Instant::now() + Duration::from_secs(3));
                 }
             }
             Err(e) => {
+                self.trace.note("bridge", &format!("Could not start: {e}"));
                 self.bridge_error = Some(e);
                 self.bridge_error_at = Instant::now();
             }
@@ -407,6 +446,7 @@ impl Engine {
             return;
         }
         self.linked = linked;
+        self.trace.note("link", if linked { "Linked to VRChat" } else { "Not linked to VRChat" });
         if linked {
             // Whatever was sent while OSC was off never arrived: send it all again.
             self.driver.resync();
@@ -435,6 +475,7 @@ impl Engine {
         let msgs = match b.drain() {
             Ok(m) => m,
             Err(e) => {
+                self.trace.note("bridge", &format!("Stopped: {e}"));
                 self.bridge_error = Some(e);
                 self.bridge_error_at = Instant::now();
                 self.bridge = None;
@@ -450,10 +491,15 @@ impl Engine {
         for m in msgs {
             if m.addr == "/avatar/change" {
                 if let OscValue::Str(id) = &m.value {
+                    if !self.refused.believe(id) {
+                        self.trace.note("avatarChange", &format!("{id} ignored (VRChat refused it)"));
+                        continue;
+                    }
                     // It can arrive twice (OSCQuery and port 9001): one change is enough.
                     let repeat = self.driver.avatar_id() == Some(id.as_str())
                         && self.last_avatar_change.is_some_and(|t| t.elapsed() < Duration::from_secs(2));
                     if !repeat {
+                        self.trace.note("avatarChange", &format!("{id} (from /avatar/change)"));
                         self.on_avatar_change(id, now);
                     }
                 }
@@ -462,14 +508,20 @@ impl Engine {
             let Some(name) = m.addr.strip_prefix(OSC_PARAM_PREFIX) else { continue };
             let Some(v) = m.value.as_f32() else { continue };
             if name == AFK_PARAM {
+                self.trace.heard(name, v, "afk");
                 self.afk = v > 0.5;
                 continue;
             }
             if self.posture.set(name, v) {
+                // Upright and speed change all the time.
+                if !matches!(name, "Upright" | "VelocityMagnitude") {
+                    self.trace.heard(name, v, "posture");
+                }
                 continue;
             }
             // App Controls buttons from the avatar's menu.
             if let Some(c) = self.driver.mapping().key_for_name(name).and_then(pregsys_core::controls::Control::from_key) {
+                self.trace.heard(name, v, "control");
                 if v > 0.5 {
                     self.debug_chat("menuButtons", format!("Menu button: {c:?}"));
                 }
@@ -482,12 +534,23 @@ impl Engine {
                 continue;
             }
             match self.driver.on_sync_param(name, v, now) {
-                SyncReport::NotSync => {}
+                SyncReport::NotSync => {
+                    // Port 9001 hears every parameter: only the app's own are worth a
+                    // line, and not the heartbeat coming back every second.
+                    let key = self.driver.mapping().key_for_name(name);
+                    if key.is_some_and(|k| !matches!(k, "appActive" | "appHeartbeat")) {
+                        self.trace.heard(name, v, "param");
+                    }
+                }
                 // Remembered a moment later (save_held_sync), unless the avatar changes first.
-                SyncReport::Held => continue,
+                SyncReport::Held => {
+                    self.trace.heard(name, v, "sync held");
+                    continue;
+                }
                 // Hidden by the instance: turning Hide Belly off in-game shows it here
                 // (and turns your own Hide Belly off), never saved as on.
                 SyncReport::Safety(on) => {
+                    self.trace.heard(name, v, "sync safety");
                     if !on {
                         self.shown_here = self.shared.data.lock().unwrap().instance.instance.clone();
                         let was_on = {
@@ -507,6 +570,7 @@ impl Engine {
                     continue;
                 }
                 SyncReport::Ignored => {
+                    self.trace.heard(name, v, "sync ignored");
                     let saved = self.shared.data.lock().unwrap().sync_values.get(name).copied();
                     // Only worth a note when it differs from what's saved (the avatar's default).
                     if saved.is_some_and(|s| (s as f32 - v).abs() > 0.01) {
@@ -551,6 +615,9 @@ impl Engine {
     }
 
     fn on_avatar_change(&mut self, id: &str, now: i64) {
+        let added = !self.shared.data.lock().unwrap().avatars.contains_key(id);
+        self.last_change = Some((self.driver.avatar_id().map(str::to_string), added));
+        self.trace.new_avatar();
         self.driver.on_avatar_change(id, now);
         self.sps.reset();
         self.last_avatar_change = Some(Instant::now());
@@ -568,6 +635,33 @@ impl Engine {
         self.pending_params_fetch = Some(Instant::now() + Duration::from_millis(1500));
         let _ = self.app.emit("avatar-changed", id);
         let _ = self.app.emit("data-changed", ());
+    }
+
+    /// VRChat refused the avatar the app just changed to: back to the one you're
+    /// really wearing, and off the avatar list if it was only added by this.
+    fn undo_refused_avatar(&mut self, now: i64) {
+        let Some(id) = self.refused.id().map(str::to_string) else { return };
+        if self.driver.avatar_id() != Some(id.as_str()) {
+            return;
+        }
+        let (before, added) = self.last_change.take().unwrap_or((None, false));
+        self.debug_chat("avatarChange", format!("VRChat refused that avatar: {id}"));
+        if added {
+            self.shared.data.lock().unwrap().avatars.remove(&id);
+        }
+        match before {
+            Some(before) => {
+                self.trace.note("avatarChange", &format!("{before} (back: VRChat refused the other)"));
+                self.on_avatar_change(&before, now);
+            }
+            None => {
+                self.driver.forget_avatar();
+                self.driver.wait_for_avatar(now);
+                self.pending_params_fetch = Some(Instant::now() + Duration::from_secs(1));
+                self.shared.mark_dirty();
+                let _ = self.app.emit("data-changed", ());
+            }
+        }
     }
 
     fn fetch_params_if_due(&mut self) {
@@ -595,8 +689,9 @@ impl Engine {
         self.pending_params_fetch = Some(Instant::now() + every);
         // Already wearing an avatar when the app linked up: pick it up now
         // instead of waiting for the next avatar switch.
-        if let Some(id) = info.avatar_id.as_deref() {
+        if let Some(id) = info.avatar_id.as_deref().filter(|id| self.refused.believe(id)) {
             if self.driver.avatar_id() != Some(id) {
+                self.trace.note("avatarChange", &format!("{id} (from OSCQuery)"));
                 self.on_avatar_change(id, now_ms());
                 // on_avatar_change schedules a fresh parameter read for the new avatar.
                 return;
@@ -644,6 +739,7 @@ impl Engine {
         let belly = names.iter().any(|n| mapping.key_for_name(n) == Some("stage"));
         let note = format!("Avatar loaded: {} params, {found} for the app, belly {}", names.len(), if belly { "✓" } else { "missing" });
         if !self.driver.set_avatar_params(list, now_ms()) {
+            self.trace.note("avatarLoaded", "Same parameter list as the last avatar: not loaded yet");
             return; // still the old avatar's list: check again soon
         }
         self.debug_chat("avatarLoaded", note);
@@ -748,6 +844,7 @@ impl Engine {
                 _ => return, // unknown, or two avatars share the name
             }
         };
+        self.trace.note("avatarChange", &format!("{id} (from the log's avatar name)"));
         self.on_avatar_change(&id, now);
     }
 
@@ -811,6 +908,7 @@ impl Engine {
             let mut d = self.shared.data.lock().unwrap();
             actions::record_fun(&mut d, now, roll.unwrap_or_else(pregsys_core::fertility::roll))
         };
+        self.trace.note("woohoo", &format!("{outcome:?}"));
         self.shared.mark_dirty();
         self.driver.resync();
         let _ = self.app.emit("data-changed", ());
@@ -835,6 +933,7 @@ impl Engine {
     fn check_reveal(&mut self, now: i64) {
         let result = actions::resolve_due(&mut self.shared.data.lock().unwrap(), now);
         let Some(positive) = result else { return };
+        self.trace.note("reveal", if positive { "Pregnant" } else { "Not this time" });
         // A new try: the next WooHoo counts even without a quiet gap first.
         self.sps.end_session();
         self.shared.mark_dirty();
@@ -905,6 +1004,9 @@ impl Engine {
             }
             d.settings.safety.hides(here.as_deref()) && self.shown_here.is_none()
         };
+        if hide != self.driver.auto_hide() {
+            self.trace.note("safety", if hide { "The instance hides the belly" } else { "The instance stopped hiding the belly" });
+        }
         self.driver.set_auto_hide(hide);
     }
 
@@ -967,6 +1069,7 @@ impl Engine {
             d.current_pregnancy(self.driver.avatar_id()).map(|p| Vars::of(p, now)).unwrap_or_default()
         };
         for e in events {
+            self.trace.note("labor", &format!("{e:?}"));
             match e {
                 Event::Started { water_first } => {
                     self.chat("labor", vars.clone());
@@ -1000,6 +1103,7 @@ impl Engine {
     /// Debug mode: a testing note in the chatbox, if that one is on (works
     /// even with the chatbox off).
     fn debug_chat(&mut self, key: &str, text: String) {
+        self.trace.note(key, &text);
         if !self.linked {
             return;
         }
@@ -1049,6 +1153,7 @@ impl Engine {
         }
         let want: Option<PathBuf> = dir.map(PathBuf::from).or_else(find_log_dir);
         let Some(want) = want else { return };
+        let log_dir = want.clone();
         if self.logs.as_ref().map(|l| l.dir()) != Some(want.as_path()) {
             self.logs = Some(LogWatcher::new(want));
         }
@@ -1071,10 +1176,19 @@ impl Engine {
             // Replayed lines keep their own time; live lines use now.
             let at = if poll.new_file { l.time_ms.unwrap_or(now) } else { now };
             d.instance.apply(&l.event, at);
+            if let pregsys_core::logparse::LogEvent::AvatarRefused { avatar_id } = &l.event {
+                self.trace.note("log", &format!("VRChat refused {avatar_id}"));
+                self.refused.set(avatar_id);
+            }
             if let pregsys_core::logparse::LogEvent::AvatarSwitch { player, avatar_name } = &l.event {
                 if d.instance.local.as_ref().is_some_and(|me| &me.name == player) {
+                    if let Some(id) = self.refused.id() {
+                        let name = pregsys_core::logwatch::osc_avatar_name(&log_dir, id);
+                        self.refused.on_switch(avatar_name, name.as_deref());
+                    }
                     local_avatar = Some(avatar_name.clone());
                     if !poll.new_file {
+                        self.trace.note("log", &format!("Switching to {avatar_name}"));
                         // Values VRChat reports from now on are the next avatar's, not yours.
                         self.driver.on_switch_start(l.time_ms.unwrap_or(now - 1_500), now);
                         self.log_avatar_name = Some((avatar_name.clone(), Instant::now()));
@@ -1086,6 +1200,7 @@ impl Engine {
             }
         }
         drop(d);
+        self.undo_refused_avatar(now);
         // A new log file replays from the start: its last switch line is the avatar you're wearing now.
         if poll.new_file {
             if let Some(name) = local_avatar {
@@ -1214,6 +1329,59 @@ impl Engine {
         }
         let snapshot = st.clone();
         drop(st);
+        self.write_debug_state(&snapshot);
         let _ = self.app.emit("status", snapshot);
+    }
+
+    /// Debug mode: `debug/state.json`, for testing. Leaves out who's in the
+    /// instance, the world and this PC's folders.
+    fn write_debug_state(&self, status: &crate::state::Status) {
+        if !self.shared.data.lock().unwrap().settings.debug {
+            return;
+        }
+        let now = now_ms();
+        let mut status = status.clone();
+        status.others = Vec::new();
+        status.avatar_params = None; // hundreds of names: the driver has the count
+        status.world_name = None;
+        status.log_dir = None;
+        status.log_file = None;
+        status.mapping_path = String::new();
+        status.data_dir = String::new();
+        let (pregnancy, saved_sync) = {
+            let d = self.shared.data.lock().unwrap();
+            (d.current_pregnancy_id(self.driver.avatar_id()), d.sync_values.clone())
+        };
+        let labor = self.labor_ctx();
+        self.trace.state(serde_json::json!({
+            "t": now,
+            "status": status,
+            "driver": self.driver.debug_state(now),
+            "engine": {
+                "vrchat": self.vrchat,
+                "linked": self.linked,
+                "bridgeUp": self.bridge.is_some(),
+                "bridgeError": self.bridge_error,
+                "afk": self.afk,
+                "seated": self.posture.seated,
+                "inStation": self.posture.in_station,
+                "velocity": self.posture.velocity,
+                "vrMode": self.posture.vr,
+                "spsListening": self.sps_listen.len(),
+                "shownHere": self.shown_here.is_some(),
+                "nextParamsFetchMs": self.pending_params_fetch.map(|t| t.saturating_duration_since(Instant::now()).as_millis() as u64),
+            },
+            "labor": {
+                "linked": labor.linked,
+                "avatarReady": labor.avatar_ready,
+                "supports": labor.supports,
+                "afk": labor.afk,
+                "up": labor.up,
+                "moving": labor.moving,
+                "heldHere": labor.held_here,
+            },
+            "pregnancyId": pregnancy,
+            "savedSync": saved_sync,
+        }));
     }
 }

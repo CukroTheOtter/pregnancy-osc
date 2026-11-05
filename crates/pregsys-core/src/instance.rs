@@ -132,6 +132,8 @@ impl InstanceTracker {
                     h.avatar_name = Some(avatar_name.clone());
                 }
             }
+            // Nothing changes: VRChat kept the avatar you had (the engine handles it).
+            LogEvent::AvatarRefused { .. } => {}
         }
         while self.changes.len() > 64 {
             self.changes.pop_front();

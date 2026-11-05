@@ -7,11 +7,13 @@ use crate::labor;
 use crate::movement::{self, KickStrength};
 use crate::model::AppData;
 use crate::timeline::TERM_WEEKS;
+use serde::Serialize;
 use std::collections::BTreeMap;
 use crate::stage::{extra_value, stage_value, ExtraInput, StageInput};
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(untagged)]
 pub enum ParamValue {
     Float(f32),
     Int(i32),
@@ -48,6 +50,11 @@ const LOAD_CAP_MS: i64 = 30_000;
 /// The same parameter list as the last avatar this soon after a change is
 /// probably still the old avatar's, so it doesn't count as loaded yet.
 const SAME_LIST_MS: i64 = 5_000;
+/// Connected with no avatar known yet: wait this long for one (the log or
+/// OSCQuery usually says within a few seconds) before sending anyway, so a
+/// worn avatar isn't sent "no pregnancy" values. Without OSCQuery or the log
+/// it may never be known, so the wait has to end.
+const AVATAR_WAIT_MS: i64 = 10_000;
 /// A sync value reported in-game is held this long before it's remembered.
 /// When you switch, VRChat reports the next avatar's own values a moment
 /// BEFORE it says the avatar changed. The log's "Switching" line (written
@@ -62,6 +69,33 @@ const HIDE_REPEAT_MS: i64 = 500;
 const BIRTH_SHRINK_MS: i64 = 10_000;
 /// A pregnancy that ended with a birth this recently gets the slow shrink.
 const JUST_BORN_MS: i64 = 15_000;
+
+/// What the driver is holding and waiting for right now (the debug state file).
+/// Times are how long until that wait ends.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DriverState {
+    pub connected: bool,
+    pub avatar_id: Option<String>,
+    pub param_count: Option<usize>,
+    pub loading: bool,
+    pub loading_for_ms: Option<i64>,
+    pub sync_ignored: bool,
+    pub sends_held_ms: Option<i64>,
+    pub sync_ignored_ms: Option<i64>,
+    pub resend_ms: Option<i64>,
+    pub hide_repeat_ms: Option<i64>,
+    pub need_sync: bool,
+    pub need_snap: bool,
+    pub need_profile: bool,
+    pub auto_hide: bool,
+    pub hide_forced: bool,
+    pub paused: bool,
+    pub belly_up: bool,
+    pub held_sync: BTreeMap<String, f64>,
+    pub overrides: BTreeMap<String, String>,
+    pub last_sent: BTreeMap<String, ParamValue>,
+}
 
 /// What happened to a reported parameter value (see [`Driver::on_sync_param`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -99,6 +133,8 @@ pub struct Driver {
     sync_until_ms: Option<i64>,
     /// After an avatar change: in-game sync values aren't remembered until then.
     sync_ignore_until_ms: Option<i64>,
+    /// Just connected with no avatar known: nothing is sent until then (or until it's known).
+    avatar_wait_until_ms: Option<i64>,
     /// After an avatar change: when it happened, the old avatar's parameter
     /// list, and whether the new one has loaded (its parameters showed up).
     change_ms: i64,
@@ -166,6 +202,7 @@ impl Driver {
             overrides: BTreeMap::new(),
             sync_until_ms: None,
             sync_ignore_until_ms: None,
+            avatar_wait_until_ms: None,
             change_ms: 0,
             prev_params: None,
             loading: false,
@@ -302,6 +339,25 @@ impl Driver {
         self.connected = c;
     }
 
+    /// Just connected: if no avatar is known yet, hold off for a moment (see `AVATAR_WAIT_MS`).
+    pub fn wait_for_avatar(&mut self, now_ms: i64) {
+        if self.avatar_id.is_none() {
+            self.avatar_wait_until_ms = Some(now_ms + AVATAR_WAIT_MS);
+        }
+    }
+
+    /// The avatar turned out not to be worn, and there's none to go back to.
+    pub fn forget_avatar(&mut self) {
+        self.avatar_id = None;
+        self.avatar_params = None;
+        self.loading = false;
+        self.sync_until_ms = None;
+        self.sync_ignore_until_ms = None;
+        self.hide_until_ms = None;
+        self.resend_at_ms = None;
+        self.resync();
+    }
+
     pub fn on_avatar_change(&mut self, id: &str, now_ms: i64) {
         self.sync_until_ms = Some(now_ms + SYNC_SETTLE_MS);
         self.sync_ignore_until_ms = Some(now_ms + LOAD_CAP_MS);
@@ -356,6 +412,33 @@ impl Driver {
     /// In-game sync values are being ignored right now (a new avatar is loading).
     pub fn sync_ignored(&self, now_ms: i64) -> bool {
         self.sync_until_ms.is_some_and(|t| now_ms < t) || self.sync_ignore_until_ms.is_some_and(|t| now_ms < t)
+    }
+
+    /// A snapshot for the debug state file.
+    pub fn debug_state(&self, now_ms: i64) -> DriverState {
+        let left = |until: Option<i64>| until.map(|t| t - now_ms).filter(|&ms| ms > 0);
+        DriverState {
+            connected: self.connected,
+            avatar_id: self.avatar_id.clone(),
+            param_count: self.avatar_params.as_ref().map(Vec::len),
+            loading: self.loading,
+            loading_for_ms: self.loading.then_some(now_ms - self.load_start_ms),
+            sync_ignored: self.sync_ignored(now_ms),
+            sends_held_ms: left(self.sync_until_ms),
+            sync_ignored_ms: left(self.sync_ignore_until_ms),
+            resend_ms: left(self.resend_at_ms),
+            hide_repeat_ms: left(self.hide_until_ms),
+            need_sync: self.need_sync,
+            need_snap: self.need_snap,
+            need_profile: self.need_profile,
+            auto_hide: self.auto_hide,
+            hide_forced: self.hide_forced,
+            paused: self.paused,
+            belly_up: self.belly_up,
+            held_sync: self.held_sync.iter().map(|(name, (v, _))| (name.clone(), *v)).collect(),
+            overrides: self.overrides.clone(),
+            last_sent: self.last_sent.iter().map(|(k, v)| (k.clone(), *v)).collect(),
+        }
     }
 
     /// The worn avatar has this parameter (or its list isn't known yet).
@@ -482,6 +565,10 @@ impl Driver {
             if now_ms < t {
                 return out;
             }
+        }
+        // Don't know the avatar yet: "no pregnancy" values could land on a pregnant one.
+        if self.avatar_id.is_none() && self.avatar_wait_until_ms.is_some_and(|t| now_ms < t) {
+            return out;
         }
         if self.resend_at_ms.is_some_and(|t| now_ms >= t) {
             self.resend_at_ms = None;
@@ -759,6 +846,73 @@ mod tests {
     use crate::timeline::{DurationMode, Timeline, DAY_MS};
 
     const T0: i64 = 1_700_000_000_000;
+
+    #[test]
+    fn nothing_is_sent_while_waiting_to_learn_the_avatar() {
+        let mut d = Driver::new(Mapping::default());
+        d.set_connected(true);
+        d.wait_for_avatar(T0);
+        let data = AppData::new();
+        assert!(d.tick(T0, &data).is_empty());
+        assert!(d.tick(T0 + AVATAR_WAIT_MS - 1, &data).is_empty());
+        // It never showed up (no OSCQuery, no log): send anyway.
+        assert!(!d.tick(T0 + AVATAR_WAIT_MS, &data).is_empty());
+    }
+
+    #[test]
+    fn learning_the_avatar_ends_the_wait() {
+        let mut d = Driver::new(Mapping::default());
+        d.set_connected(true);
+        d.wait_for_avatar(T0);
+        let data = AppData::new();
+        assert!(d.tick(T0, &data).is_empty());
+        d.on_avatar_change("avtr_x", T0 + 1_000);
+        assert!(!d.tick(T0 + 1_000 + SYNC_SETTLE_MS, &data).is_empty(), "the usual settle, then everything");
+    }
+
+    #[test]
+    fn a_known_avatar_never_waits() {
+        let mut d = Driver::new(Mapping::default());
+        d.set_connected(true);
+        d.on_avatar_change("avtr_x", T0);
+        d.wait_for_avatar(T0 + SYNC_SETTLE_MS);
+        assert!(!d.tick(T0 + SYNC_SETTLE_MS, &AppData::new()).is_empty());
+    }
+
+    #[test]
+    fn an_instance_hides_the_belly_even_during_the_wait() {
+        let mut d = Driver::new(Mapping::default());
+        d.set_connected(true);
+        d.wait_for_avatar(T0);
+        d.set_auto_hide(true);
+        let out = d.tick(T0, &AppData::new());
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].value, ParamValue::Bool(true));
+    }
+
+    #[test]
+    fn forgetting_the_avatar_goes_back_to_not_knowing() {
+        let mut d = Driver::new(Mapping::default());
+        d.set_connected(true);
+        d.on_avatar_change("avtr_x", T0);
+        d.forget_avatar();
+        assert_eq!(d.avatar_id(), None);
+        assert!(!d.loading() && !d.sync_ignored(T0));
+    }
+
+    #[test]
+    fn debug_state_shows_what_a_new_avatar_waits_for() {
+        let mut d = Driver::new(Mapping::default());
+        d.set_connected(true);
+        d.on_avatar_change("avtr_x", T0);
+        let s = d.debug_state(T0 + 1_000);
+        assert_eq!(s.avatar_id.as_deref(), Some("avtr_x"));
+        assert!(s.loading);
+        assert_eq!(s.loading_for_ms, Some(1_000));
+        assert_eq!(s.sends_held_ms, Some(SYNC_SETTLE_MS - 1_000));
+        // A wait that's over isn't shown.
+        assert_eq!(d.debug_state(T0 + SYNC_SETTLE_MS).sends_held_ms, None);
+    }
 
     fn data_pregnant() -> AppData {
         let mut d = AppData::new();

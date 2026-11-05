@@ -22,6 +22,8 @@ pub enum LogEvent {
     PlayerLeft { name: String, user_id: Option<String> },
     /// `Switching Name to avatar Avatar Name` (avatar NAME only, no ID).
     AvatarSwitch { player: String, avatar_name: String },
+    /// `Trying to change to an inaccessible avatar: avtr_...` (VRChat kept the old one).
+    AvatarRefused { avatar_id: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,6 +66,10 @@ pub fn parse_line(raw: &str) -> Option<LogLine> {
 }
 
 fn parse_event(line: &str) -> Option<LogEvent> {
+    if let Some(rest) = after(line, "inaccessible avatar: ") {
+        let avatar_id = rest.split_whitespace().next()?.to_string();
+        return Some(LogEvent::AvatarRefused { avatar_id });
+    }
     // Most lines we care about are tagged [Behaviour]; skip the rest cheaply.
     if !line.contains("[Behaviour]") && !line.contains("User Authenticated") {
         return None;
@@ -160,6 +166,15 @@ mod tests {
             ev("2025.03.01 21:01:00 Debug      -  [Behaviour] Switching Foxy Paws to avatar Kitsune v3.2"),
             Some(LogEvent::AvatarSwitch { player: "Foxy Paws".into(), avatar_name: "Kitsune v3.2".into() })
         );
+    }
+
+    #[test]
+    fn avatar_refused() {
+        assert_eq!(
+            ev("2025.03.01 21:00:05 Error      -  Trying to change to an inaccessible avatar: avtr_abc"),
+            Some(LogEvent::AvatarRefused { avatar_id: "avtr_abc".into() })
+        );
+        assert_eq!(ev("2025.03.01 21:00:05 Error      -  Trying to change to an inaccessible avatar: "), None);
     }
 
     #[test]

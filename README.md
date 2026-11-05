@@ -134,6 +134,8 @@ npm run check            # type check the UI
 ### Debug mode (test in VRChat)
 Tap the **Pregnancy OSC** title 5 times. A 🛠 Debug section appears at the bottom of Settings: pretend a WooHoo (random, pregnant, or not), turn on up to 3 test buddies (pretend partners in your instance), end the grace period now, jump the cycle to a day or the pregnancy to a week, and see live readouts of what's being sent. Tap 5 times again (or "Turn off") to hide it.
 
+While debug mode is on, the app also writes a `debug` folder in your data folder: `state.json` (what it's thinking right now, updated every second) and `trace.jsonl` (what came in, what went out and why, up to about 10 MB in all). Both include your avatars' names and IDs, but not who's in your instance.
+
 ### Test OSC by hand (`belly-cli`)
 ```bash
 cargo run -p belly-cli -- --stage 0.5               # half belly

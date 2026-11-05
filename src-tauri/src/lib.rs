@@ -6,6 +6,7 @@ mod pictures;
 mod state;
 mod steamvr;
 mod system;
+mod trace;
 mod updates;
 mod vr_notify;
 
