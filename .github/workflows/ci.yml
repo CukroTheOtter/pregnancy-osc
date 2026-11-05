@@ -1,10 +1,12 @@
-# Runs the tests on every push to main and every pull request.
+# Runs on every push to main and every pull request, and as the first stage of a release.
+#   UI checks -> Rust tests (Windows, Linux) -> Summary
 name: Tests
 
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
 
 permissions:
   contents: read
@@ -14,39 +16,93 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
+  ui:
+    name: UI checks
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Get the code
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install packages
+        run: npm ci
+
+      - name: Check types
+        run: npm run check
+
+      - name: Run UI tests
+        run: npm test
+
+      - name: Build the UI
+        run: npm run build
+
+  rust:
+    name: Rust tests (${{ matrix.name }})
+    needs: ui
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-22.04]
+        include:
+          - name: Windows
+            os: windows-latest
+          - name: Linux
+            os: ubuntu-22.04
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v7
+      - name: Get the code
+        uses: actions/checkout@v7
 
-      - name: Linux packages
+      - name: Install Linux packages
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf build-essential
 
-      - uses: actions/setup-node@v7
+      - name: Set up Node
+        uses: actions/setup-node@v7
         with:
           node-version: lts/*
           cache: npm
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
 
-      - uses: Swatinem/rust-cache@v2
+      - name: Restore compiled crates
+        uses: Swatinem/rust-cache@v2
         with:
           workspaces: ". -> target"
 
-      - run: npm ci
-
-      - run: npm run check
-
-      - run: npm test
-
       # The Tauri app needs the built UI to compile.
-      - run: npm run build
+      - name: Build the UI
+        run: |
+          npm ci
+          npm run build
 
-      - run: cargo test --workspace
+      - name: Run Rust tests
+        run: cargo test --workspace
+
+  summary:
+    name: Summary
+    needs: [ui, rust]
+    if: always()
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Write the results
+        env:
+          UI: ${{ needs.ui.result }}
+          RUST: ${{ needs.rust.result }}
+        run: |
+          icon() { case "$1" in success) echo "✅ Passed";; skipped) echo "⏭️ Skipped";; cancelled) echo "🚫 Cancelled";; *) echo "❌ Failed";; esac; }
+          {
+            echo "## Tests"
+            echo "| Stage | Result |"
+            echo "| --- | --- |"
+            echo "| UI checks | $(icon "$UI") |"
+            echo "| Rust tests (Windows and Linux) | $(icon "$RUST") |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          [ "$UI" = success ] && [ "$RUST" = success ]

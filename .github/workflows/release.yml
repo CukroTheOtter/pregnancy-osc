@@ -1,4 +1,5 @@
-# Builds, signs and publishes a release when a version tag (v1.2.3) is pushed.
+# Tests, builds, signs and publishes a release when a version tag (v1.2.3) is pushed.
+#   Tests -> Build (Windows, Linux) -> Summary
 # scripts/release.ps1 makes the tag. Needs the repo secrets
 # TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD.
 name: Release
@@ -11,14 +12,27 @@ permissions:
   contents: write
 
 jobs:
+  tests:
+    name: Tests
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
   build:
+    name: Build (${{ matrix.name }})
+    needs: tests
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-22.04]
+        include:
+          - name: Windows
+            os: windows-latest
+          - name: Linux
+            os: ubuntu-22.04
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v7
+      - name: Get the code
+        uses: actions/checkout@v7
 
       # The release notes are the tag's message (checkout drops it, so fetch it again).
       - name: Read release notes
@@ -32,28 +46,33 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Linux packages
+      - name: Install Linux packages
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf build-essential
 
-      - uses: actions/setup-node@v7
+      - name: Set up Node
+        uses: actions/setup-node@v7
         with:
           node-version: lts/*
           cache: npm
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
 
-      - uses: Swatinem/rust-cache@v2
+      - name: Restore compiled crates
+        uses: Swatinem/rust-cache@v2
         with:
           workspaces: ". -> target"
           # Keep compiled crates even if signing fails, so a retry is quick.
           cache-on-failure: true
 
-      - run: npm ci
+      - name: Install packages
+        run: npm ci
 
-      - uses: tauri-apps/tauri-action@v0
+      - name: Build, sign and publish
+        uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -63,3 +82,26 @@ jobs:
           releaseName: ${{ github.ref_name }}
           releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: false
+
+  summary:
+    name: Summary
+    needs: [tests, build]
+    if: always()
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Write the results
+        env:
+          TESTS: ${{ needs.tests.result }}
+          BUILD: ${{ needs.build.result }}
+          RELEASE: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}
+        run: |
+          icon() { case "$1" in success) echo "✅ Passed";; skipped) echo "⏭️ Skipped";; cancelled) echo "🚫 Cancelled";; *) echo "❌ Failed";; esac; }
+          {
+            echo "## Release ${GITHUB_REF_NAME}"
+            echo "| Stage | Result |"
+            echo "| --- | --- |"
+            echo "| Tests | $(icon "$TESTS") |"
+            echo "| Build, sign and publish (Windows and Linux) | $(icon "$BUILD") |"
+            if [ "$BUILD" = success ]; then echo; echo "[Open the release]($RELEASE)"; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          [ "$TESTS" = success ] && [ "$BUILD" = success ]
