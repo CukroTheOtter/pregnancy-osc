@@ -162,6 +162,8 @@ export interface Settings {
   labor: LaborSettings;
   safety?: SafetySettings;
   sps: { enabled: boolean; types: Record<HoleType, boolean>; depth: number; seconds: number; gapSeconds: number };
+  /** Partners pinned to the top of the Partners tab (see `personKey`). */
+  pinnedPartners?: string[];
   onboarded: boolean;
 }
 
@@ -214,7 +216,8 @@ export interface Pregnancy {
   born: boolean;
   conceivedMs: number | null;
   genders: string[];
-  kicks: { timeMs: number; strength: KickStrength }[];
+  /** partnerHere and world: for journal moments (pregsys-core/src/moments.rs). */
+  kicks: { timeMs: number; strength: KickStrength; partnerHere?: boolean; world?: string | null }[];
   milestones: string[];
   oscHints: { speciesIndex: number | null };
   labor?: Labor | null;

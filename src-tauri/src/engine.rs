@@ -791,12 +791,17 @@ impl Engine {
         {
             let mut d = self.shared.data.lock().unwrap();
             let Some(id) = d.current_pregnancy_id(self.driver.avatar_id()) else { return };
+            let partner_here = d.pregnancy(&id).and_then(|p| pregsys_core::labor::partner_here(&d, p, now)) == Some(true);
+            let world = d.instance.world_name.clone();
             if let Some(p) = d.pregnancy_mut(&id) {
                 for s in &kicks {
-                    p.kicks.push(pregsys_core::model::KickEvent { time_ms: now, strength: *s });
+                    p.kicks.push(pregsys_core::model::KickEvent { time_ms: now, strength: *s, partner_here, world: world.clone() });
                 }
                 let extra = p.kicks.len().saturating_sub(pregsys_core::model::KICKS_KEPT);
                 p.kicks.drain(..extra);
+            }
+            for m in pregsys_core::moments::check(&mut d, &id, now, pregsys_core::moments::local_hour) {
+                self.trace.note("journalMoment", &format!("Saved journal moment {m}"));
             }
         }
         self.shared.mark_dirty();

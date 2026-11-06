@@ -110,7 +110,8 @@
     </div>
   </header>
 
-  <nav class="tabs" aria-label="Main">
+  <nav class="tabs" aria-label="Main" style="--i:{Math.max(0, TABS.findIndex((t) => t.id === app.view))}">
+    <span class="glide" aria-hidden="true"></span>
     {#each TABS as t}
       <button
         class="tab"
@@ -227,20 +228,45 @@
     background: var(--bg-3);
     border-radius: 999px;
     padding: 4px;
+    position: relative;
+  }
+  /* The pill behind the chosen tab: it glides over when you pick another. */
+  .glide {
+    position: absolute;
+    top: 4px;
+    bottom: 4px;
+    left: 4px;
+    width: calc((100% - 8px - 16px) / 5);
+    border-radius: 999px;
+    background: var(--bg-2);
+    box-shadow: var(--shadow);
+    transform: translateX(calc(var(--i) * (100% + 4px)));
+    transition: transform 0.32s cubic-bezier(0.34, 1.3, 0.5, 1);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .glide {
+      transition: none;
+    }
   }
   .tab {
+    position: relative;
     background: transparent;
     color: var(--text);
     padding: 7px 4px;
     font-size: 0.85rem;
     gap: 4px;
+    transition: transform 0.15s ease;
   }
-  .tab.on {
-    background: var(--bg-2);
-    box-shadow: var(--shadow);
+  /* The tab under the mouse grows a little; with none hovered, the chosen one does. */
+  .tab:hover,
+  .tab:focus-visible,
+  .tabs:not(:has(.tab:hover)) .tab.on {
+    transform: scale(1.1);
   }
-  .tab:hover {
-    transform: none;
+  @media (prefers-reduced-motion: reduce) {
+    .tab {
+      transition: none;
+    }
   }
   main {
     flex: 1;

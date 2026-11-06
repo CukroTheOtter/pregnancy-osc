@@ -1,4 +1,5 @@
 <script lang="ts">
+  import KickChart from "./KickChart.svelte";
   import { app } from "../lib/app.svelte";
   import { humanDuration, progress, TERM_WEEKS } from "../lib/timeline";
   import type { Pregnancy } from "../lib/types";
@@ -18,6 +19,8 @@
   // A short wiggle when a fresh kick arrives.
   const fresh = $derived(!!last && app.now - last.timeMs < 4000);
   const enabled = $derived(!!app.data?.settings.kicks);
+  // The chart shows once there's been a kick in the last day.
+  const recent = $derived(!!last && app.now - last.timeMs < 24 * 3_600_000);
 </script>
 
 <section class="card movement" class:fresh>
@@ -41,6 +44,9 @@
     </div>
   {:else}
     <p class="muted small">Waiting for the first kick… 🥺</p>
+  {/if}
+  {#if enabled && week >= FIRST_KICK_WEEK && recent}
+    <KickChart {p} />
   {/if}
 </section>
 

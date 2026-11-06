@@ -2,6 +2,8 @@
   import { onMount } from "svelte";
   import AvatarPic, { lookupAvatar } from "../components/AvatarPic.svelte";
   import AvatarPicker from "../components/AvatarPicker.svelte";
+  import GroupPic from "../components/GroupPic.svelte";
+  import Section from "../components/Section.svelte";
   import Toggle from "../components/Toggle.svelte";
   import { app, confirmAsk, errorToast, toast } from "../lib/app.svelte";
   import { api, inTauri } from "../lib/api";
@@ -23,6 +25,8 @@
   let newGroupName = $state("");
   let newGroupIds = $state<string[]>([]);
   let renaming = $state<string | null>(null);
+  // The group folder that's open (its id).
+  let openGroup = $state<string | null>(null);
   // Which avatars VRChat shows publicly (private ones have no thumbnail).
   let isPublic = $state<Record<string, boolean>>({});
   $effect(() => {
@@ -154,6 +158,14 @@
     return "Not pregnant";
   }
 
+  /** The short line under a group folder. */
+  function folderStatus(id: string): string {
+    const p = pregnancyFor(d, id);
+    if (p) return `🤰 Week ${Math.floor(progress(p.timeline, app.now) * TERM_WEEKS)}`;
+    if (pendingFor(d, id)) return "💕 Waiting…";
+    return "Not pregnant";
+  }
+
   async function setScope(per: boolean) {
     const s: Settings = { ...($state.snapshot(d.settings) as Settings), syncScope: per ? "perAvatar" : "global" };
     try {
@@ -212,6 +224,7 @@
       const id = await api.createGroup(newGroupName, newGroupIds);
       toast("Group made 💞", d.groups[id]?.name, "success");
       picking = null;
+      openGroup = id;
     } catch (e) {
       picking = null;
       await refused(e);
@@ -229,7 +242,10 @@
     const text = pregnancyFor(d, g.id) || pendingFor(d, g.id)
       ? `Its avatars go back to their own pregnancies. The group's pregnancy stays with ${keeper ?? "the avatar worn last"}.`
       : "Its avatars go back to their own pregnancies.";
-    if (await confirmAsk({ title: `Remove the group ${g.name}?`, text, ok: "Remove group", danger: true })) await api.deleteGroup(g.id);
+    if (await confirmAsk({ title: `Remove the group ${g.name}?`, text, ok: "Remove group", danger: true })) {
+      await api.deleteGroup(g.id);
+      if (openGroup === g.id) openGroup = null;
+    }
   }
 
   async function saveNames(p: AvatarProfile) {
@@ -283,7 +299,8 @@
 
 {#snippet row(p: AvatarProfile, showStatus: boolean)}
   <div class="avatar" class:open={open === p.id}>
-    <div class="row">
+    <div class="rowline">
+    <button class="rowbtn" onclick={() => toggle(p)} aria-expanded={open === p.id}>
       <AvatarPic id={p.id} size={44} />
       <div class="grow">
         <strong>{p.name ?? "Unnamed avatar"}</strong>
@@ -293,12 +310,19 @@
           {showStatus ? `${statusOf(p.id)} · ` : ""}{seenText(p.lastSeenMs, app.now)}
         </div>
       </div>
-      <button class="small soft" onclick={() => openHome(p.id)}>Open</button>
-      <button class="small ghost" onclick={() => toggle(p)}>{open === p.id ? "Done" : "Edit"}</button>
+    </button>
+    <button class="small ghost home" onclick={() => openHome(p.id)} title="See it on Home" aria-label="View {p.name ?? 'this avatar'} on Home">View</button>
+    <!-- The arrow opens it too (the row already says so to screen readers). -->
+    <button class="chevbtn" onclick={() => toggle(p)} tabindex="-1" aria-hidden="true">
+      <span class="chev" class:open={open === p.id}>›</span>
+    </button>
     </div>
 
     {#if open === p.id}
       <div class="edit stack">
+        {#if !inTauri && p.id !== d.currentAvatarId}
+          <button class="small ghost" style="align-self:flex-start" onclick={() => api.simulateAvatar(p.id)}>Preview: wear this</button>
+        {/if}
         <label class="field">Name
           <input value={p.name ?? ""} onchange={(e) => save(p, (x) => ((x.name = (e.target as HTMLInputElement).value.trim() || null), (x.autoName = false)))} />
         </label>
@@ -379,9 +403,6 @@
         </details>
 
         <div class="row">
-          {#if !inTauri && p.id !== d.currentAvatarId}
-            <button class="small ghost" onclick={() => api.simulateAvatar(p.id)}>Preview: wear this</button>
-          {/if}
           <span class="grow"></span>
           <button class="small ghost" onclick={() => forget(p)}>Forget avatar</button>
         </div>
@@ -441,7 +462,7 @@
         <button class="small" onclick={openAdd}>+ Avatar</button>
       </div>
       <Toggle checked={d.settings.autoAddAvatars} label="Add avatars I wear" hint={d.settings.autoAddAvatars ? "New avatars show up here when you wear them" : "Only avatars you add yourself (+ Avatar) are listed"} onchange={setAutoAdd} />
-      <span class="muted small">Ones you haven't worn in a while, or that don't have the Pregnancy System, fold away at the bottom.</span>
+      <span class="muted small">Tap an avatar for its settings. Old ones, and ones without the Pregnancy System, fold away at the bottom.</span>
       {#if !d.settings.showPictures}
         <div class="row pics-off">
           <span class="grow small">Thumbnails are off.</span>
@@ -479,75 +500,101 @@
   {:else if searching}
     <section class="card">
       <h2>Found {results.length}</h2>
-      {#each results as p (p.id)}
-        {@render row(p, perAvatar)}
-      {:else}
-        <p class="muted small">No avatar or group matches “{query.trim()}”.</p>
-      {/each}
+      <div class="list">
+        {#each results as p (p.id)}
+          {@render row(p, perAvatar)}
+        {:else}
+          <p class="muted small">No avatar or group matches “{query.trim()}”.</p>
+        {/each}
+      </div>
     </section>
   {:else}
-    {#if perAvatar}
-      {#each groups as g (g.id)}
-        {@const members = groupMembers(d, g.id)}
-        <section class="card group">
-          <div class="ghead">
-            {#if renaming === g.id}
-              <!-- svelte-ignore a11y_autofocus -->
-              <input class="grow" value={g.name} autofocus aria-label="Group name"
-                onblur={(e) => saveGroupName(g, (e.target as HTMLInputElement).value)}
-                onkeydown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()} />
+    {#if perAvatar && groups.length}
+      <Section id="avatars-groups" title="💞 Groups" open>
+        {#snippet extra()}<span class="pill">{groups.length}</span>{/snippet}
+        <div class="folders">
+          {#each groups as g (g.id)}
+            {@const members = groupMembers(d, g.id)}
+            <button class="folder" class:on={openGroup === g.id} onclick={() => { openGroup = openGroup === g.id ? null : g.id; renaming = null; picking = null; }} aria-expanded={openGroup === g.id}>
+              <GroupPic ids={members} size={68} />
+              <strong class="fname-t">{g.name}</strong>
+              <span class="muted small">{folderStatus(g.id)}</span>
+              <span class="muted small">{members.length} {members.length === 1 ? "avatar" : "avatars"}</span>
+            </button>
+          {/each}
+        </div>
+        {#if openGroup && d.groups[openGroup]}
+          {@const g = d.groups[openGroup]}
+          {@const members = groupMembers(d, g.id)}
+          <div class="opened">
+            <div class="ghead">
+              <GroupPic ids={members} size={44} />
+              {#if renaming === g.id}
+                <!-- svelte-ignore a11y_autofocus -->
+                <input class="grow" value={g.name} autofocus aria-label="Group name"
+                  onblur={(e) => saveGroupName(g, (e.target as HTMLInputElement).value)}
+                  onkeydown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()} />
+              {:else}
+                <div class="grow">
+                  <strong class="gname">{g.name}</strong>
+                  <div class="muted small">{statusOf(g.id)}</div>
+                </div>
+                <button class="small ghost" onclick={() => (renaming = g.id)}>Rename</button>
+                <button class="small ghost" onclick={() => deleteGroup(g)}>Remove</button>
+              {/if}
+            </div>
+            <p class="hint">These avatars share one pregnancy and partner.</p>
+            <div class="list">
+              {#each members as id (id)}
+                {@render row(d.avatars[id], false)}
+              {/each}
+            </div>
+            {#if picking === g.id}
+              <AvatarPicker choices={profiles.filter((p) => p.groupId !== g.id)} onpick={(id) => moveTo(d.avatars[id], g.id)} placeholder="Search for an avatar to add…" focus />
+              <button class="small soft" style="align-self:flex-start" onclick={() => (picking = null)}>Done adding</button>
             {:else}
-              <h2 class="grow">💞 {g.name}</h2>
-              <button class="small ghost" onclick={() => (renaming = g.id)}>Rename</button>
-              <button class="small ghost" onclick={() => deleteGroup(g)}>Remove</button>
+              <button class="small soft" style="align-self:flex-start" onclick={() => (picking = g.id)}>+ Add an avatar</button>
             {/if}
           </div>
-          <div class="status">{statusOf(g.id)} <span class="pill">{members.length} {members.length === 1 ? "avatar" : "avatars"}</span></div>
-          {#each members as id (id)}
-            {@render row(d.avatars[id], false)}
-          {/each}
-          {#if picking === g.id}
-            <AvatarPicker choices={profiles.filter((p) => p.groupId !== g.id)} onpick={(id) => moveTo(d.avatars[id], g.id)} placeholder="Search for an avatar to add…" focus />
-            <button class="small soft" style="align-self:flex-start" onclick={() => (picking = null)}>Done adding</button>
-          {:else}
-            <button class="small soft" style="align-self:flex-start" onclick={() => (picking = g.id)}>+ Add an avatar</button>
-          {/if}
-        </section>
-      {/each}
+        {/if}
+      </Section>
     {/if}
 
     {#if shelves.main.length}
-      <section class="card">
-        <h2>{perAvatar && groups.length ? "On their own" : "Your avatars"}</h2>
-        {#each shelves.main as p (p.id)}
-          {@render row(p, perAvatar)}
-        {/each}
-      </section>
+      <Section id="avatars-own" title={perAvatar && groups.length ? "🎭 On their own" : "🎭 Your avatars"} open>
+        {#snippet extra()}<span class="pill">{shelves.main.length}</span>{/snippet}
+        <div class="list">
+          {#each shelves.main as p (p.id)}
+            {@render row(p, perAvatar)}
+          {/each}
+        </div>
+      </Section>
     {/if}
 
-    {#if shelves.older.length || shelves.other.length}
-      <section class="card folds">
-        {#if shelves.older.length}
-          <details>
-            <summary><strong>🕰 Older</strong> <span class="muted small">{shelves.older.length} not worn in 2 weeks</span></summary>
-            {#each shelves.older as p (p.id)}
-              {@render row(p, perAvatar)}
-            {/each}
-          </details>
-        {/if}
-        {#if shelves.other.length}
-          <details>
-            <summary><strong>🚫 Without the Pregnancy System</strong> <span class="muted small">{shelves.other.length}</span></summary>
-            <div class="row other-head">
-              <span class="hint grow">VRChat didn't show any <code>Pregnancy/</code> parameters on these. Only the 15 worn most recently are kept.</span>
-              <button class="small soft" onclick={removeWithout}>🗑 Remove all</button>
-            </div>
-            {#each shelves.other as p (p.id)}
-              {@render row(p, perAvatar)}
-            {/each}
-          </details>
-        {/if}
-      </section>
+    {#if shelves.older.length}
+      <Section id="avatars-older" title="🕰 Older">
+        {#snippet extra()}<span class="muted small">{shelves.older.length} not worn in 2 weeks</span>{/snippet}
+        <div class="list">
+          {#each shelves.older as p (p.id)}
+            {@render row(p, perAvatar)}
+          {/each}
+        </div>
+      </Section>
+    {/if}
+
+    {#if shelves.other.length}
+      <Section id="avatars-other" title="🚫 No Pregnancy System">
+        {#snippet extra()}<span class="pill">{shelves.other.length}</span>{/snippet}
+        <div class="row other-head">
+          <span class="hint grow">VRChat didn't show any <code>Pregnancy/</code> parameters on these. Only the 15 worn most recently are kept.</span>
+          <button class="small soft" onclick={removeWithout}>🗑 Remove all</button>
+        </div>
+        <div class="list">
+          {#each shelves.other as p (p.id)}
+            {@render row(p, perAvatar)}
+          {/each}
+        </div>
+      </Section>
     {/if}
   {/if}
 </div>
@@ -598,45 +645,114 @@
   .ghead {
     display: flex;
     align-items: center;
-    gap: 6px;
-  }
-  .ghead h2 {
-    margin: 0;
-  }
-  .group {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-  .status {
-    font-weight: 800;
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    flex-wrap: wrap;
-    margin: 4px 0;
-  }
-  .avatar {
-    border-top: 1.5px dashed var(--line);
-    padding: 10px 0;
-  }
-  :global(h2) + .avatar,
-  .status + .avatar,
-  summary + .avatar,
-  .other-head + .avatar {
-    border-top: none;
-  }
-  .edit {
-    margin-top: 10px;
-  }
-  .folds {
-    display: flex;
-    flex-direction: column;
     gap: 10px;
   }
-  .folds summary {
+  .gname {
+    font-size: 1.1rem;
+  }
+  .folders {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+    gap: 8px;
+  }
+  .folder {
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 10px 6px;
+    white-space: normal;
+    text-align: center;
+    background: var(--bg);
+    color: var(--text);
+    border: 2px solid transparent;
+    box-shadow: none;
+    border-radius: 18px;
+  }
+  .folder > :global(:first-child) {
+    margin-bottom: 4px;
+  }
+  .folder.on {
+    border-color: var(--accent);
+    background: var(--bg-3);
+  }
+  .fname-t {
+    font-size: 0.92rem;
+    overflow-wrap: anywhere;
+  }
+  .opened {
+    margin-top: 8px;
+    padding: 12px;
+    border-radius: 18px;
+    border: 2px solid var(--accent);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .opened .hint {
+    margin: 0;
+  }
+  .list > .avatar + .avatar {
+    border-top: 1.5px dashed var(--line);
+  }
+  .avatar {
+    padding: 4px 0;
+  }
+  .rowline {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .home {
+    flex-shrink: 0;
+  }
+  .rowbtn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
+    padding: 6px 4px;
+    margin: 0;
+    background: none;
+    border: none;
+    box-shadow: none;
+    color: inherit;
+    text-align: left;
+    white-space: normal;
+    font-weight: inherit;
+    border-radius: 14px;
     cursor: pointer;
-    padding: 2px 0;
+  }
+  .rowbtn:hover {
+    background: var(--bg-3);
+  }
+  .chevbtn {
+    padding: 6px 4px;
+    margin: 0;
+    background: none;
+    border: none;
+    box-shadow: none;
+    color: inherit;
+    cursor: pointer;
+  }
+  .rowbtn .grow {
+    min-width: 0;
+  }
+  .chev {
+    font-size: 1.4rem;
+    line-height: 1;
+    color: var(--muted);
+    transition: transform 0.15s;
+  }
+  .chev.open {
+    transform: rotate(90deg);
+  }
+  .edit {
+    margin: 6px 0 8px;
+    padding: 12px;
+    border-radius: 16px;
+    background: var(--bg);
+    box-shadow: 0 0 0 2px var(--line);
   }
   .chips {
     display: flex;

@@ -1,7 +1,11 @@
 <script lang="ts">
   import AvatarPic from "./AvatarPic.svelte";
+  import GroupPic from "./GroupPic.svelte";
+  import JournalList from "./JournalList.svelte";
+  import Modal from "./Modal.svelte";
+  import { journalFor } from "../lib/journal";
   import { app, homeAvatarId, currentPregnancy } from "../lib/app.svelte";
-  import { owner, ownerAvatar, ownerName, pregnancyIdOf } from "../lib/scope";
+  import { groupMembers, owner, ownerAvatar, ownerName, pregnancyIdOf } from "../lib/scope";
   import { babyWord, genderText } from "../lib/fertility";
   import { progress, humanDuration, TERM_WEEKS } from "../lib/timeline";
   import type { Pregnancy } from "../lib/types";
@@ -10,6 +14,8 @@
   const shown = $derived(currentPregnancy());
   let showPast = $state(false);
   let showAllPast = $state(false);
+  // The past pregnancy whose journal is open.
+  let reading = $state<Pregnancy | null>(null);
   /** Past pregnancies shown before "Show all". */
   const PAST_SHOWN = 5;
 
@@ -19,6 +25,12 @@
     return Object.values(d.avatars)
       .filter((a) => pregnancyIdOf(d, owner(d, a.id)) === p.id)
       .map((a) => a.name ?? "Unnamed avatar");
+  }
+
+  /** The group a pregnancy belongs to (per-avatar mode only). */
+  function groupOf(p: Pregnancy) {
+    if (d.settings.syncScope === "global") return undefined;
+    return Object.values(d.groups ?? {}).find((g) => g.pregnancyId === p.id);
   }
 
   function firstAvatarOf(p: Pregnancy): string | null {
@@ -50,11 +62,12 @@
         {@const pr = progress(p.timeline, app.now)}
         {@const on = avatarsOf(p)}
         {@const aid = firstAvatarOf(p)}
+        {@const g = groupOf(p)}
         <li>
-          {#if aid}<AvatarPic id={aid} size={42} />{:else}<span class="dot-pic" aria-hidden="true">🤰</span>{/if}
+          {#if g}<GroupPic ids={groupMembers(d, g.id)} size={42} />{:else if aid}<AvatarPic id={aid} size={42} />{:else}<span class="dot-pic" aria-hidden="true">🤰</span>{/if}
           <div class="grow">
             <div class="row top">
-              <strong>{on.length ? on.join(", ") : "Not on any avatar"}</strong>
+              <strong>{g ? `💞 ${g.name}` : on.length ? on.join(", ") : "Not on any avatar"}</strong>
               <span class="muted small">Week {Math.floor(pr * TERM_WEEKS)}</span>
             </div>
             <div class="bar"><div style="width:{Math.min(100, pr * 100)}%"></div></div>
@@ -65,10 +78,11 @@
       {/each}
       {#each waiting as w}
         {@const wa = ownerAvatar(d, w.avatarId)}
+        {@const wg = w.avatarId ? d.groups?.[w.avatarId] : undefined}
         <li>
-          {#if wa}<AvatarPic id={wa} size={42} />{:else}<span class="dot-pic" aria-hidden="true">💕</span>{/if}
+          {#if wg}<GroupPic ids={groupMembers(d, wg.id)} size={42} />{:else if wa}<AvatarPic id={wa} size={42} />{:else}<span class="dot-pic" aria-hidden="true">💕</span>{/if}
           <div class="grow">
-            <strong>{w.avatarId ? ownerName(d, w.avatarId) : "Your avatar"}</strong>
+            <strong>{wg ? "💞 " : ""}{w.avatarId ? ownerName(d, w.avatarId) : "Your avatar"}</strong>
             <div class="muted small">💕 WooHoo'd{w.partner.name ? ` with ${w.partner.name}` : ""} · find out in {humanDuration(Math.max(0, w.revealMs - app.now))}</div>
           </div>
           {#if wa}<button class="small soft" onclick={() => { app.viewAvatarId = wa === d.currentAvatarId ? null : wa; }}>Open</button>{/if}
@@ -89,6 +103,7 @@
                   {dateFmt.format(p.endedMs ?? 0)}{p.partner.name ? ` · with ${p.partner.name}` : ""}{p.born && d.settings.genderMode === "random" && p.genders.length ? ` · ${genderText(p.genders)}` : ""}
                 </div>
               </div>
+              <button class="small soft" onclick={() => (reading = p)}>📔 Journal</button>
             </li>
           {/each}
         </ul>
@@ -98,6 +113,15 @@
       {/if}
     {/if}
   </section>
+{/if}
+
+{#if reading}
+  {@const r = d.pregnancies.find((x) => x.id === reading?.id)}
+  {#if r}
+    <Modal title="📔 {r.born ? `${babyWord(r.babyCount).replace("!", "")} born` : "Ended early"} · {dateFmt.format(r.endedMs ?? 0)}" onclose={() => (reading = null)}>
+      <JournalList p={r} items={journalFor(d, r, app.now)} />
+    </Modal>
+  {/if}
 {/if}
 
 <style>

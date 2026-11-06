@@ -425,6 +425,8 @@ pub fn forget_person(data: &mut AppData, name: &str, user_id: Option<&str>) {
         _ => n == Some(name),
     };
     data.instance.forget(name, user_id);
+    let key = user_id.map(str::to_string).unwrap_or_else(|| name.trim().to_lowercase());
+    data.settings.pinned_partners.retain(|k| *k != key);
     if let Some(u) = user_id {
         data.species_answers.remove(u);
     }
@@ -482,6 +484,7 @@ pub fn reset_data(data: &mut AppData, kind: ResetKind) {
             data.fun_log.clear();
             data.instance.history.clear();
             data.species_answers.clear();
+            data.settings.pinned_partners.clear();
         }
         ResetKind::Achievements => {
             data.achievements.clear();
@@ -776,7 +779,9 @@ mod tests {
         let id = start_pregnancy(&mut d, NewPregnancy::default(), LATER);
         d.fun_log.push(FunEvent { time_ms: LATER, partner_name: Some("Fox".into()), partner_user_id: Some("usr_Fox".into()), ..Default::default() });
         d.fun_log.push(FunEvent { time_ms: LATER, partner_name: Some("Wolf".into()), ..Default::default() });
+        d.settings.pinned_partners = vec!["usr_Fox".into(), "wolf".into()];
         forget_person(&mut d, "Fox", Some("usr_Fox"));
+        assert_eq!(d.settings.pinned_partners, ["wolf"], "unpinned, others stay pinned");
         let p = d.pregnancy(&id).unwrap();
         assert!(p.partner.name.is_none());
         assert!(p.partner.candidates.is_empty());
@@ -792,8 +797,10 @@ mod tests {
         start_pregnancy(&mut d, NewPregnancy::default(), LATER);
         touch_avatar(&mut d, "avtr_a", 0);
         d.fun_log.push(FunEvent::default());
+        d.settings.pinned_partners.push("usr_x".into());
         reset_data(&mut d, ResetKind::Partners);
         assert!(d.fun_log.is_empty() && d.instance.history.is_empty());
+        assert!(d.settings.pinned_partners.is_empty(), "pins go with the partners");
         assert_eq!(d.pregnancies.len(), 1, "pregnancies kept");
         reset_data(&mut d, ResetKind::Pregnancies);
         assert!(d.pregnancies.is_empty() && d.active_pregnancy_id.is_none());

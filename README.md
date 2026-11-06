@@ -4,9 +4,19 @@ A small, cute desktop app that runs your avatar's pregnancy from outside VRChat:
 
 1. **Overrides the avatar's own counter.** The app writes the belly size over OSC, so it's in charge while it runs.
 2. **Speed and progress.** See the week, percent and time left. Pick real time, 1 day = 1 week, 1 hour = 1 week or a custom length. Pause, or jump to a week.
-3. **Partner.** If it was just the two of you in the instance, the app guesses them. Otherwise it lists who was in the instance at conception, and you pick (or type a name).
+3. **WooHoos and fertility.** A WooHoo in-game (SPS sockets) starts a wait to find out, with a fertility cycle deciding the odds. Twins and more can happen.
+4. **Partner.** If it was just the two of you in the instance, the app guesses them. Otherwise it lists who was in the instance at conception, and you pick (or type a name, or roll 🎲).
+5. **Movement.** Kicks on your avatar from week 16, and a chart of the last 24 hours, like a heart rate chart. Tap a bar to see that hour.
+6. **Journal.** A timeline of each pregnancy, with your own notes:
+   - Scans at weeks 8, 12, 20 and 36: made-up, toony and blurry (nobody can tell the species), each baby circled, with fake readouts like a real screen (your name, due date, weight, heart rate, girl or boy).
+   - Rare weeks bring surprises: a wave at the camera, a yawn, hiccups, a high five between twins, cravings.
+   - Moments from how you play: lots of kicks with your partner around (with their profile picture), late-night kicks, kicks in lots of worlds.
+   - Tap any picture to copy or save it.
+7. **Partners.** WooHoos, pregnancies and kids with each partner. Pin your favourites to the top, and see who you're pregnant with right now.
+8. **Avatars.** One pregnancy on every avatar, or one each. Put avatars in groups (shown like folders on a phone) to share a pregnancy.
+9. **Me.** Your stats and achievements, and a share card to show them off.
 
-That's it for now. More gets added step by step. Built but parked features (x-ray belly, species, Gene Lab, scans, journal, avatar profiles) are in [later/](later/README.md).
+That's it for now. More gets added step by step. Built but parked features (x-ray belly, species, Gene Lab, the old scans and journal pages) are in [later/](later/README.md).
 
 - **Stack:** Tauri 2 (Rust) + Svelte 5 + TypeScript
 - **Platforms:** Windows now; Linux and Flatpak ready (not tested on Linux yet)
@@ -15,24 +25,24 @@ The pregnancy is stored as a **start time**, never a current size, so it's right
 
 <table>
   <tr>
-    <td><img src="docs/screenshots/home.png" alt="Home: progress ring at week 26, due date, baby, kicks and partner" width="280"></td>
-    <td><img src="docs/screenshots/me.png" alt="Me: stats and achievements" width="280"></td>
-    <td><img src="docs/screenshots/partners.png" alt="Partners: WooHoos, pregnancies and kids per partner" width="280"></td>
+    <td><img src="docs/screenshots/home.png" alt="Home: twins at week 24, due date and the 24-hour kick chart" width="280"></td>
+    <td><img src="docs/screenshots/journal.png" alt="Journal: a note with a rare scan of a baby waving, a craving and the week 20 scan" width="280"></td>
+    <td><img src="docs/screenshots/partners.png" alt="Partners: a pinned partner and who you're pregnant with right now" width="280"></td>
   </tr>
   <tr>
     <td align="center"><b>Home</b></td>
-    <td align="center"><b>Me</b></td>
+    <td align="center"><b>Journal</b></td>
     <td align="center"><b>Partners</b></td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/avatars.png" alt="Avatars: one pregnancy for all avatars or one each" width="280"></td>
-    <td><img src="docs/screenshots/settings.png" alt="Settings: VRChat link, chatbox, WooHoo detection and more" width="280"></td>
-    <td></td>
+    <td><img src="docs/screenshots/avatars.png" alt="Avatars: groups shown as folders, one open with its avatars" width="280"></td>
+    <td><img src="docs/screenshots/me.png" alt="Me: stats and achievements" width="280"></td>
+    <td><img src="docs/screenshots/settings.png" alt="Settings: VRChat link, safety, chatbox, WooHoo detection and more" width="280"></td>
   </tr>
   <tr>
     <td align="center"><b>Avatars</b></td>
+    <td align="center"><b>Me</b></td>
     <td align="center"><b>Settings</b></td>
-    <td></td>
   </tr>
 </table>
 
@@ -118,7 +128,7 @@ app/
   crates/pregsys-osc/          OSC send/receive, OSCQuery advertise + discovery
   crates/belly-cli/            command-line tool to test OSC by hand
   src-tauri/                   the desktop app (engine loop, tray, autostart, SteamVR, commands)
-  src/                         the UI (Svelte): views/Main.svelte, views/Settings.svelte
+  src/                         the UI (Svelte): one view per tab in views/ (Home, Me, Partners, Avatars, Settings)
   later/                       parked features, ready to bring back
   packaging/flatpak/           Flatpak manifest, desktop file, metainfo
 ```
@@ -127,7 +137,7 @@ app/
 
 ```bash
 cargo test --workspace   # Rust: timeline, mapping, stage, driver, storage, log parser (+ Windows/Proton fixtures), OSC
-npm test                 # TypeScript: timeline
+npm test                 # TypeScript: timeline, journal, scans, kick chart, avatars, fertility
 npm run check            # type check the UI
 ```
 

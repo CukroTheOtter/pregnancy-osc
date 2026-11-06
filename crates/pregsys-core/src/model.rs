@@ -264,6 +264,9 @@ pub struct Settings {
     pub safety: crate::safety::SafetySettings,
     /// Detecting WooHoos from SPS sockets.
     pub sps: SpsSettings,
+    /// Partners pinned to the top of the Partners tab (their user ID, else
+    /// their name in lower case).
+    pub pinned_partners: Vec<String>,
     /// Hidden debug tools (tap the title 5 times).
     pub debug: bool,
     pub onboarded: bool,
@@ -319,6 +322,7 @@ impl Default for Settings {
             labor: Default::default(),
             safety: Default::default(),
             sps: SpsSettings::default(),
+            pinned_partners: Vec::new(),
             debug: false,
             onboarded: false,
         }
@@ -555,7 +559,7 @@ pub struct JournalEntry {
     pub id: String,
     pub time_ms: i64,
     pub pregnancy_id: Option<String>,
-    /// "note", "milestone", "reveal", "event"
+    /// "note", "milestone", "reveal", "event", "moment" (see `moments`)
     pub kind: String,
     pub title: String,
     pub text: String,
@@ -608,11 +612,15 @@ pub struct LaterTake {
 }
 
 /// One kick sent to the avatar.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub struct KickEvent {
     pub time_ms: i64,
     pub strength: KickStrength,
+    /// Your partner was in the instance (for journal moments).
+    pub partner_here: bool,
+    /// The world you were in.
+    pub world: Option<String>,
 }
 
 /// Kicks kept per pregnancy (enough for "today" and "last kick").

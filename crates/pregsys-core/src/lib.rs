@@ -12,6 +12,7 @@ pub mod logparse;
 pub mod logwatch;
 pub mod mapping;
 pub mod model;
+pub mod moments;
 pub mod movement;
 pub mod posture;
 pub mod refused;

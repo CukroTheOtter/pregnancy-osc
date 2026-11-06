@@ -74,6 +74,7 @@ export function defaultSettings(): Settings {
     labor: { start: "random", induceWeek: null, minutes: 20, waitsForPartner: false, woohooStarts: false, quietEarly: false, restingHolds: false },
     safety: { hideBellyIn: ["public", "groupPublic"], laborWaitsIn: ["public", "groupPublic"] },
     sps: { enabled: true, types: { vaginal: true, anal: false, oral: false, other: false }, depth: 0.3, seconds: 20, gapSeconds: 120 },
+    pinnedPartners: [],
     onboarded: false,
   };
 }

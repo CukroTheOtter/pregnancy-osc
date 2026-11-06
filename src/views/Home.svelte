@@ -9,6 +9,7 @@
   import MovementCard from "../components/MovementCard.svelte";
   import LaborCard from "../components/LaborCard.svelte";
   import FunHistory from "../components/FunHistory.svelte";
+  import JournalCard from "../components/JournalCard.svelte";
   import { app, currentPregnancy, currentPending, homeAvatarId, updatePregnancy, errorToast, toast, confirmAsk } from "../lib/app.svelte";
   import { api } from "../lib/api";
   import { avatarName, linkedGroup } from "../lib/scope";
@@ -131,7 +132,7 @@
   {#if viewingOther}
     <div class="viewing">
       <span>Viewing <strong>{avatarName(app.data!, aid)}</strong></span>
-      <button class="small soft" onclick={() => (app.viewAvatarId = null)}>Back to the one you're wearing</button>
+      <button class="small" onclick={() => (app.viewAvatarId = null)}>Back to the one you're wearing</button>
     </div>
   {/if}
 
@@ -218,6 +219,8 @@
     <MovementCard {p} />
 
     <PartnerCard {p} />
+
+    <JournalCard {p} />
 
     <section class="card">
       <h2>⏱ Length</h2>

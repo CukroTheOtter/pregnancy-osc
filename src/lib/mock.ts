@@ -5,7 +5,7 @@ import type { AppData, AvatarProfile, InstanceKind, JournalEntry, Keepsake, Mapp
 import { emptyData, baby, defaultSettings } from "./testdata";
 import { newTimeline, progress } from "./timeline";
 import { chance, cycleDay, cycleMs, graceMs } from "./fertility";
-import { groupMembers, owner, pendingFor, pregnancyFor, pregnancyIdOf } from "./scope";
+import { groupMembers, owner, pendingFor, personKey, pregnancyFor, pregnancyIdOf } from "./scope";
 import { socketCounts, typeOf } from "./sps";
 import { FIXED } from "./params";
 import { TEST_BUDDIES, isTestBuddy } from "./testbuddy";
@@ -469,6 +469,8 @@ export const mock = {
   async set_species_answer() {},
   async forget_person({ name, userId }: { name: string; userId: string | null }) {
     const same = (n: string | null, u: string | null) => (userId && u ? u === userId : n === name);
+    const key = personKey(name, userId);
+    data.settings.pinnedPartners = (data.settings.pinnedPartners ?? []).filter((k) => k !== key);
     data.instance.history = data.instance.history.filter((p) => !same(p.name, p.userId));
     data.funLog = data.funLog.filter((f) => !same(f.partnerName, f.partnerUserId));
     for (const p of data.pregnancies) {
@@ -496,9 +498,17 @@ export const mock = {
     return 0;
   },
   async save_journal_entry({ entry }: { entry: JournalEntry }) {
-    return entry;
+    const e = { ...entry, id: entry.id || `j_${Math.random().toString(36).slice(2, 10)}`, timeMs: entry.timeMs || Date.now() };
+    const i = data.journal.findIndex((j) => j.id === e.id);
+    if (i >= 0) data.journal[i] = e;
+    else data.journal.push(e);
+    changed();
+    return structuredClone(e);
   },
-  async delete_journal_entry() {},
+  async delete_journal_entry({ id }: { id: string }) {
+    data.journal = data.journal.filter((j) => j.id !== id);
+    changed();
+  },
   async add_keepsake({ keepsake }: { keepsake: Keepsake }) {
     return keepsake;
   },
@@ -523,6 +533,7 @@ export const mock = {
       data.funLog = [];
       data.instance.history = [];
       data.speciesAnswers = {};
+      data.settings.pinnedPartners = [];
     }
     if (kind === "achievements") Object.assign(data, { achievements: {}, testAchievements: [] });
     if (kind === "settings") data.settings = fresh.settings;

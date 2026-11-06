@@ -25,7 +25,8 @@
   import { app } from "../lib/app.svelte";
   import { api } from "../lib/api";
 
-  let { id, size = 46 }: { id: string; size?: number } = $props();
+  // `bare`: no ring and a smaller corner (the tiles inside a group folder).
+  let { id, size = 46, bare = false }: { id: string; size?: number; bare?: boolean } = $props();
 
   let src = $state<string | null>(null);
   const enabled = $derived(!!app.data?.settings.showPictures);
@@ -39,7 +40,7 @@
   });
 </script>
 
-<span class="pic" style="width:{size}px;height:{size}px;font-size:{size * 0.5}px" aria-hidden="true">
+<span class="pic" class:bare style="width:{size}px;height:{size}px;font-size:{size * 0.5}px" aria-hidden="true">
   {#if src}
     <img {src} alt="" />
   {:else}
@@ -56,6 +57,11 @@
     flex-shrink: 0;
     overflow: hidden;
     box-shadow: 0 0 0 2px var(--line);
+  }
+  .bare {
+    border-radius: 6px;
+    box-shadow: none;
+    background: var(--bg-2);
   }
   img {
     width: 100%;

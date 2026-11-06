@@ -1,11 +1,28 @@
 <script lang="ts" module>
+  import { api as moduleApi } from "../lib/api";
   // One fetch per person per session; the app also caches on disk.
   const cache = new Map<string, Promise<string | null>>();
+
+  /** Someone's VRChat profile picture as a data URL (null: none). Shared with the journal's polaroids. */
+  export function personPicture(userId: string): Promise<string | null> {
+    if (!cache.has(userId)) {
+      // Only a real picture is remembered: failures and "nothing yet" are
+      // retried next time (e.g. right after pictures are turned on).
+      const p = moduleApi
+        .partnerPicture(userId)
+        .catch(() => null)
+        .then((url) => {
+          if (!url) cache.delete(userId);
+          return url;
+        });
+      cache.set(userId, p);
+    }
+    return cache.get(userId)!;
+  }
 </script>
 
 <script lang="ts">
   import { app } from "../lib/app.svelte";
-  import { api } from "../lib/api";
   import { testBuddyPicture } from "../lib/testbuddy";
 
   let { name, userId = null, size = 46 }: { name: string; userId?: string | null; size?: number } = $props();
@@ -22,21 +39,8 @@
       return;
     }
     if (!enabled || !userId) return;
-    const id = userId;
-    if (!cache.has(id)) {
-      // Only a real picture is remembered: failures and "nothing yet" are
-      // retried next time (e.g. right after pictures are turned on).
-      const p = api
-        .partnerPicture(id)
-        .catch(() => null)
-        .then((url) => {
-          if (!url) cache.delete(id);
-          return url;
-        });
-      cache.set(id, p);
-    }
     let alive = true;
-    cache.get(id)!.then((url) => alive && (src = url));
+    personPicture(userId).then((url) => alive && (src = url));
     return () => (alive = false);
   });
 </script>
