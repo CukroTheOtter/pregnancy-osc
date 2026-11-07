@@ -11,7 +11,7 @@
   import { hasSystem, matches, seenText, shelfOf } from "../lib/avatars";
   import { progress, TERM_WEEKS } from "../lib/timeline";
   import { FEATURES, FIXED, PARAM_INFO, REQUIRED, hasParam, syncLabel } from "../lib/params";
-  import { HAPTICS_DISABLED, HOLE_TYPES, KNOWN_SPS_VERSION, socketCounts, socketsFrom, spsTooNew, spsVersion, typeOf } from "../lib/sps";
+  import { HAPTICS_DISABLED, HOLE_TYPES, socketCounts, socketsFrom, spsNewerText, spsTooNew, typeOf } from "../lib/sps";
   import type { HoleType } from "../lib/types";
   import type { AvatarGroup, AvatarProfile, Mapping, Settings } from "../lib/types";
 
@@ -341,7 +341,7 @@
         {/if}
 
         {#if spsTooNew(p.params)}
-          <span class="hint warn-text">⚠️ This avatar uses a newer SPS (version {spsVersion(p.params)}) than this app knows ({KNOWN_SPS_VERSION}), so WooHoo detection may not work on it. Check Settings > Updates for a newer app.</span>
+          <span class="hint warn-text">⚠️ This avatar uses {spsNewerText(p.params)}, so WooHoo detection may not work on it. Check Settings > Updates for a newer app.</span>
         {/if}
         {#if !socketsFrom(p.params).length}
           <details class="field fold">

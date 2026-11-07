@@ -12,7 +12,7 @@
   import { HEX } from "../lib/theme";
   import { api, inTauri, pickFolder, pickTextFile, saveTextFile } from "../lib/api";
   import { MULTIPLES_LABEL, graceMs, termMs } from "../lib/fertility";
-  import { HAPTICS_DISABLED, HOLE_TYPES, KNOWN_SPS_VERSION, spsTooNew, spsVersion } from "../lib/sps";
+  import { HAPTICS_DISABLED, HOLE_TYPES, spsNewerText, spsTooNew } from "../lib/sps";
   import { FEATURES, FIXED, PARAM_INFO, PARAM_ORDER, REQUIRED, SYNC_ROLES, hasParam, syncLabel } from "../lib/params";
   import { humanDuration, week as weekOf } from "../lib/timeline";
   import { pregnancyFor } from "../lib/scope";
@@ -554,7 +554,7 @@
       </div>
       <div class="soon">
         {#if worn && spsTooNew(worn.params)}
-          <span class="small cant">⚠️ The avatar you're wearing uses a newer SPS (version {spsVersion(worn.params)}) than this app knows ({KNOWN_SPS_VERSION}), so WooHoo detection may not work. Check Updates below for a newer app.</span>
+          <span class="small cant">⚠️ The avatar you're wearing uses {spsNewerText(worn.params)}, so WooHoo detection may not work. Check Updates below for a newer app.</span>
         {/if}
         {#if !status?.spsFound?.length}
           <span class="muted small">{!status?.vrchatRunning ? "Open VRChat to find the sockets on your avatar." : worn?.params.includes(HAPTICS_DISABLED) ? "VRCFury's haptics were off when the avatar you're wearing was uploaded, so its sockets can't be read. Turn on Tools > VRCFury > Settings > Enable SPS Haptics in Unity and upload again." : "No SPS sockets found on the avatar you're wearing. Sockets need VRCFury haptics turned on."}</span>

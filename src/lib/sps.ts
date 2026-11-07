@@ -9,17 +9,37 @@ const V3_PREFIX = "OGB/Socket/";
 const V3_CHANNEL = "DepthOthers";
 /** Newest `OGB/Version/<n>` this app understands (mirrors KNOWN_VERSION in sps.rs). */
 export const KNOWN_SPS_VERSION = 11;
-const VERSION_PREFIX = "OGB/Version/";
+/** Where the version has lived (`VFH/Version/9`, `/10` before SPS3); it can move again. */
+const VERSION_PREFIXES = ["OGB/Version/", "VFH/Version/"];
+/** Everything this app knows under `OGB/` (the device types OGB reads, and flags). */
+const KNOWN_OGB = ["Socket", "Orf", "Plug", "Pen", "Touch", "Version", "Enabled", "HapticsDisabled"];
 
 /** The avatar's SPS haptics version, if it says (older avatars don't). */
 export function spsVersion(params: string[]): number | null {
-  const found = params.filter((p) => p.startsWith(VERSION_PREFIX)).map((p) => Number(p.slice(VERSION_PREFIX.length))).filter(Number.isInteger);
+  const found: number[] = [];
+  for (const p of params) {
+    const pre = VERSION_PREFIXES.find((x) => p.startsWith(x));
+    const n = pre ? Number(p.slice(pre.length)) : NaN;
+    if (Number.isInteger(n) && n > 0) found.push(n);
+  }
   return found.length ? Math.max(...found) : null;
 }
 
-/** True when the avatar's SPS is newer than this app knows. */
+/** An `OGB/...` parameter this app doesn't know: a new SPS format or a renamed one. */
+export function unknownOgb(name: string): boolean {
+  return name.startsWith("OGB/") && !KNOWN_OGB.includes(name.slice(4).split("/")[0]);
+}
+
+/** True when the avatar's SPS looks newer than this app knows: a higher version,
+ *  or (in case the version moves again) unknown `OGB/` parameters and no sockets it can read. */
 export function spsTooNew(params: string[]): boolean {
-  return (spsVersion(params) ?? 0) > KNOWN_SPS_VERSION;
+  return (spsVersion(params) ?? 0) > KNOWN_SPS_VERSION || (!socketsFrom(params).length && params.some(unknownOgb));
+}
+
+/** "a newer SPS (version 12) than this app knows (11)", or without numbers when the version can't be read. */
+export function spsNewerText(params: string[]): string {
+  const v = spsVersion(params);
+  return v && v > KNOWN_SPS_VERSION ? `a newer SPS (version ${v}) than this app knows (${KNOWN_SPS_VERSION})` : "SPS parameters this app doesn't know yet (probably a newer SPS)";
 }
 
 /** On avatars uploaded with VRCFury's haptics off. */

@@ -25,16 +25,28 @@ pub const HAPTICS_DISABLED: &str = "OGB/HapticsDisabled";
 /// senders or receivers change). The newest one this app understands:
 /// a higher one means the app may need an update (keep `src/lib/sps.ts` in step).
 pub const KNOWN_VERSION: u32 = 11;
-const VERSION_PREFIX: &str = "OGB/Version/";
+/// Where the version has lived: `VFH/Version/9` and `/10` before SPS3.
+/// VRCFury's author: "it was VFH/Version before, so anything can change".
+const VERSION_PREFIXES: [&str; 2] = ["OGB/Version/", "VFH/Version/"];
+
+/// Everything this app knows under `OGB/` (the device types OGB reads, and flags).
+const KNOWN_OGB: [&str; 8] = ["Socket", "Orf", "Plug", "Pen", "Touch", "Version", "Enabled", "HapticsDisabled"];
 
 /// The avatar's SPS haptics version, if it says (older avatars don't).
 pub fn version(params: &[String]) -> Option<u32> {
-    params.iter().filter_map(|p| p.strip_prefix(VERSION_PREFIX)?.parse().ok()).max()
+    params.iter().filter_map(|p| VERSION_PREFIXES.iter().find_map(|pre| p.strip_prefix(pre)?.parse().ok())).max()
 }
 
-/// True when the avatar's SPS is newer than this app knows.
+/// An `OGB/...` parameter this app doesn't know: a new SPS format or a renamed one.
+pub fn unknown_ogb(name: &str) -> bool {
+    name.strip_prefix("OGB/").and_then(|r| r.split('/').next()).is_some_and(|kind| !KNOWN_OGB.contains(&kind))
+}
+
+/// True when the avatar's SPS looks newer than this app knows: a higher
+/// version, or (in case the version moves again) `OGB/` parameters the app
+/// doesn't know and no sockets it can read.
 pub fn newer_than_known(params: &[String]) -> bool {
-    version(params).is_some_and(|v| v > KNOWN_VERSION)
+    version(params).is_some_and(|v| v > KNOWN_VERSION) || (sockets(params).is_empty() && params.iter().any(|p| unknown_ogb(p)))
 }
 
 /// SPS3 sockets: `OGB/Socket/<socket>/<key>`.
@@ -412,6 +424,22 @@ mod tests {
         assert!(!newer_than_known(&names(&["OGB/Version/11"])));
         assert!(newer_than_known(&names(&["OGB/Version/12"])));
         assert!(!newer_than_known(&names(&["OGB/Version/x", "OGB/Orf/A/Version/9"])), "junk and old per-socket versions are ignored");
+        // The version's old home.
+        assert_eq!(version(&names(&["VFH/Version/10"])), Some(10));
+        assert!(newer_than_known(&names(&["VFH/Version/12"])));
+    }
+
+    #[test]
+    fn unknown_sps_parameters_look_newer() {
+        // A renamed socket type (or version) with nothing the app can read.
+        assert!(newer_than_known(&names(&["OGB/Hole/Front/Depth", "Pregnancy/Stage"])));
+        assert!(newer_than_known(&names(&["OGB/Release/12"])));
+        // Plugs and touch zones only: known, just no sockets.
+        assert!(!newer_than_known(&names(&["OGB/Plug/Toy/DepthOthers", "OGB/Touch/Hand/Others", "OGB/Pen/Old/PenOthers", "OGB/Enabled", "OGB/HapticsDisabled"])));
+        // Sockets it can read: no warning for extra unknown bits.
+        assert!(!newer_than_known(&names(&["OGB/Socket/A/DepthOthers", "OGB/Extra/Thing"])));
+        // No SPS at all, or the old enable flag.
+        assert!(!newer_than_known(&names(&["Pregnancy/Stage", "OGB_ENABLED"])));
     }
 
     #[test]
