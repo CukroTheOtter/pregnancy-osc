@@ -23,6 +23,8 @@ pub enum EngineCmd {
     Pulse(String, i64),
     /// Debug: pretend a WooHoo happened. `Some(roll)` forces the outcome.
     DebugWoohoo(Option<f64>),
+    /// Debug: end the SPS WooHoo session (the next one counts right away).
+    DebugNewSession,
     /// Debug: kick right now.
     DebugKick(pregsys_core::movement::KickStrength),
     /// Show the belly in this instance (Settings > Safety hides it here).
@@ -70,6 +72,8 @@ pub struct Status {
     pub sps_found: Vec<String>,
     pub sps_live: Vec<SocketLive>,
     pub sps_progress: f64,
+    /// A WooHoo that didn't start labor, and why (until another one can count).
+    pub woohoo_note: Option<String>,
     /// VRChat says you're AFK (labor waits).
     pub afk: bool,
     /// Standing up (not seated or lying down), for "resting holds off labor".

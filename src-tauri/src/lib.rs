@@ -253,6 +253,8 @@ pub fn run() {
             commands::debug_add_person,
             commands::debug_test_buddy,
             commands::debug_labor,
+            commands::debug_cancel_labor,
+            commands::debug_new_woohoo_session,
             commands::debug_set_babies,
             commands::debug_remove_person,
             commands::debug_picture,

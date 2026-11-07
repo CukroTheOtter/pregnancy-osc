@@ -62,6 +62,10 @@ export const RARE_SCANS: Record<ScanVariant, { emoji: string; title: string; tex
 /** Rare week rolls. */
 export const RARE_CHANCE = 1 / 6;
 export const CRAVING_CHANCE = 1 / 10;
+/** Cute scans per pregnancy (each kind only once: funny once, not twice). */
+export const MAX_RARE_SCANS = 2;
+/** Cravings per pregnancy. */
+export const MAX_CRAVINGS = 4;
 
 const FOODS = [
   ["🥒", "pickles"], ["🍦", "ice cream"], ["🍟", "fries"], ["🍫", "chocolate"], ["🍓", "strawberries"], ["🧀", "cheese"],
@@ -181,16 +185,23 @@ export function journalFor(d: AppData, p: Pregnancy, now: number): JournalItem[]
   }
 
   // Rare weeks: a cute scan, a craving. Each week rolls once (the same for this
-  // pregnancy every time), half way through the week.
+  // pregnancy every time), half way through the week. Each cute scan only
+  // once, and only a few of each, so they stay special.
   const skip = new Set<number>(SCAN_WEEKS);
+  const seen = new Set<ScanVariant>();
+  let cravings = 0;
   for (let w = 6; w + 0.5 <= Math.min(reached, TERM_WEEKS - 1); w++) {
     if (skip.has(w)) continue;
     const roll = rareRoll(p, w);
     if (!roll) continue;
     if (roll.scan) {
+      if (seen.has(roll.scan) || seen.size >= MAX_RARE_SCANS) continue;
+      seen.add(roll.scan);
       const info = RARE_SCANS[roll.scan];
       out.push({ key: `rare-${w}`, week: w + 0.5, timeMs: at(w + 0.5), emoji: info.emoji, title: info.title, text: info.text, rare: true, note: false, card: null, scan: { babies: p.babyCount, week: w, seed: seed + w * 7, variant: roll.scan } });
     } else if (roll.craving) {
+      if (cravings >= MAX_CRAVINGS) continue;
+      cravings++;
       const [a, b] = roll.craving.map((i) => FOODS[i]);
       // No picture: the foods' own emoji and what they are.
       out.push({ key: `craving-${w}`, week: w + 0.5, timeMs: at(w + 0.5), emoji: a[0], title: "Craving of the week", text: [a, b].map(([e, name]) => `${e} ${name[0].toUpperCase()}${name.slice(1)}`).join("\n"), note: false, scan: null, rare: true, card: null });

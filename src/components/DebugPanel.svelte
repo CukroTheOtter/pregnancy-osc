@@ -55,7 +55,14 @@
   }
 
   // Late on, a WooHoo while pregnant can start labor (Labor and birth setting).
-  const laborWoohoo = $derived(!!p && !p.labor && !!d.settings.labor.woohooStarts && progress(p.timeline, app.now) * TERM_WEEKS >= 37);
+  const pWeek = $derived(p ? progress(p.timeline, app.now) * TERM_WEEKS : 0);
+  const laborWoohoo = $derived(!!p && !p.labor && !!d.settings.labor.woohooStarts && pWeek >= 37);
+  // Same as woohoo_chance in pregsys-core/src/labor.rs.
+  const laborChance = $derived(pWeek < 37 ? 0 : Math.min(0.75, 0.25 + ((pWeek - 37) / 3) * 0.5));
+  // Why a WooHoo while pregnant can't start labor right now.
+  const noLaborWhy = $derived(
+    !p ? "" : p.labor ? "Already in labor" : !d.settings.labor.woohooStarts ? "\"A WooHoo can start labor\" is off (Settings > Labor)" : pWeek < 37 ? `Week ${Math.floor(pWeek)}: labor can start from week 37` : "",
+  );
 
   async function woohoo(outcome: boolean | null) {
     if (laborWoohoo) {
@@ -63,7 +70,7 @@
       return;
     }
     if (p) {
-      toast("Already pregnant", "End or finish this pregnancy first (a WooHoo is ignored while pregnant).", "info");
+      await run("WooHoo (already pregnant)", () => api.debugWoohoo(null));
       return;
     }
     await run(outcome === null ? "WooHoo (random)" : outcome ? "WooHoo (pregnant)" : "WooHoo (not this time)", () => api.debugWoohoo(outcome));
@@ -114,12 +121,18 @@
 
   <div class="group">
     <strong>💕 Pretend a WooHoo</strong>
-    <span class="muted small">{laborWoohoo ? "Week 37 or later: a WooHoo can start labor here (💕 starts it, 🤍 doesn't)." : p ? "You're pregnant on this avatar, so WooHoos are ignored." : w ? "Waiting already: another WooHoo is a second chance if the first didn't take." : "Uses who's in your instance right now for the partner guess."}</span>
+    <span class="muted small">{laborWoohoo ? `Week 37 or later: a WooHoo can start labor here (${Math.round(laborChance * 100)}% now). 🎲 rolls it, 💕 starts it, 🤍 doesn't. You get the same notification as in-game.` : p ? `${noLaborWhy}. A WooHoo goes in the history as "Already pregnant".` : w ? "Waiting already: another WooHoo is a second chance if the first didn't take." : "Uses who's in your instance right now for the partner guess."}</span>
     <div class="row">
-      <button class="small" onclick={() => woohoo(null)} disabled={!!p && !laborWoohoo}>🎲 Random</button>
-      <button class="small" onclick={() => woohoo(true)} disabled={!!p && !laborWoohoo}>💕 {laborWoohoo ? "Labor" : "Pregnant"}</button>
-      <button class="small soft" onclick={() => woohoo(false)} disabled={!!p && !laborWoohoo}>🤍 Not this time</button>
+      {#if p && !laborWoohoo}
+        <button class="small" onclick={() => woohoo(null)}>💕 WooHoo</button>
+      {:else}
+        <button class="small" onclick={() => woohoo(null)}>🎲 Random</button>
+        <button class="small" onclick={() => woohoo(true)}>💕 {laborWoohoo ? "Labor" : "Pregnant"}</button>
+        <button class="small soft" onclick={() => woohoo(false)}>🤍 Not this time</button>
+      {/if}
     </div>
+    <span class="muted small">Real SPS WooHoos count once per session: the next one needs {d.settings.sps.gapSeconds} s with nobody inside. {(st?.spsProgress ?? 0) >= 1 ? "This session has counted." : (st?.spsProgress ?? 0) > 0 ? `This session is ${Math.round((st?.spsProgress ?? 0) * 100)}% of the way.` : ""}</span>
+    <button class="small soft" style="align-self:flex-start" onclick={() => run("New WooHoo session", () => api.debugNewWoohooSession())}>🔄 New session now</button>
   </div>
 
   <div class="group">
@@ -212,14 +225,20 @@
   <div class="group">
     <strong>⏩ Labor</strong>
     <span class="muted small">
-      {#if !p}Not pregnant on this avatar.{:else if p.labor}In labor: {p.labor.phase === "early" ? "early" : p.labor.phase === "active" ? "water broke" : "pushing"}. Skips play out within a second, with the real events.{:else}Not in labor yet. Starting it here skips the week and avatar checks.{/if}
+      {#if !p}Not pregnant on this avatar.{:else if p.labor}In labor: {p.labor.phase === "early" ? "early" : p.labor.phase === "active" ? "water broke" : "pushing"}. Skips play out within a second, with the real events. Going back is quiet (back to early un-breaks the water).{:else}Not in labor yet (week {Math.floor(pWeek)}). Starting it here skips the week and avatar checks.{/if}
     </span>
     <div class="row">
       <button class="small" onclick={() => run("Labor started", () => api.debugLabor(null))} disabled={!p || !!p.labor}>🤰 Start labor</button>
+      <button class="small soft" onclick={() => run("Back a phase", () => api.debugLabor("prevPhase"))} disabled={!p?.labor}>⏮ Back a phase</button>
       <button class="small soft" onclick={() => run("+1 minute", () => api.debugLabor("minute"))} disabled={!p?.labor}>+1 min</button>
       <button class="small soft" onclick={() => run("Next phase", () => api.debugLabor("nextPhase"))} disabled={!p?.labor}>⏭ Next phase</button>
       <button class="small soft" onclick={() => run("Born", () => api.debugLabor("birth"))} disabled={!p?.labor}>🍼 Born now</button>
     </div>
+    <div class="row">
+      <button class="small soft" onclick={() => run("Labor cancelled", () => api.debugCancelLabor())} disabled={!p?.labor}>✖ Cancel labor</button>
+      <button class="small soft" onclick={() => { week = 37; jumpWeek(); }} disabled={!p}>📅 Week 37</button>
+    </div>
+    <span class="muted small">Cancelling keeps the pregnancy. Past its labor week (or Induce at), labor starts again on its own within a few minutes: jump to week 37 to test WooHoos.</span>
     {#if p?.labor && st?.laborPaused}<span class="small warn-text">Labor is paused right now, so skips wait until it runs again.</span>{/if}
   </div>
 

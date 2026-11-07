@@ -44,6 +44,17 @@
   const done = $derived(labor ? Math.min(1, ((viewingOther ? null : status?.laborElapsedMs) ?? labor.elapsedMs) / total) : 0);
   const leftMin = $derived(Math.max(1, Math.ceil(((1 - done) * total) / 60_000)));
 
+  // What started it (labor.rs Cause).
+  const CAUSE: Record<string, string> = {
+    due: "📅 Started because it was time",
+    induced: "📅 Induced",
+    up: "🚶 Started while you were up and about",
+    walking: "🚶 Started while you were walking around",
+    wooHoo: "💕 Started by a WooHoo",
+    you: "🤰 You started it",
+  };
+  const cause = $derived(labor?.cause ? (CAUSE[labor.cause] ?? "") : "");
+
   const title = $derived(
     !labor ? "" : labor.phase === "early" ? "🤰 Labor has started" : labor.phase === "active" ? "💦 Your water broke" : "💪 Almost there!",
   );
@@ -74,6 +85,7 @@
 {#if labor}
   <div class="labor">
     <strong>{title}</strong>
+    {#if cause}<span class="small muted">{cause}</span>{/if}
     {#if paused}
       <span class="small">⏸ Labor paused. {pausedWhy}</span>
     {:else if resting && labor.phase === "early"}
@@ -109,6 +121,7 @@
   {:else if isDue && waitingPartner}
     <span class="small muted">Ready when {partner} is here 💞</span>
   {/if}
+  {#if status?.woohooNote}<span class="small muted">💕 {status.woohooNote}</span>{/if}
   <button class="big" onclick={startLabor} disabled={busy}>Start labor 🤰</button>
 {:else if isDue}
   {#if status?.laborAvatar && !viewingOther}

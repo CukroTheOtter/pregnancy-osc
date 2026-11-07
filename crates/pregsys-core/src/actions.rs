@@ -90,8 +90,8 @@ pub enum FunOutcome {
     Started,
     /// Grace period: outcome hidden until later.
     Pending,
-    /// Already pregnant: nothing to do.
-    Ignored,
+    /// Already pregnant: kept in the history (and partner counts), nothing else.
+    AlreadyPregnant,
 }
 
 /// Someone from `candidates` at random. `roll` is a random number in [0, 1).
@@ -119,10 +119,21 @@ fn fun_partner(data: &AppData, now_ms: i64, roll: f64) -> Partner {
 
 /// In-game fun was detected. `roll` is a random number in [0, 1).
 pub fn record_fun(data: &mut AppData, now_ms: i64, roll: f64) -> FunOutcome {
-    if data.current_pregnancy(data.current_avatar_id.as_deref()).is_some() {
-        return FunOutcome::Ignored;
-    }
     let partner = fun_partner(data, now_ms, fertility::roll());
+    if data.current_pregnancy(data.current_avatar_id.as_deref()).is_some() {
+        // Not a try (no wait, no result), but it still happened.
+        data.fun_log.push(FunEvent {
+            time_ms: now_ms,
+            partner_name: partner.name,
+            partner_user_id: partner.user_id,
+            avatar_id: data.current_avatar_id.clone(),
+            world_name: data.instance.world_name.clone(),
+            already_pregnant: true,
+            test_buddies_here: crate::testbuddy::here(data),
+            ..Default::default()
+        });
+        return FunOutcome::AlreadyPregnant;
+    }
     data.fun_log.push(FunEvent {
         time_ms: now_ms,
         partner_name: partner.name.clone(),
@@ -132,6 +143,7 @@ pub fn record_fun(data: &mut AppData, now_ms: i64, roll: f64) -> FunOutcome {
         took: (!data.settings.fertility).then_some(true),
         wait_ms: None,
         test_buddies_here: crate::testbuddy::here(data),
+        already_pregnant: false,
     });
     if !data.settings.fertility {
         start_pregnancy(data, NewPregnancy { source: PregnancySource::Conception, partner: Some(partner), ..Default::default() }, now_ms);
@@ -1120,7 +1132,13 @@ mod tests {
         d.settings.fertility = false;
         assert_eq!(record_fun(&mut d, LATER, 0.5), FunOutcome::Started);
         assert!(d.current_pregnancy(None).is_some());
-        assert_eq!(record_fun(&mut d, LATER + 1, 0.0), FunOutcome::Ignored);
+        // Already pregnant: kept with its partner, but not a try.
+        assert_eq!(record_fun(&mut d, LATER + 1, 0.0), FunOutcome::AlreadyPregnant);
+        let f = d.fun_log.last().unwrap();
+        assert!(f.already_pregnant && f.took.is_none() && f.wait_ms.is_none());
+        assert_eq!(f.partner_name.as_deref(), Some("Fox"));
+        assert_eq!(d.fun_log.len(), 2);
+        assert!(d.waiting.is_empty());
     }
 
     #[test]

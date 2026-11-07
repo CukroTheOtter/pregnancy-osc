@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { partnerFunRows, personKey } from "./scope";
+import { funRows, partnerFunRows, personKey } from "./scope";
 import { emptyData } from "./testdata";
 import type { FunEvent, PendingConception } from "./types";
 
@@ -41,6 +41,23 @@ describe("partnerFunRows", () => {
     d.funLog = [fun(100, ember), fun(200, rex)];
     d.waiting = [{ timeMs: 100, funTimes: [100, 200] } as PendingConception];
     expect(partnerFunRows(d, key)).toEqual([{ timeMs: 100, worldName: "Cabin", avatarId: "avtr_a", count: 1, result: "waiting" }]);
+  });
+
+  it("lists WooHoos while already pregnant on their own", () => {
+    const d = emptyData();
+    d.funLog = [fun(100, ember, { waitMs: 100, took: true }), fun(500, ember, { alreadyPregnant: true }), fun(600, ember, { alreadyPregnant: true })];
+    expect(partnerFunRows(d, key).map((r) => [r.timeMs, r.result])).toEqual([
+      [600, "alreadyPregnant"],
+      [500, "alreadyPregnant"],
+      [100, "pregnant"],
+    ]);
+    // Nobody named: it only counts, it isn't listed.
+    d.funLog.push(fun(700, { partnerName: null, partnerUserId: null }, { alreadyPregnant: true }));
+    expect(funRows(d, null).map((r) => [r.timeMs, r.count, r.result])).toEqual([
+      [600, 1, "alreadyPregnant"],
+      [500, 1, "alreadyPregnant"],
+      [100, 1, "pregnant"],
+    ]);
   });
 
   it("skips WooHoos with nobody named", () => {

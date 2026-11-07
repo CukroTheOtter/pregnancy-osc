@@ -548,6 +548,28 @@ pub fn debug_labor(app: AppHandle, s: S, skip: Option<pregsys_core::labor::Skip>
     Ok(())
 }
 
+/// Debug: labor never happened on the pregnancy you're wearing (it goes on).
+#[tauri::command]
+pub fn debug_cancel_labor(app: AppHandle, s: S) -> R<()> {
+    let ok = {
+        let mut d = s.data.lock().unwrap();
+        let aid = d.current_avatar_id.clone();
+        let id = d.current_pregnancy_id(aid.as_deref()).ok_or("Not pregnant on this avatar.")?;
+        pregsys_core::labor::cancel(&mut d, &id)
+    };
+    if !ok {
+        return Err("Not in labor.".into());
+    }
+    changed(&app, &s, true);
+    Ok(())
+}
+
+/// Debug: end the SPS WooHoo session, so the next one counts without the quiet gap.
+#[tauri::command]
+pub fn debug_new_woohoo_session(s: S) {
+    s.send(EngineCmd::DebugNewSession);
+}
+
 /// Debug: how many babies (1 to 4), on the pregnancy you're wearing, or on
 /// the grace period if you're still waiting to find out.
 #[tauri::command]

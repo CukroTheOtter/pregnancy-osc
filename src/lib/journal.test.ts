@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { journalFor, parseScan, rareRoll, scanTag } from "./journal";
+import { journalFor, parseScan, rareRoll, scanTag, MAX_CRAVINGS, MAX_RARE_SCANS } from "./journal";
 import { emptyData, pregnancy } from "./testdata";
 import { DAY_MS } from "./timeline";
 
@@ -88,6 +88,21 @@ describe("journal", () => {
     const share = scans.length / (rolls.length * 28);
     expect(share).toBeGreaterThan(0.1);
     expect(share).toBeLessThan(0.25);
+  });
+
+  it("keeps cute scans and cravings special: each scan once, a few of each", () => {
+    const d = emptyData();
+    let anyCraving = false;
+    for (let i = 0; i < 200; i++) {
+      const items = journalFor(d, pregnancy({ id: `p${i}`, babyCount: 2 }), week(41));
+      const scans = items.filter((x) => x.scan?.variant).map((x) => x.scan!.variant);
+      const cravings = items.filter((x) => x.key.startsWith("craving-")).length;
+      expect(new Set(scans).size).toBe(scans.length);
+      expect(scans.length).toBeLessThanOrEqual(MAX_RARE_SCANS);
+      expect(cravings).toBeLessThanOrEqual(MAX_CRAVINGS);
+      anyCraving ||= cravings > 0;
+    }
+    expect(anyCraving).toBe(true);
   });
 
   it("turns saved moments into polaroids", () => {

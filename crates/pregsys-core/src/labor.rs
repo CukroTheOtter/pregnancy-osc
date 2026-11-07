@@ -99,6 +99,26 @@ impl Phase {
 /// `Pregnancy/Labor` while the belly goes down after the birth.
 pub const BORN_VALUE: i32 = 4;
 
+/// What started labor (shown on Home).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum Cause {
+    /// From before this was saved.
+    #[default]
+    Unknown,
+    /// Its time came (the labor week or the due date).
+    Due,
+    /// The Induce at week.
+    Induced,
+    /// "Resting holds off labor": it started while you were up.
+    Up,
+    /// The same, while walking around.
+    Walking,
+    WooHoo,
+    /// You started it (the app's button or the avatar's menu).
+    You,
+}
+
 /// Labor in progress (kept on the pregnancy after the birth, for achievements).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
@@ -114,6 +134,8 @@ pub struct Labor {
     pub paused: bool,
     /// The partner was here for the birth.
     pub partner_at_birth: bool,
+    /// What started it.
+    pub cause: Cause,
     /// When the last tick counted (not saved: after a restart counting starts fresh).
     #[serde(skip)]
     last_ms: Option<i64>,
@@ -261,22 +283,49 @@ pub fn woohoo_chance(week: f64) -> f64 {
     (0.25 + (week - EARLY_WEEK) / 3.0 * 0.5).min(0.75)
 }
 
+/// What a WooHoo while pregnant did about labor.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum WooHooLabor {
+    Started { water_first: bool },
+    /// Before week 37.
+    TooEarly,
+    /// The pregnancy is paused.
+    Paused,
+    /// Labor waits for the partner, who isn't here.
+    NoPartner,
+    /// The roll didn't come up (`chance` 0 to 1).
+    NotThisTime { chance: f64 },
+}
+
 /// A WooHoo while pregnant: starts labor if that's on, it's week 37 or
 /// later, the partner is here (if labor waits for them), and `roll`
 /// (random in [0, 1)) comes up. The caller checks the avatar can show
-/// labor. Returns whether the water broke first.
-pub fn woohoo(data: &mut AppData, preg_id: &str, now_ms: i64, roll: f64) -> Option<bool> {
+/// labor. None: the setting is off, or there's no pregnancy waiting for labor.
+pub fn woohoo(data: &mut AppData, preg_id: &str, now_ms: i64, roll: f64) -> Option<WooHooLabor> {
     if !data.settings.labor.woohoo_starts {
         return None;
     }
-    let p = data.pregnancy(preg_id).filter(|p| p.is_active() && p.labor.is_none() && !p.timeline.is_paused())?;
+    let p = data.pregnancy(preg_id).filter(|p| p.is_active() && p.labor.is_none())?;
+    if p.timeline.is_paused() {
+        return Some(WooHooLabor::Paused);
+    }
+    let week = p.timeline.week(now_ms);
+    if week < EARLY_WEEK {
+        return Some(WooHooLabor::TooEarly);
+    }
     if data.settings.labor.waits_for_partner && partner_here(data, p, now_ms) == Some(false) {
+        return Some(WooHooLabor::NoPartner);
+    }
+    let chance = woohoo_chance(week);
+    if roll >= chance {
+        return Some(WooHooLabor::NotThisTime { chance });
+    }
+    if !start(data, preg_id, now_ms) {
         return None;
     }
-    if roll >= woohoo_chance(p.timeline.week(now_ms)) {
-        return None;
-    }
-    start(data, preg_id, now_ms).then(|| data.pregnancy(preg_id).and_then(|p| p.labor.as_ref()).is_some_and(|l| l.water_first))
+    let l = data.pregnancy_mut(preg_id).and_then(|p| p.labor.as_mut())?;
+    l.cause = Cause::WooHoo;
+    Some(WooHooLabor::Started { water_first: l.water_first })
 }
 
 /// Starts labor now (the app's button or the avatar's Start button).
@@ -284,7 +333,7 @@ pub fn woohoo(data: &mut AppData, preg_id: &str, now_ms: i64, roll: f64) -> Opti
 pub fn start(data: &mut AppData, preg_id: &str, now_ms: i64) -> bool {
     let minutes = data.settings.labor.minutes;
     let Some(p) = data.pregnancy_mut(preg_id).filter(|p| p.is_active() && p.labor.is_none()) else { return false };
-    p.labor = Some(Labor::new(water_first(p), minutes, now_ms));
+    p.labor = Some(Labor { cause: Cause::You, ..Labor::new(water_first(p), minutes, now_ms) });
     true
 }
 
@@ -299,9 +348,12 @@ pub enum Skip {
     NextPhase,
     /// Straight to the birth.
     Birth,
+    /// Back to the start of the phase before (early labor: back to its start).
+    /// Takes effect right away; going back to early labor un-breaks the water.
+    PrevPhase,
 }
 
-/// Debug: moves labor on a pregnancy along. False if it isn't in labor.
+/// Debug: moves labor on a pregnancy along (or back). False if it isn't in labor.
 pub fn skip(data: &mut AppData, preg_id: &str, how: Skip) -> bool {
     let minutes = data.settings.labor.minutes;
     let Some(l) = data.pregnancy_mut(preg_id).filter(|p| p.is_active()).and_then(|p| p.labor.as_mut()) else { return false };
@@ -310,8 +362,31 @@ pub fn skip(data: &mut AppData, preg_id: &str, how: Skip) -> bool {
         Skip::Minute => l.elapsed_ms + 60_000,
         Skip::NextPhase => ends.into_iter().find(|&e| e > l.elapsed_ms).unwrap_or(ends[2]),
         Skip::Birth => ends[2],
+        Skip::PrevPhase => {
+            let starts = [0, ends[0], ends[1]];
+            let i: usize = match l.phase {
+                Phase::Early => 0,
+                Phase::Active => 1,
+                Phase::Pushing => 2,
+            };
+            starts[i.saturating_sub(1)]
+        }
     }
     .min(ends[2]);
+    if how == Skip::PrevPhase {
+        // The tick only moves phases forward: set it here.
+        l.phase = phase_at(l.elapsed_ms, minutes);
+        if l.phase == Phase::Early {
+            l.water_broke_ms = None;
+        }
+    }
+    true
+}
+
+/// Debug: labor never happened (the pregnancy goes on). False if it isn't in labor.
+pub fn cancel(data: &mut AppData, preg_id: &str) -> bool {
+    let Some(p) = data.pregnancy_mut(preg_id).filter(|p| p.is_active() && p.labor.is_some()) else { return false };
+    p.labor = None;
     true
 }
 
@@ -393,7 +468,8 @@ impl Watch {
                 let chance = if ctx.moving { WALKING_START_PER_SEC } else { UP_START_PER_SEC };
                 if ctx.up && roll < chance {
                     let wf = water_first(p);
-                    p.labor = Some(Labor::new(wf, minutes, now_ms));
+                    let cause = if ctx.moving { Cause::Walking } else { Cause::Up };
+                    p.labor = Some(Labor { cause, ..Labor::new(wf, minutes, now_ms) });
                     out.push(Event::Started { water_first: wf });
                 }
                 return out;
@@ -410,7 +486,10 @@ impl Watch {
             if now_ms >= at {
                 self.ready_at = None;
                 let wf = water_first(p);
-                p.labor = Some(Labor::new(wf, minutes, now_ms));
+                // Due without the Induce at week: its time came; otherwise induced.
+                let by_start = due(p, &LaborSettings { induce_week: None, ..s.clone() }, now_ms);
+                let cause = if by_start { Cause::Due } else { Cause::Induced };
+                p.labor = Some(Labor { cause, ..Labor::new(wf, minutes, now_ms) });
                 out.push(Event::Started { water_first: wf });
             }
             return out;
@@ -615,9 +694,11 @@ mod tests {
         let w38 = T0 + 38 * 7 * DAY_MS;
         assert_eq!(woohoo(&mut d, "p", w38, 0.0), None, "off by default");
         d.settings.labor.woohoo_starts = true;
-        assert_eq!(woohoo(&mut d, "p", T0 + 30 * 7 * DAY_MS, 0.0), None, "too early");
-        assert_eq!(woohoo(&mut d, "p", w38, 0.9), None, "unlucky roll");
-        assert!(woohoo(&mut d, "p", w38, 0.1).is_some());
+        assert_eq!(woohoo(&mut d, "p", T0 + 30 * 7 * DAY_MS, 0.0), Some(WooHooLabor::TooEarly));
+        assert!(matches!(woohoo(&mut d, "p", w38, 0.9), Some(WooHooLabor::NotThisTime { .. })), "unlucky roll");
+        assert!(d.pregnancies[0].labor.is_none());
+        assert!(matches!(woohoo(&mut d, "p", w38, 0.1), Some(WooHooLabor::Started { .. })));
+        assert_eq!(d.pregnancies[0].labor.as_ref().unwrap().cause, Cause::WooHoo);
         assert!(d.pregnancies[0].labor.is_some());
         assert_eq!(woohoo(&mut d, "p", w38, 0.1), None, "already in labor");
     }
@@ -629,9 +710,9 @@ mod tests {
         d.settings.labor.woohoo_starts = true;
         d.settings.labor.waits_for_partner = true;
         let w38 = T0 + 38 * 7 * DAY_MS;
-        assert_eq!(woohoo(&mut d, "p", w38, 0.0), None, "Fox isn't here");
+        assert_eq!(woohoo(&mut d, "p", w38, 0.0), Some(WooHooLabor::NoPartner), "Fox isn't here");
         d.instance.present.push(fox(w38));
-        assert!(woohoo(&mut d, "p", w38, 0.0).is_some());
+        assert!(matches!(woohoo(&mut d, "p", w38, 0.0), Some(WooHooLabor::Started { .. })));
     }
 
     #[test]
@@ -669,6 +750,29 @@ mod tests {
         let resting = Ctx { up: false, ..ready() };
         let ev = run(&mut w, &mut d, &resting, T0 + 42 * 7 * DAY_MS, 400);
         assert!(matches!(ev.first(), Some(Event::Started { .. })));
+        assert_eq!(d.pregnancies[0].labor.as_ref().unwrap().cause, Cause::Induced);
+    }
+
+    #[test]
+    fn labor_remembers_what_started_it() {
+        let due_ms = T0 + 43 * 7 * DAY_MS;
+        // Its time came.
+        let mut d = data();
+        let mut w = Watch::default();
+        run(&mut w, &mut d, &ready(), due_ms, 400);
+        assert_eq!(d.pregnancies[0].labor.as_ref().unwrap().cause, Cause::Due);
+        // Up and about, then walking, with resting holding it off.
+        for (moving, cause) in [(false, Cause::Up), (true, Cause::Walking)] {
+            let mut d = data();
+            d.settings.labor.resting_holds = true;
+            let mut w = Watch::default();
+            w.tick(&mut d, &Ctx { moving, ..ready() }, due_ms, 0.0);
+            assert_eq!(d.pregnancies[0].labor.as_ref().unwrap().cause, cause);
+        }
+        // You.
+        let mut d = data();
+        start(&mut d, "p", T0);
+        assert_eq!(d.pregnancies[0].labor.as_ref().unwrap().cause, Cause::You);
     }
 
     #[test]
@@ -698,6 +802,35 @@ mod tests {
         skip(&mut d, "p", Skip::Birth);
         assert!(matches!(w.tick(&mut d, &ready(), T0 + 3000, 0.0).as_slice(), [Event::Born { .. }]));
         assert!(d.pregnancies[0].born);
+    }
+
+    #[test]
+    fn debug_can_go_back_a_phase_or_cancel_labor() {
+        let mut d = data();
+        let mut w = Watch::default();
+        assert!(!cancel(&mut d, "p"), "not in labor");
+        start(&mut d, "p", T0);
+        d.pregnancies[0].labor = Some(Labor::new(false, 20, T0));
+        w.tick(&mut d, &ready(), T0, 0.0);
+        skip(&mut d, "p", Skip::NextPhase);
+        skip(&mut d, "p", Skip::NextPhase);
+        w.tick(&mut d, &ready(), T0 + 1000, 0.0);
+        let l = || d.pregnancies[0].labor.clone().unwrap();
+        assert_eq!(l().phase, Phase::Pushing);
+        // Back to active, then early: the water un-breaks, and breaks again going forward.
+        let mut d2 = d.clone();
+        skip(&mut d2, "p", Skip::PrevPhase);
+        assert_eq!(d2.pregnancies[0].labor.as_ref().unwrap().phase, Phase::Active);
+        skip(&mut d2, "p", Skip::PrevPhase);
+        let back = d2.pregnancies[0].labor.clone().unwrap();
+        assert_eq!((back.phase, back.elapsed_ms, back.water_broke_ms), (Phase::Early, 0, None));
+        skip(&mut d2, "p", Skip::PrevPhase);
+        assert_eq!(d2.pregnancies[0].labor.as_ref().unwrap().elapsed_ms, 0, "early stays at its start");
+        skip(&mut d2, "p", Skip::NextPhase);
+        assert_eq!(w.tick(&mut d2, &ready(), T0 + 2000, 0.0), vec![Event::WaterBroke]);
+        // Cancel: the pregnancy goes on with no labor.
+        assert!(cancel(&mut d, "p"));
+        assert!(d.pregnancies[0].labor.is_none() && d.pregnancies[0].is_active());
     }
 
     #[test]

@@ -101,7 +101,7 @@ export interface PartnerFunRow {
   /** WooHoos with them in that wait. */
   count: number;
   /** "pregnant" only if it was them; "unknown" for WooHoos from before results were saved. */
-  result: "waiting" | "pregnant" | "notPregnant" | "unknown";
+  result: "waiting" | "pregnant" | "notPregnant" | "alreadyPregnant" | "unknown";
 }
 
 /**
@@ -116,8 +116,8 @@ export function partnerFunRows(d: AppData, partnerKey: string): PartnerFunRow[] 
   for (const f of d.funLog) {
     const w = waitOf(f);
     const wait = w ? Math.min(w.timeMs, ...(w.funTimes ?? [])) : (f.waitMs ?? (f.took != null ? f.timeMs : null));
-    // Old WooHoos with no wait saved: one row each.
-    const key = wait != null ? `w${wait}` : `f${f.timeMs}`;
+    // Old WooHoos with no wait saved, and ones while already pregnant: one row each.
+    const key = f.alreadyPregnant ? `p${f.timeMs}` : wait != null ? `w${wait}` : `f${f.timeMs}`;
     groups.set(key, [...(groups.get(key) ?? []), f]);
   }
   const out: PartnerFunRow[] = [];
@@ -131,7 +131,7 @@ export function partnerFunRows(d: AppData, partnerKey: string): PartnerFunRow[] 
       worldName: mine[0].worldName,
       avatarId: mine[0].avatarId,
       count: mine.length,
-      result: list.some(waitOf) ? "waiting" : took ? (theirs(took) ? "pregnant" : "notPregnant") : known ? "notPregnant" : "unknown",
+      result: list[0].alreadyPregnant ? "alreadyPregnant" : list.some(waitOf) ? "waiting" : took ? (theirs(took) ? "pregnant" : "notPregnant") : known ? "notPregnant" : "unknown",
     });
   }
   return out.sort((a, b) => b.timeMs - a.timeMs);
@@ -144,24 +144,28 @@ export interface FunRow {
   partnerName: string | null;
   partnerUserId: string | null;
   count: number;
-  result: "waiting" | "pregnant" | "notPregnant";
+  result: "waiting" | "pregnant" | "notPregnant" | "alreadyPregnant";
 }
 
 /**
  * This avatar's history (its group's, sharing one pregnancy), newest first:
- * one row per wait, since a wait has one result. WooHoos from before results
- * were saved have none, so they aren't listed.
+ * one row per wait, since a wait has one result, and one per WooHoo while
+ * already pregnant with someone named. WooHoos from before results were saved
+ * have none, so they aren't listed.
  */
 export function funRows(d: AppData, avatarId: string | null): FunRow[] {
   const mine = (f: FunEvent) => {
     if (!avatarId) return true;
     return d.settings.syncScope === "global" ? f.avatarId === avatarId : !!f.avatarId && owner(d, f.avatarId) === owner(d, avatarId);
   };
-  const waits = new Map<number, FunEvent[]>();
+  const waits = new Map<string, FunEvent[]>();
   const waitOf = (f: FunEvent) => d.waiting.find((w) => w.timeMs === f.timeMs || w.funTimes?.includes(f.timeMs));
   for (const f of d.funLog) {
+    // Already pregnant with nobody named: there's no picking who, so it only counts (Me), never listed.
+    if (f.alreadyPregnant && !f.partnerName) continue;
     const w = waitOf(f);
-    const key = w ? Math.min(w.timeMs, ...(w.funTimes ?? [])) : (f.waitMs ?? (f.took != null ? f.timeMs : null));
+    const wait = w ? Math.min(w.timeMs, ...(w.funTimes ?? [])) : (f.waitMs ?? (f.took != null ? f.timeMs : null));
+    const key = f.alreadyPregnant ? `p${f.timeMs}` : wait != null ? `w${wait}` : null;
     if (key != null) waits.set(key, [...(waits.get(key) ?? []), f]);
   }
   return [...waits.values()]
@@ -175,7 +179,7 @@ export function funRows(d: AppData, avatarId: string | null): FunRow[] {
         partnerName: (took ?? fs.find((f) => f.partnerName))?.partnerName ?? null,
         partnerUserId: (took ?? fs.find((f) => f.partnerName))?.partnerUserId ?? null,
         count: fs.length,
-        result: fs.some(waitOf) ? ("waiting" as const) : took ? ("pregnant" as const) : ("notPregnant" as const),
+        result: fs[0].alreadyPregnant ? ("alreadyPregnant" as const) : fs.some(waitOf) ? ("waiting" as const) : took ? ("pregnant" as const) : ("notPregnant" as const),
       };
     })
     .sort((a, b) => b.timeMs - a.timeMs);

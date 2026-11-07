@@ -85,8 +85,12 @@ export const api = {
   debugRevealNow: () => call<void>("debug_reveal_now"),
   /** Debug: add Test Buddy, or remove them and everything they touched. */
   debugTestBuddy: (index: number, on: boolean) => call<void>("debug_test_buddy", { index, on }),
-  /** Debug: start labor (null) or move it along. */
-  debugLabor: (skip: "minute" | "nextPhase" | "birth" | null) => call<void>("debug_labor", { skip }),
+  /** Debug: start labor (null), move it along, or back a phase. */
+  debugLabor: (skip: "minute" | "nextPhase" | "birth" | "prevPhase" | null) => call<void>("debug_labor", { skip }),
+  /** Debug: labor never happened (the pregnancy goes on). */
+  debugCancelLabor: () => call<void>("debug_cancel_labor"),
+  /** Debug: end the SPS WooHoo session, so the next one counts right away. */
+  debugNewWoohooSession: () => call<void>("debug_new_woohoo_session"),
   /** Debug: how many babies (1 to 4) on this pregnancy or grace period. */
   debugSetBabies: (count: number) => call<void>("debug_set_babies", { count }),
   debugKick: (strength: import("./types").KickStrength) => call<void>("debug_kick", { strength }),

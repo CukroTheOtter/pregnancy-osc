@@ -15,6 +15,9 @@ pub const PARTNER_KICKS: usize = 5;
 pub const WORLDS: usize = 4;
 /// Kicks between midnight and 5 am, in one week.
 pub const NIGHT_KICKS: usize = 5;
+/// The same moment isn't saved again (for another pregnancy) this soon: once
+/// is cute, every short pregnancy is spam.
+pub const AGAIN_AFTER_MS: i64 = 14 * 24 * 3_600_000;
 
 /// The hour on this PC's clock (0 to 23) at a time.
 pub fn local_hour(t_ms: i64) -> u32 {
@@ -40,7 +43,7 @@ pub fn check(data: &mut AppData, preg_id: &str, now_ms: i64, local_hour: impl Fn
     ];
     let mut added = vec![];
     for (id, yes) in found {
-        let had = data.journal.iter().any(|j| j.kind == KIND && j.title == id && j.pregnancy_id.as_deref() == Some(preg_id));
+        let had = data.journal.iter().any(|j| j.kind == KIND && j.title == id && (j.pregnancy_id.as_deref() == Some(preg_id) || now_ms - j.time_ms < AGAIN_AFTER_MS));
         if yes && !had {
             data.journal.push(JournalEntry {
                 id: new_id("j"),
@@ -85,6 +88,31 @@ mod tests {
         let travel = d.journal.iter().find(|j| j.title == "well-travelled").unwrap();
         assert_eq!(travel.text, "4");
         assert_eq!(check(&mut d, &id, now, |_| 3), vec!["night-owl"]);
+    }
+
+    #[test]
+    fn not_again_for_another_pregnancy_too_soon() {
+        let mut d = AppData::new();
+        let first = start_pregnancy(&mut d, NewPregnancy::default(), T);
+        let now = T + 10 * HOUR;
+        for i in 0..5 {
+            d.pregnancy_mut(&first).unwrap().kicks.push(kick(now - i * 60_000, true, "A"));
+        }
+        assert_eq!(check(&mut d, &first, now, |_| 14), vec!["partner-kicks"]);
+        // A new pregnancy a day later: not again yet.
+        let later = now + 24 * HOUR;
+        let second = start_pregnancy(&mut d, NewPregnancy::default(), later - HOUR);
+        for i in 0..5 {
+            d.pregnancy_mut(&second).unwrap().kicks.push(kick(later - i * 60_000, true, "A"));
+        }
+        assert!(check(&mut d, &second, later, |_| 14).is_empty());
+        // Two weeks on, it can come back.
+        let much_later = now + AGAIN_AFTER_MS;
+        let third = start_pregnancy(&mut d, NewPregnancy::default(), much_later - HOUR);
+        for i in 0..5 {
+            d.pregnancy_mut(&third).unwrap().kicks.push(kick(much_later - i * 60_000, true, "A"));
+        }
+        assert_eq!(check(&mut d, &third, much_later, |_| 14), vec!["partner-kicks"]);
     }
 
     #[test]

@@ -7,7 +7,7 @@
 
   let { avatarId }: { avatarId: string | null } = $props();
 
-  const LABEL = { waiting: "⏳ Waiting", pregnant: "🤰 Pregnant", notPregnant: "🤍 Not this time" };
+  const LABEL = { waiting: "⏳ Waiting", pregnant: "🤰 Pregnant", notPregnant: "🤍 Not this time", alreadyPregnant: "🤰 Already pregnant" };
   const rows = $derived(app.data ? funRows(app.data, avatarId) : []);
   const fmt = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 </script>

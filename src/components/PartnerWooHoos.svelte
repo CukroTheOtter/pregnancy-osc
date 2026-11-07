@@ -5,7 +5,7 @@
 
   let { partnerKey }: { partnerKey: string } = $props();
 
-  const LABEL = { waiting: "⏳ Waiting", pregnant: "🤰 Pregnant", notPregnant: "🤍 Not this time", unknown: "" };
+  const LABEL = { waiting: "⏳ Waiting", pregnant: "🤰 Pregnant", notPregnant: "🤍 Not this time", alreadyPregnant: "🤰 Already pregnant", unknown: "" };
   const d = $derived(app.data!);
   const rows = $derived(partnerFunRows(d, partnerKey));
   const perAvatar = $derived(d.settings.syncScope === "perAvatar");

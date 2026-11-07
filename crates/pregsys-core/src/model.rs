@@ -649,6 +649,8 @@ pub struct FunEvent {
     /// Debug: test buddies in the instance then. A WooHoo with nobody named
     /// goes when they do (see `testbuddy`).
     pub test_buddies_here: Vec<String>,
+    /// While already pregnant: not a try, so never part of a wait or a result.
+    pub already_pregnant: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]

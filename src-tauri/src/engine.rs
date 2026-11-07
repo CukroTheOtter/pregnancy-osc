@@ -87,6 +87,8 @@ struct Engine {
     /// The pregnancy whose labor start was announced (chatbox, notification),
     /// so a start from a button gets the same messages as one on its own.
     labor_announced: Option<String>,
+    /// A WooHoo late in a pregnancy that didn't start labor: why, and when (shown on Home).
+    woohoo_note: Option<(String, i64)>,
     /// VRChat's built-in AFK parameter (labor waits while it's on).
     afk: bool,
     /// VRChat's built-in posture values: Upright (None until heard), Seated,
@@ -193,6 +195,7 @@ impl Engine {
             last_snap_note: None,
             labor: Default::default(),
             labor_announced: None,
+            woohoo_note: None,
             afk: false,
             posture: Posture::default(),
             last_params_fill: past,
@@ -225,6 +228,11 @@ impl Engine {
                 Ok(EngineCmd::DebugWoohoo(roll)) => {
                     self.trace.note("command", &format!("Debug WooHoo (roll {roll:?})"));
                     self.woohoo(now_ms(), roll);
+                }
+                Ok(EngineCmd::DebugNewSession) => {
+                    self.trace.note("command", "Debug: new WooHoo session");
+                    self.sps.end_session();
+                    self.woohoo_note = None;
                 }
                 Ok(EngineCmd::DebugKick(s)) => {
                     self.trace.note("command", &format!("Debug kick: {s:?}"));
@@ -925,19 +933,50 @@ impl Engine {
     /// A WooHoo (from SPS sockets or debug). `roll` forces the outcome.
     fn woohoo(&mut self, now: i64, roll: Option<f64>) {
         // Late in a pregnancy it can start labor (if that's on), on an avatar that can show it.
+        use pregsys_core::labor::WooHooLabor;
         let ctx = self.labor_ctx();
-        if ctx.linked && ctx.avatar_ready && ctx.supports && !ctx.afk && !ctx.held_here {
-            let started = {
+        let gap_s = self.shared.data.lock().unwrap().settings.sps.gap_seconds;
+        let gap_minutes = if gap_s % 60 == 0 { format!("{}-minute", gap_s / 60) } else { format!("{gap_s}-second") };
+        let held = if !ctx.supports {
+            Some("WooHoo noticed, but this avatar can't show labor.")
+        } else if ctx.held_here {
+            Some("WooHoo noticed, but labor is held off in this instance.")
+        } else if ctx.afk {
+            Some("WooHoo noticed, but you're AFK.")
+        } else {
+            None
+        };
+        let mut labor_started = None;
+        let mut labor_note = None;
+        if ctx.linked && ctx.avatar_ready {
+            let result = {
                 let mut d = self.shared.data.lock().unwrap();
                 let id = d.current_pregnancy_id(self.driver.avatar_id());
-                id.and_then(|id| pregsys_core::labor::woohoo(&mut d, &id, now, roll.unwrap_or_else(pregsys_core::fertility::roll)))
+                match held {
+                    // Only worth saying when the WooHoo could have started labor.
+                    Some(why) => id
+                        .filter(|id| d.settings.labor.woohoo_starts && d.pregnancy(id).is_some_and(|p| p.is_active() && p.labor.is_none()))
+                        .map(|_| Err(why)),
+                    None => id.and_then(|id| pregsys_core::labor::woohoo(&mut d, &id, now, roll.unwrap_or_else(pregsys_core::fertility::roll))).map(Ok),
+                }
             };
-            if let Some(water_first) = started {
-                self.chat("woohoo", Vars::default());
-                self.labor_events(vec![pregsys_core::labor::Event::Started { water_first }], now);
-                return;
-            }
+            self.trace.note("woohoo labor", &format!("{result:?}"));
+            labor_note = match result {
+                Some(Ok(WooHooLabor::Started { water_first })) => {
+                    labor_started = Some(water_first);
+                    None
+                }
+                Some(Ok(WooHooLabor::NotThisTime { chance })) => {
+                    Some(format!("WooHoo noticed, but labor didn't start ({}% chance). Next try after a {gap_minutes} break.", (chance * 100.0).round()))
+                }
+                Some(Ok(WooHooLabor::TooEarly)) => None,
+                Some(Ok(WooHooLabor::Paused)) => Some("WooHoo noticed, but the pregnancy is paused.".to_string()),
+                Some(Ok(WooHooLabor::NoPartner)) => Some("WooHoo noticed, but labor waits for your partner.".to_string()),
+                Some(Err(why)) => Some(why.to_string()),
+                None => None,
+            };
         }
+        // Every WooHoo goes in the history (while pregnant too, marked "Already pregnant").
         let outcome = {
             let mut d = self.shared.data.lock().unwrap();
             actions::record_fun(&mut d, now, roll.unwrap_or_else(pregsys_core::fertility::roll))
@@ -946,9 +985,15 @@ impl Engine {
         self.shared.mark_dirty();
         self.driver.resync();
         let _ = self.app.emit("data-changed", ());
-        if outcome != actions::FunOutcome::Ignored {
+        if outcome != actions::FunOutcome::AlreadyPregnant || labor_started.is_some() {
             self.chat("woohoo", Vars::default());
         }
+        if let Some(water_first) = labor_started {
+            self.labor_events(vec![pregsys_core::labor::Event::Started { water_first }], now);
+            return;
+        }
+        // Shown quietly on Home (no notification) until another WooHoo can count.
+        self.woohoo_note = labor_note.map(|n| (n, now));
         match outcome {
             actions::FunOutcome::Started => {
                 let _ = self.app.emit("conception", ());
@@ -958,7 +1003,7 @@ impl Engine {
                 let _ = self.app.emit("fun", ());
                 crate::notify(&self.app, "💕 WooHoo!", "You'll find out later if a little one is on the way.");
             }
-            actions::FunOutcome::Ignored => {}
+            actions::FunOutcome::AlreadyPregnant => {}
         }
     }
 
@@ -1054,13 +1099,14 @@ impl Engine {
     /// it) and moves it along to the birth.
     fn tick_labor(&mut self, now: i64) {
         let ctx = self.labor_ctx();
-        let (mut events, running, started) = {
+        let (mut events, running, started, cancelled) = {
             let mut d = self.shared.data.lock().unwrap();
             let events = self.labor.tick(&mut d, &ctx, now, pregsys_core::fertility::roll());
             let cur = d.current_pregnancy(self.driver.avatar_id());
             let running = cur.and_then(|p| p.labor.as_ref()).is_some_and(|l| !l.paused);
             let started = cur.and_then(|p| p.labor.as_ref().map(|l| (p.id.clone(), l.started_ms, l.water_first)));
-            (events, running, started)
+            let cancelled = self.labor_announced.as_ref().is_some_and(|a| d.pregnancy(a).is_some_and(|p| p.is_active() && p.labor.is_none()));
+            (events, running, started, cancelled)
         };
         // Started by a button (the avatar's menu or the app) just now: say so too.
         if let Some((id, started_ms, water_first)) = started {
@@ -1069,6 +1115,9 @@ impl Engine {
                 events.insert(0, pregsys_core::labor::Event::Started { water_first });
             }
             self.labor_announced = Some(id);
+        } else if cancelled {
+            // Labor was cancelled (debug): a new one gets announced again.
+            self.labor_announced = None;
         }
         // Labor time is saved now and then, so a crash loses little of it.
         if running && self.last_labor_save.elapsed() >= Duration::from_secs(15) {
@@ -1292,6 +1341,13 @@ impl Engine {
                 .unwrap_or_default();
             st.sps_live = self.sps.live(&sps_settings, avatar_sps.as_ref());
             st.sps_progress = self.sps.progress(&sps_settings);
+            // Until the SPS session ends (or, for a debug WooHoo, for as long as one would).
+            let gap_ms = sps_settings.gap_seconds as i64 * 1000;
+            let now = pregsys_core::now_ms();
+            if self.woohoo_note.as_ref().is_some_and(|(_, at)| st.sps_progress < 1.0 && now - at >= gap_ms) {
+                self.woohoo_note = None;
+            }
+            st.woohoo_note = self.woohoo_note.as_ref().map(|(n, _)| n.clone());
         }
         match &self.bridge {
             Some(b) => {

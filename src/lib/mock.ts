@@ -143,6 +143,7 @@ function status(): Status {
       return { name, channel: "PenOthersNewRoot", value: 0, holeType: typeOf(a, name), counts: socketCounts(data.settings, a, name) };
     }),
     spsProgress: 0,
+    woohooNote: woohooNote && Date.now() - woohooNote.at < data.settings.sps.gapSeconds * 1000 ? woohooNote.text : null,
     up: true,
     upright: null,
     postureSource: "vrchat",
@@ -397,7 +398,7 @@ export const mock = {
   async start_labor({ id }: { id: string }) {
     const p = data.pregnancies.find((x) => x.id === id);
     if (p && p.endedMs == null && !p.labor) {
-      p.labor = { phase: "early", startedMs: Date.now(), elapsedMs: 0, waterFirst: false, waterBrokeMs: null, paused: false, partnerAtBirth: false };
+      p.labor = { phase: "early", startedMs: Date.now(), elapsedMs: 0, waterFirst: false, waterBrokeMs: null, paused: false, partnerAtBirth: false, cause: "you" };
       changed();
     }
   },
@@ -663,19 +664,39 @@ export const mock = {
     changed();
     emit("instance-changed");
   },
-  async debug_labor({ skip }: { skip: "minute" | "nextPhase" | "birth" | null }) {
+  async debug_cancel_labor() {
+    const p = pregnancyFor(data, data.currentAvatarId);
+    if (!p) throw new Error("Not pregnant on this avatar.");
+    if (!p.labor) throw new Error("Not in labor.");
+    p.labor = null;
+    changed();
+  },
+  async debug_new_woohoo_session() {
+    woohooNote = null;
+  },
+  async debug_labor({ skip }: { skip: "minute" | "nextPhase" | "birth" | "prevPhase" | null }) {
     const p = pregnancyFor(data, data.currentAvatarId);
     if (!p) throw new Error("Not pregnant on this avatar.");
     const now = Date.now();
     if (skip === null) {
       if (p.labor) throw new Error("Already in labor.");
-      p.labor = { phase: "early", startedMs: now, elapsedMs: 0, waterFirst: false, waterBrokeMs: null, paused: false, partnerAtBirth: false };
+      p.labor = { phase: "early", startedMs: now, elapsedMs: 0, waterFirst: false, waterBrokeMs: null, paused: false, partnerAtBirth: false, cause: "you" };
     } else {
       if (!p.labor) throw new Error("Not in labor yet.");
       // Same split as pregsys-core/src/labor.rs: early half, water 30%, pushing 20%.
       const total = data.settings.labor.minutes * 60_000;
       const ends = [total * 0.5, total * 0.8, total];
       const at = Math.min(total, now - p.labor.startedMs + p.labor.elapsedMs);
+      if (skip === "prevPhase") {
+        // Back to the start of the phase before (pregsys-core/src/labor.rs skip).
+        const i = ["early", "active", "pushing"].indexOf(p.labor.phase);
+        const back = [0, ends[0], ends[1]][Math.max(0, i - 1)];
+        p.labor.elapsedMs -= at - back;
+        p.labor.phase = back < ends[0] ? "early" : "active";
+        if (p.labor.phase === "early") p.labor.waterBrokeMs = null;
+        changed();
+        return;
+      }
       const to = skip === "minute" ? at + 60_000 : skip === "birth" ? total : (ends.find((e) => e > at) ?? total);
       p.labor.elapsedMs += Math.min(total, to) - at;
       const now2 = Math.min(total, to);
@@ -741,20 +762,31 @@ export const mock = {
   },
 };
 
+/** A WooHoo that didn't start labor (the engine's woohoo_note). */
+let woohooNote: { text: string; at: number } | null = null;
+
 async function woohoo(forced: boolean | null) {
   {
     const now = Date.now();
     const s = data.settings;
     const preg = pregnancyFor(data, data.currentAvatarId);
     if (preg) {
+      // Kept in the history as "Already pregnant" (pregsys-core/src/actions.rs record_fun).
+      const p = funPartner(now);
+      data.funLog.push({ timeMs: now, partnerName: p.name, partnerUserId: p.userId, avatarId: data.currentAvatarId, worldName: data.instance.worldName, alreadyPregnant: true, testBuddiesHere: data.instance.present.map((x) => x.userId ?? "").filter(isTestBuddy) });
+      changed();
       // Late on, a WooHoo can start labor (same chance as pregsys-core/src/labor.rs).
       const week = progress(preg.timeline, now) * 40;
       const chance = week < 37 ? 0 : Math.min(0.75, 0.25 + ((week - 37) / 3) * 0.5);
       const roll = forced === null ? Math.random() : forced ? 0 : 1;
       const partnerAway = !!s.labor.waitsForPartner && !!preg.partner.name && !data.instance.present.some((x) => x.name === preg.partner.name);
+      woohooNote = null;
       if (s.labor.woohooStarts && !preg.labor && !partnerAway && roll < chance) {
-        preg.labor = { phase: "early", startedMs: now, elapsedMs: 0, waterFirst: false, waterBrokeMs: null, paused: false, partnerAtBirth: false };
+        preg.labor = { phase: "early", startedMs: now, elapsedMs: 0, waterFirst: false, waterBrokeMs: null, paused: false, partnerAtBirth: false, cause: "wooHoo" };
         changed();
+      } else if (s.labor.woohooStarts && !preg.labor && week >= 37) {
+        const text = partnerAway ? "WooHoo noticed, but labor waits for your partner." : `WooHoo noticed, but labor didn't start (${Math.round(chance * 100)}% chance). Next try after a ${s.sps.gapSeconds % 60 ? `${s.sps.gapSeconds}-second` : `${s.sps.gapSeconds / 60}-minute`} break.`;
+        woohooNote = { text, at: now };
       }
       return;
     }

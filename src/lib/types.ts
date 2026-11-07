@@ -105,6 +105,8 @@ export interface Labor {
   waterBrokeMs: number | null;
   paused: boolean;
   partnerAtBirth: boolean;
+  /** What started it (pregsys-core/src/labor.rs Cause). */
+  cause?: "unknown" | "due" | "induced" | "up" | "walking" | "wooHoo" | "you";
 }
 
 export interface Settings {
@@ -312,6 +314,8 @@ export interface FunEvent {
   waitMs?: number | null;
   /** Debug: test buddies in the instance then. A WooHoo with nobody named goes when they do. */
   testBuddiesHere?: string[];
+  /** While already pregnant: not a try, so never part of a wait or a result. */
+  alreadyPregnant?: boolean;
 }
 
 export interface AvatarGroup {
@@ -386,6 +390,8 @@ export interface Status {
   spsFound: string[];
   spsLive: { name: string; channel: string; value: number; holeType: HoleType; counts: boolean }[];
   spsProgress: number;
+  /** A WooHoo that didn't start labor, and why (until another one can count). */
+  woohooNote?: string | null;
   /** VRChat says you're AFK (labor waits). */
   afk?: boolean;
   /** Standing up (not seated or lying down). */
