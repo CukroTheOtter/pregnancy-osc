@@ -29,6 +29,8 @@
 
   let src = $state<string | null>(null);
   const enabled = $derived(!!app.data?.settings.showPictures);
+  // Privacy mode: the picture is blurred and the initial hidden.
+  const hidden = $derived(!!app.data?.settings.privacyMode);
 
   $effect(() => {
     src = null;
@@ -47,9 +49,9 @@
 
 <span class="pic" style="width:{size}px;height:{size}px;font-size:{size * 0.42}px" aria-hidden="true">
   {#if src}
-    <img {src} alt="" />
+    <img {src} alt="" class:blur={hidden} />
   {:else}
-    {name.charAt(0).toUpperCase()}
+    {hidden ? "?" : name.charAt(0).toUpperCase()}
   {/if}
 </span>
 
@@ -69,5 +71,10 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
+  }
+  /* Scaled up so the blur doesn't leave soft edges showing the background. */
+  img.blur {
+    filter: blur(10px);
+    transform: scale(1.3);
   }
 </style>

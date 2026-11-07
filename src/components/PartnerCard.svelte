@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { shownName } from "../lib/privacy";
   import { app, errorToast } from "../lib/app.svelte";
   import { api } from "../lib/api";
   import type { Person, Pregnancy, Settings } from "../lib/types";
@@ -57,7 +58,7 @@
     <div class="chosen">
       <PersonPic name={partner.name} userId={partner.userId} size={56} />
       <div class="grow">
-        <strong class="name">{partner.name}</strong>
+        <strong class="name">{shownName(app.data, partner.name, partner.userId)}</strong>
         <div class="muted small">
           {#if partner.status === "guessed"}Guessed: you two were alone in the instance
           {:else if partner.status === "manual"}Typed in by you

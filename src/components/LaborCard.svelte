@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { shownName } from "../lib/privacy";
   // Labor on Home: start it, see how it's going, or skip to the birth.
   // The logic lives in pregsys-core/src/labor.rs; this only shows it.
   import { app, errorToast } from "../lib/app.svelte";
@@ -19,7 +20,7 @@
   const labor = $derived(p.labor ?? null);
   // Live from the engine when it's about the pregnancy you're wearing; the saved copy can lag.
   const paused = $derived(!!labor && (viewingOther ? labor.paused : (status?.laborPaused ?? labor.paused)));
-  const partner = $derived(p.partner.name);
+  const partner = $derived(shownName(app.data, p.partner.name, p.partner.userId));
   // In-game on an avatar that can show labor.
   const canShow = $derived(!viewingOther && !!status?.oscActive && !!status?.laborSupported);
   const many = $derived(p.babyCount > 1 && week >= BABY_REVEAL_WEEK);

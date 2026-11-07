@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { shownName } from "../lib/privacy";
   import { app, errorToast } from "../lib/app.svelte";
   import { api, inTauri } from "../lib/api";
   import { humanDuration } from "../lib/timeline";
@@ -31,7 +32,7 @@
   <div class="who">
     {#if w.partner.name}
       <PersonPic name={w.partner.name} userId={w.partner.userId} size={44} />
-      <span>with <strong>{w.partner.name}</strong>{w.partner.status === "random" ? " 🎲" : ""}</span>
+      <span>with <strong>{shownName(app.data, w.partner.name, w.partner.userId)}</strong>{w.partner.status === "random" ? " 🎲" : ""}</span>
       {#if !changing}<button class="ghost small" onclick={() => (changing = true)}>Change</button>{/if}
     {:else}
       <span class="muted">{others ? `${others} people were around` : "Someone was there"}</span>

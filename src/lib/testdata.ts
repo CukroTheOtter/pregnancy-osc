@@ -56,6 +56,7 @@ export function defaultSettings(): Settings {
     logDir: null,
     readLogs: true,
     showPictures: false,
+    privacyMode: false,
     fertility: true,
     fertilityPeak: 0.6,
     graceMinutes: null,

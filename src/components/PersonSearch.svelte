@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { shownName } from "../lib/privacy";
   import { app } from "../lib/app.svelte";
   import { partnerStats, personFromStats, personKey } from "../lib/scope";
   import type { Person } from "../lib/types";
@@ -90,7 +91,7 @@
         <li role="option" aria-selected={i === active}>
           <button class="opt" class:active={i === active} class:on={o.person.name === selected} onmousedown={(e) => e.preventDefault()} onclick={() => pick(i)}>
             <PersonPic name={o.person.name} userId={o.person.userId} size={26} />
-            <span class="grow">{o.person.name}</span>
+            <span class="grow">{shownName(app.data, o.person.name, o.person.userId)}</span>
             <span class="tag">{o.tag}</span>
           </button>
         </li>

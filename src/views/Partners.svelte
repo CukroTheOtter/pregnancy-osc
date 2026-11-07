@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { shownName } from "../lib/privacy";
   import PersonPic from "../components/PersonPic.svelte";
   import PartnerPregnancies from "../components/PartnerPregnancies.svelte";
   import PartnerWooHoos from "../components/PartnerWooHoos.svelte";
@@ -58,7 +59,7 @@
   }
 
   async function forget(name: string, userId: string | null) {
-    if (await confirmAsk({ title: `Forget ${name}?`, text: "They're removed from your partners, WooHoo history and instance history. Pregnancies with them carry on with an unknown partner.", ok: "Forget", danger: true })) {
+    if (await confirmAsk({ title: `Forget ${shownName(app.data, name, userId)}?`, text: "They're removed from your partners, WooHoo history and instance history. Pregnancies with them carry on with an unknown partner.", ok: "Forget", danger: true })) {
       await api.forgetPerson(name, userId);
     }
   }
@@ -72,7 +73,7 @@
     <div class="row">
       <PersonPic name={s.name} userId={s.userId} size={52} />
       <div class="grow">
-        <strong class="name">{s.name}</strong>
+        <strong class="name">{shownName(app.data, s.name, s.userId)}</strong>
         {#if now.get(s.key)?.weeks.length}
           {@const weeks = now.get(s.key)!.weeks}
           <span class="pill live">🤰 {weeks.length > 1 ? `${weeks.length} pregnancies together` : `Week ${weeks[0]} together`}</span>

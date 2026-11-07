@@ -35,8 +35,9 @@
       { label: "Babies", value: born.reduce((n, p) => n + p.babyCount, 0) },
     ];
     const input = {
-      name: (showName && me?.name) || "Someone",
-      picture: showPicture ? picture : null,
+      // Privacy mode: no name or picture on the card.
+      name: (showName && !d.settings.privacyMode && me?.name) || "Someone",
+      picture: showPicture && !d.settings.privacyMode ? picture : null,
       unlocked: ACHIEVEMENTS.filter((a) => d.achievements?.[a.id] != null && !d.testAchievements?.includes(a.id)).map((a) => a.id),
       stats,
     };

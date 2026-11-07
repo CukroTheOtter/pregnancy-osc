@@ -70,6 +70,21 @@
     if (on) app.view = "settings";
   }
 
+  // Privacy mode: hides names and blurs pictures (streaming, screenshots).
+  const privacy = $derived(!!app.data?.settings.privacyMode);
+  async function togglePrivacy() {
+    if (!app.data) return;
+    const on = !app.data.settings.privacyMode;
+    const s = { ...($state.snapshot(app.data.settings) as SettingsData), privacyMode: on };
+    try {
+      await api.saveSettings(s);
+      app.data.settings.privacyMode = on;
+      toast(on ? "🙈 Privacy mode on" : "Privacy mode off", on ? "Names are hidden and pictures blurred." : undefined, "info", 3000);
+    } catch {
+      toast("Couldn't change privacy mode", undefined, "error");
+    }
+  }
+
   const status = $derived(app.status);
   const wearing = $derived(app.data?.currentAvatarId ? avatarName(app.data, app.data.currentAvatarId) : null);
   // Switching avatars: the app is waiting for the new one (and keeps a hidden belly hidden).
@@ -93,6 +108,12 @@
       {/if}
     </div>
     <span class="grow"></span>
+    {#if app.data}
+      <button class="privacy" class:on={privacy} onclick={togglePrivacy} aria-pressed={privacy}
+        title={privacy ? "Privacy mode is on: names hidden, pictures blurred. Click to turn off." : "Privacy mode: hide names and blur pictures (streaming, screenshots)"}>
+        {privacy ? "🙈 Private" : "👁"}
+      </button>
+    {/if}
     <!-- Hover (or focus) shows how it's linked; click opens Settings. -->
     <div class="link">
       <button class="link-btn" onclick={() => (app.view = "settings")} aria-label="Link details (opens Settings)">
@@ -153,6 +174,17 @@
   }
   .link {
     position: relative;
+  }
+  .privacy {
+    background: var(--bg-3);
+    color: var(--text);
+    padding: 4px 10px;
+    font-size: 0.8rem;
+    border-radius: 999px;
+  }
+  .privacy.on {
+    background: var(--accent);
+    color: var(--accent-text, #fff);
   }
   .link-btn {
     background: none;

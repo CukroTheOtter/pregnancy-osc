@@ -237,6 +237,9 @@ pub struct Settings {
     pub read_logs: bool,
     /// Fetch partners' pictures from their public VRChat profile page.
     pub show_pictures: bool,
+    /// Privacy mode (UI only): people's names become "Hidden #123" and their
+    /// pictures are blurred, for streaming and screenshots.
+    pub privacy_mode: bool,
     /// Fertility cycle + grace period: in-game fun doesn't start a pregnancy
     /// right away; the outcome is rolled and revealed later.
     pub fertility: bool,
@@ -307,6 +310,7 @@ impl Default for Settings {
             log_dir: None,
             read_logs: true,
             show_pictures: false,
+            privacy_mode: false,
             fertility: true,
             fertility_peak: 0.6,
             grace_minutes: None,

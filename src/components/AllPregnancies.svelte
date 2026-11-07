@@ -9,6 +9,7 @@
   import { babyWord, genderText } from "../lib/fertility";
   import { progress, humanDuration, TERM_WEEKS } from "../lib/timeline";
   import type { Pregnancy } from "../lib/types";
+  import { shownName } from "../lib/privacy";
 
   const d = $derived(app.data!);
   const shown = $derived(currentPregnancy());
@@ -50,7 +51,7 @@
               <span class="muted small">Week {Math.floor(pr * TERM_WEEKS)}</span>
             </div>
             <div class="bar"><div style="width:{Math.min(100, pr * 100)}%"></div></div>
-            <span class="muted small">{p.partner.name ? `with ${p.partner.name}` : "partner unknown"}{p.timeline.pausedAtMs ? " · paused" : ""}</span>
+            <span class="muted small">{p.partner.name ? `with ${shownName(d, p.partner.name, p.partner.userId)}` : "partner unknown"}{p.timeline.pausedAtMs ? " · paused" : ""}</span>
           </div>
           {#if aid}<button class="small soft" onclick={() => viewPregnancy(p)}>Open</button>{/if}
         </li>
@@ -62,7 +63,7 @@
           {#if wg}<GroupPic ids={groupMembers(d, wg.id)} size={42} />{:else if wa}<AvatarPic id={wa} size={42} />{:else}<span class="dot-pic" aria-hidden="true">💕</span>{/if}
           <div class="grow">
             <strong>{wg ? "💞 " : ""}{w.avatarId ? ownerName(d, w.avatarId) : "Your avatar"}</strong>
-            <div class="muted small">💕 WooHoo'd{w.partner.name ? ` with ${w.partner.name}` : ""} · find out in {humanDuration(Math.max(0, w.revealMs - app.now))}</div>
+            <div class="muted small">💕 WooHoo'd{w.partner.name ? ` with ${shownName(d, w.partner.name, w.partner.userId)}` : ""} · find out in {humanDuration(Math.max(0, w.revealMs - app.now))}</div>
           </div>
           {#if wa}<button class="small soft" onclick={() => viewPending(w)}>Open</button>{/if}
         </li>
@@ -79,7 +80,7 @@
               <div class="grow">
                 <strong>{p.born ? `${babyWord(p.babyCount).replace("!", "")} born` : "Ended early"}</strong>
                 <div class="muted small">
-                  {dateFmt.format(p.endedMs ?? 0)}{p.partner.name ? ` · with ${p.partner.name}` : ""}{p.born && d.settings.genderMode === "random" && p.genders.length ? ` · ${genderText(p.genders)}` : ""}
+                  {dateFmt.format(p.endedMs ?? 0)}{p.partner.name ? ` · with ${shownName(d, p.partner.name, p.partner.userId)}` : ""}{p.born && d.settings.genderMode === "random" && p.genders.length ? ` · ${genderText(p.genders)}` : ""}
                 </div>
               </div>
               <button class="small soft" onclick={() => (reading = p)}>📔 Journal</button>

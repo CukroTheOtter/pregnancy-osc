@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { shownName } from "../lib/privacy";
   import { onMount } from "svelte";
   import AvatarPic, { lookupAvatar } from "../components/AvatarPic.svelte";
   import AvatarPicker from "../components/AvatarPicker.svelte";
@@ -154,7 +155,7 @@
     const p = pregnancyFor(d, id);
     if (p) {
       const w = Math.floor(progress(p.timeline, app.now) * TERM_WEEKS);
-      return `🤰 Week ${w}${p.partner.name ? ` · with ${p.partner.name}` : ""}`;
+      return `🤰 Week ${w}${p.partner.name ? ` · with ${shownName(d, p.partner.name, p.partner.userId)}` : ""}`;
     }
     if (pendingFor(d, id)) return "💕 WooHoo'd · waiting to find out…";
     return "Not pregnant";

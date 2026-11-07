@@ -5,6 +5,7 @@
 import { BABY_REVEAL_WEEK, GENDER_REVEAL_WEEK, babyWord, genderText } from "./fertility";
 import { progress, timeAtProgress, TERM_WEEKS } from "./timeline";
 import { rng } from "./scanstats";
+import { isPrivate, shownName } from "./privacy";
 import type { AppData, Pregnancy } from "./types";
 
 /** Rare scans: something cute caught on camera (see Ultrasound.svelte). */
@@ -87,11 +88,11 @@ export function rareRoll(p: Pregnancy, week: number): { scan?: ScanVariant; crav
 }
 
 /** A saved journal moment (from how you played) as an item. */
-function momentItem(id: string, title: string, timeMs: number, text: string, p: Pregnancy): JournalItem | null {
+function momentItem(d: AppData, id: string, title: string, timeMs: number, text: string, p: Pregnancy): JournalItem | null {
   const seed = seedOf(id);
   const base = { key: id, timeMs, scan: null, note: false, rare: true };
   if (title === "partner-kicks") {
-    const who = p.partner.name ?? "your partner";
+    const who = shownName(d, p.partner.name, p.partner.userId) ?? "your partner";
     return { ...base, emoji: "💞", title: "Knows their other parent", text: `Kicked and kicked while ${who} was around.`, card: { kind: "partner-kicks", seed, emoji: "💞🦶", caption: `Kicking for ${who}!`, sub: "they know you're here", person: { name: who, userId: p.partner.userId } } };
   }
   if (title === "well-travelled") {
@@ -111,7 +112,8 @@ export const SCAN_WEEKS = [8, BABY_REVEAL_WEEK, GENDER_REVEAL_WEEK, 36] as const
 export function scanMeta(d: AppData, p: Pregnancy, timeMs: number, scanWeek: number, showName = true) {
   const genders = d.settings.genderMode === "random" && p.genders.length && scanWeek >= GENDER_REVEAL_WEEK ? p.genders : null;
   return {
-    patient: showName ? (d.instance.local?.name ?? null) : null,
+    // Privacy mode: no name on the scan screen.
+    patient: showName && !isPrivate(d) ? (d.instance.local?.name ?? null) : null,
     timeMs,
     dueMs: timeAtProgress(p.timeline, p.endedMs ?? timeMs, 1),
     genders,
@@ -159,7 +161,8 @@ export function journalFor(d: AppData, p: Pregnancy, now: number): JournalItem[]
   const add = (key: string, timeMs: number, emoji: string, title: string, text = "", scan: Scan | null = null, week = weekAt(timeMs), order?: number) =>
     out.push({ key, timeMs, emoji, title, text, scan, card: null, note: false, week, ...(order != null ? { order } : {}) });
 
-  const withPartner = p.partner.name ? `With ${p.partner.name}` : "";
+  const partnerName = shownName(d, p.partner.name, p.partner.userId);
+  const withPartner = partnerName ? `With ${partnerName}` : "";
   if (p.source === "conception") {
     add("conceived", startedMs, "💕", "A little one on the way", [withPartner, p.worldName ? `in ${p.worldName}` : ""].filter(Boolean).join(" "), null, 0, -2);
     // Its real week (it used to say Week 0), but still first among things at the same time.
@@ -202,7 +205,7 @@ export function journalFor(d: AppData, p: Pregnancy, now: number): JournalItem[]
   if (p.labor?.waterBrokeMs) add("water", p.labor.waterBrokeMs, "💧", "Water broke");
   if (p.labor?.startedMs) add("labor", p.labor.startedMs, "⏳", "Labor started");
   if (p.endedMs) {
-    if (p.born) add("born", p.endedMs, "🍼", p.babyCount > 1 ? `${babyWord(p.babyCount).replace("!", "")} born!` : "Baby born!", p.labor?.partnerAtBirth && p.partner.name ? `${p.partner.name} was there` : "");
+    if (p.born) add("born", p.endedMs, "🍼", p.babyCount > 1 ? `${babyWord(p.babyCount).replace("!", "")} born!` : "Baby born!", p.labor?.partnerAtBirth && partnerName ? `${partnerName} was there` : "");
     else add("ended", p.endedMs, "🤍", "Ended early");
   }
 
@@ -210,7 +213,7 @@ export function journalFor(d: AppData, p: Pregnancy, now: number): JournalItem[]
   for (const j of d.journal) {
     if (j.pregnancyId !== p.id) continue;
     if (j.kind === "moment") {
-      const m = momentItem(j.id, j.title, j.timeMs, j.text, p);
+      const m = momentItem(d, j.id, j.title, j.timeMs, j.text, p);
       if (m) out.push(m);
     }
     if (j.kind !== "note") continue;

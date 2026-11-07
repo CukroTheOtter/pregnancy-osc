@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { myShownName, shownName } from "../lib/privacy";
   import PersonPic from "../components/PersonPic.svelte";
   import AvatarPic from "../components/AvatarPic.svelte";
   import ShareCard from "../components/ShareCard.svelte";
@@ -23,7 +24,7 @@
       babies: born.reduce((n, p) => n + p.babyCount, 0),
       pregnantMs: lengths.reduce((n, ms) => n + Math.max(0, ms), 0),
       longestMs: Math.max(0, ...born.map((p) => (p.endedMs ?? now) - p.timeline.startMs)),
-      favourite: fav?.name ?? null,
+      favourite: fav ? shownName(d, fav.name, fav.userId) : null,
       avatars: Object.values(d.avatars).filter((a) => hasSystem(a) === true).length,
     };
   });
@@ -45,7 +46,7 @@
       <div class="pic" aria-hidden="true">🤰</div>
     {/if}
     <div class="grow">
-      <strong class="name">{me?.name ?? "You"}</strong>
+      <strong class="name">{myShownName(d, me?.name ?? null) ?? "You"}</strong>
       {#if d.currentAvatarId}
         <div class="wearing muted small">
           {#if d.settings.showPictures}<AvatarPic id={d.currentAvatarId} size={18} />{:else}👗{/if}

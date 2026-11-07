@@ -2,6 +2,7 @@
   // What came of each wait on this avatar (or its group): one row per wait, one result.
   import { app } from "../lib/app.svelte";
   import { funRows } from "../lib/scope";
+  import { shownName } from "../lib/privacy";
   import Section from "./Section.svelte";
 
   let { avatarId }: { avatarId: string | null } = $props();
@@ -19,7 +20,7 @@
         <li>
           <div class="grow">
             <strong class="small">{fmt.format(r.timeMs)}</strong>
-            <div class="muted small">{[r.worldName, r.partnerName ? `with ${r.partnerName}` : "Partner unknown", r.count > 1 ? `💕 ${r.count}` : null].filter(Boolean).join(" · ")}</div>
+            <div class="muted small">{[r.worldName, r.partnerName ? `with ${shownName(app.data, r.partnerName, r.partnerUserId)}` : "Partner unknown", r.count > 1 ? `💕 ${r.count}` : null].filter(Boolean).join(" · ")}</div>
           </div>
           <span class="small result">{LABEL[r.result]}</span>
         </li>

@@ -145,6 +145,8 @@ export interface Settings {
   logDir: string | null;
   readLogs: boolean;
   showPictures: boolean;
+  /** Privacy mode: names become "Hidden #123", pictures are blurred. */
+  privacyMode: boolean;
   fertility: boolean;
   fertilityPeak: number;
   /** Minutes from a WooHoo until you find out (null = match the pregnancy length). */

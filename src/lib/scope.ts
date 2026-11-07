@@ -142,6 +142,7 @@ export interface FunRow {
   timeMs: number;
   worldName: string | null;
   partnerName: string | null;
+  partnerUserId: string | null;
   count: number;
   result: "waiting" | "pregnant" | "notPregnant";
 }
@@ -171,7 +172,8 @@ export function funRows(d: AppData, avatarId: string | null): FunRow[] {
       return {
         timeMs: fs[0].timeMs,
         worldName: fs[0].worldName,
-        partnerName: took?.partnerName ?? fs.find((f) => f.partnerName)?.partnerName ?? null,
+        partnerName: (took ?? fs.find((f) => f.partnerName))?.partnerName ?? null,
+        partnerUserId: (took ?? fs.find((f) => f.partnerName))?.partnerUserId ?? null,
         count: fs.length,
         result: fs.some(waitOf) ? ("waiting" as const) : took ? ("pregnant" as const) : ("notPregnant" as const),
       };

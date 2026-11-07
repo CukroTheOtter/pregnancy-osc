@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { shownName } from "../lib/privacy";
   import { onMount, setContext } from "svelte";
   import Toggle from "../components/Toggle.svelte";
   import Section, { FILTER_KEY, type SectionFilter } from "../components/Section.svelte";
@@ -391,7 +392,7 @@
   const statusPreview = $derived.by(() => {
     const p = app.data ? pregnancyFor(app.data, app.data.currentAvatarId) : undefined;
     const wk = p ? Math.floor(weekOf(p.timeline, app.now)) : 12;
-    const partner = p ? p.partner.name : "Alex";
+    const partner = p ? shownName(app.data, p.partner.name, p.partner.userId) : "Alex";
     const text = s.chatbox.statusText.trim() || "🤰 Week {week} of 40";
     let out = text.replaceAll("{week}", String(wk)).replaceAll("{partner}", partner ?? "Unknown").replaceAll("{name}", p?.name ?? "").replaceAll("{babies}", "?");
     if (s.chatbox.statusPartner && !text.includes("{partner}")) out += ` · 💕 ${partner ?? "Unknown"}`;
