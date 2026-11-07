@@ -92,6 +92,51 @@ export function avatarName(d: AppData, id: string | null): string {
 
 // ---------- partner stats ----------
 
+export interface PartnerFunRow {
+  /** Their first WooHoo in that wait. */
+  timeMs: number;
+  worldName: string | null;
+  /** The avatar it was on (its group's name in per-avatar mode). */
+  avatarId: string | null;
+  /** WooHoos with them in that wait. */
+  count: number;
+  /** "pregnant" only if it was them; "unknown" for WooHoos from before results were saved. */
+  result: "waiting" | "pregnant" | "notPregnant" | "unknown";
+}
+
+/**
+ * Every WooHoo with one partner, newest first, one row per wait. A wait can
+ * hold WooHoos with others too: it only says "pregnant" when it took with them,
+ * and nothing about who while it's still waiting.
+ */
+export function partnerFunRows(d: AppData, partnerKey: string): PartnerFunRow[] {
+  const theirs = (f: FunEvent) => !!(f.partnerName || f.partnerUserId) && personKey(f.partnerName, f.partnerUserId) === partnerKey;
+  const waitOf = (f: FunEvent) => d.waiting.find((w) => w.timeMs === f.timeMs || w.funTimes?.includes(f.timeMs));
+  const groups = new Map<string, FunEvent[]>();
+  for (const f of d.funLog) {
+    const w = waitOf(f);
+    const wait = w ? Math.min(w.timeMs, ...(w.funTimes ?? [])) : (f.waitMs ?? (f.took != null ? f.timeMs : null));
+    // Old WooHoos with no wait saved: one row each.
+    const key = wait != null ? `w${wait}` : `f${f.timeMs}`;
+    groups.set(key, [...(groups.get(key) ?? []), f]);
+  }
+  const out: PartnerFunRow[] = [];
+  for (const list of groups.values()) {
+    const mine = list.filter(theirs).sort((a, b) => a.timeMs - b.timeMs);
+    if (!mine.length) continue;
+    const took = list.find((f) => f.took);
+    const known = list.some((f) => f.took != null || f.waitMs != null);
+    out.push({
+      timeMs: mine[0].timeMs,
+      worldName: mine[0].worldName,
+      avatarId: mine[0].avatarId,
+      count: mine.length,
+      result: list.some(waitOf) ? "waiting" : took ? (theirs(took) ? "pregnant" : "notPregnant") : known ? "notPregnant" : "unknown",
+    });
+  }
+  return out.sort((a, b) => b.timeMs - a.timeMs);
+}
+
 export interface FunRow {
   /** Its first WooHoo: stays put, so it never hints at which one took. */
   timeMs: number;

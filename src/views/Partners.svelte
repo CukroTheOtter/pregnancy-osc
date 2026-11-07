@@ -1,6 +1,7 @@
 <script lang="ts">
   import PersonPic from "../components/PersonPic.svelte";
   import PartnerPregnancies from "../components/PartnerPregnancies.svelte";
+  import PartnerWooHoos from "../components/PartnerWooHoos.svelte";
   import { app, confirmAsk, errorToast } from "../lib/app.svelte";
   import { api } from "../lib/api";
   import { partnerStats, personKey, type PartnerStats } from "../lib/scope";
@@ -35,8 +36,11 @@
     }
     return out;
   });
-  // The partner whose pregnancies are open.
-  let opened = $state<string | null>(null);
+  // The partner card that's open, and which list (one at a time).
+  let opened = $state<{ key: string; what: "pregnancies" | "woohoos" } | null>(null);
+  function toggle(key: string, what: "pregnancies" | "woohoos") {
+    opened = opened?.key === key && opened.what === what ? null : { key, what };
+  }
   const pins = $derived(app.data?.settings.pinnedPartners ?? []);
   const pinned = $derived(shown.filter((x) => pins.includes(x.key)));
   const others = $derived(shown.filter((x) => !pins.includes(x.key)));
@@ -61,6 +65,9 @@
 </script>
 
 {#snippet card(s: PartnerStats, isPinned: boolean)}
+  {@const hasPreg = !!s.pregnancies || !!now.get(s.key)?.waiting}
+  {@const live = (now.get(s.key)?.weeks.length ?? 0) + (now.get(s.key)?.waiting ? 1 : 0)}
+  {@const showing = opened?.key === s.key ? opened.what : null}
   <section class="card partner" class:pinned={isPinned}>
     <div class="row">
       <PersonPic name={s.name} userId={s.userId} size={52} />
@@ -86,13 +93,23 @@
       <div><strong>{s.pregnancies}</strong><span>🤰 pregnant</span></div>
       <div><strong>{s.kids}</strong><span>👶 kids</span></div>
     </div>
-    {#if s.pregnancies || now.get(s.key)?.waiting}
-      {@const live = (now.get(s.key)?.weeks.length ?? 0) + (now.get(s.key)?.waiting ? 1 : 0)}
-      <button class="soft small more" onclick={() => (opened = opened === s.key ? null : s.key)} aria-expanded={opened === s.key}>
-        🤰 {opened === s.key ? "Hide pregnancies" : live ? `See pregnancies (${live} now)` : "See pregnancies"}
-        <span class="chev" class:open={opened === s.key} aria-hidden="true">›</span>
-      </button>
-      {#if opened === s.key}<PartnerPregnancies partnerKey={s.key} />{/if}
+    {#if hasPreg || s.fun}
+      <div class="mores">
+        {#if hasPreg}
+          <button class="soft small more" class:on={showing === "pregnancies"} onclick={() => toggle(s.key, "pregnancies")} aria-expanded={showing === "pregnancies"}>
+            🤰 Pregnancies{live ? ` (${live} now)` : ""}
+            <span class="chev" class:open={showing === "pregnancies"} aria-hidden="true">›</span>
+          </button>
+        {/if}
+        {#if s.fun}
+          <button class="soft small more" class:on={showing === "woohoos"} onclick={() => toggle(s.key, "woohoos")} aria-expanded={showing === "woohoos"}>
+            💕 WooHoo history
+            <span class="chev" class:open={showing === "woohoos"} aria-hidden="true">›</span>
+          </button>
+        {/if}
+      </div>
+      {#if showing === "pregnancies"}<PartnerPregnancies partnerKey={s.key} />{/if}
+      {#if showing === "woohoos"}<PartnerWooHoos partnerKey={s.key} />{/if}
     {/if}
   </section>
 {/snippet}
@@ -209,10 +226,18 @@
   .empty {
     text-align: center;
   }
+  .mores {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 8px;
+    margin-top: 10px;
+  }
   .more {
     width: 100%;
-    margin-top: 10px;
     justify-content: space-between;
+  }
+  .more.on {
+    box-shadow: 0 0 0 2px var(--accent);
   }
   .chev {
     font-size: 1.2rem;
