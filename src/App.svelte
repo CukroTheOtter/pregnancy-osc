@@ -108,7 +108,7 @@
       {/if}
     </div>
     <span class="grow"></span>
-    <!-- Only while privacy mode is on (turned on in Settings > Safety): a reminder, click to turn it off. -->
+    <!-- Only while privacy mode is on (turned on in Settings > Look): a reminder, click to turn it off. -->
     {#if privacy}
       <button class="privacy" onclick={togglePrivacy} title="Privacy mode is on: made-up names, blurred pictures. Click to turn it off.">
         <span class="pill">🙈 Private</span>

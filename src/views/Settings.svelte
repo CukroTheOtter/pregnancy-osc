@@ -864,12 +864,7 @@
         <span class="hint">A full set of matching colors, or Custom to pick your own.</span>
       {/if}
     </div>
-  </Section>
-
-  <Section id="privacy" title="🙈 Privacy mode">
-    {#snippet extra()}<span class="pill" class:ok={s.privacyMode} class:off={!s.privacyMode}>{s.privacyMode ? "on" : "off"}</span>{/snippet}
-    <Toggle bind:checked={s.privacyMode} label="Hide people in the app" hint="For streaming and screenshots: everyone gets a made-up name (like “Sleepy Otter”, always the same for the same person), pictures are blurred, and your name shows as “You”. Nothing changes in VRChat." onchange={() => commit(true)} />
-    <span class="hint">While it's on, a 🙈 Private pill shows at the top; click it to turn it off.</span>
+    <Toggle bind:checked={s.privacyMode} label="🙈 Privacy mode" hint="For streaming and screenshots: everyone gets a made-up name (like “Sleepy Otter”, always the same for the same person), pictures are blurred, and your name shows as “You”. Nothing changes in VRChat. While it's on, a 🙈 Private pill at the top turns it off." onchange={() => commit(true)} />
   </Section>
 
   <TroubleshootCard />
