@@ -8,10 +8,10 @@
   import { app, confirmAsk, errorToast, toast } from "../lib/app.svelte";
   import { api, inTauri } from "../lib/api";
   import { avatarName, groupMembers, pendingFor, pregnancyFor } from "../lib/scope";
-  import { matches, seenText, shelfOf } from "../lib/avatars";
+  import { hasSystem, matches, seenText, shelfOf } from "../lib/avatars";
   import { progress, TERM_WEEKS } from "../lib/timeline";
   import { FEATURES, FIXED, PARAM_INFO, REQUIRED, hasParam, syncLabel } from "../lib/params";
-  import { HOLE_TYPES, socketCounts, socketsFrom, typeOf } from "../lib/sps";
+  import { HAPTICS_DISABLED, HOLE_TYPES, KNOWN_SPS_VERSION, socketCounts, socketsFrom, spsTooNew, spsVersion, typeOf } from "../lib/sps";
   import type { HoleType } from "../lib/types";
   import type { AvatarGroup, AvatarProfile, Mapping, Settings } from "../lib/types";
 
@@ -136,6 +136,8 @@
   const profiles = $derived(Object.values(d.avatars).sort((a, b) => b.lastSeenMs - a.lastSeenMs));
   const groups = $derived(Object.values(d.groups ?? {}).sort((a, b) => a.name.localeCompare(b.name)));
   const searching = $derived(!!query.trim());
+  // None of your avatars has shown the Pregnancy System yet (still unchecked ones don't count).
+  const noneWithSystem = $derived(!profiles.some((p) => hasSystem(p) !== false));
   const results = $derived(searching ? profiles.filter((p) => matches(d, p, query)) : []);
 
   /** Avatars outside groups (all of them in global mode), sorted onto shelves. */
@@ -338,10 +340,13 @@
           </label>
         {/if}
 
+        {#if spsTooNew(p.params)}
+          <span class="hint warn-text">⚠️ This avatar uses a newer SPS (version {spsVersion(p.params)}) than this app knows ({KNOWN_SPS_VERSION}), so WooHoo detection may not work on it. Check Settings > Updates for a newer app.</span>
+        {/if}
         {#if !socketsFrom(p.params).length}
           <details class="field fold">
             <summary><strong>SPS sockets</strong> <span class="muted small">none found yet</span></summary>
-            <span class="hint">{p.params.length ? "This avatar has no SPS sockets (VRCFury SPS adds OGB/Orf/... parameters)." : "Wear this avatar in VRChat so the app can read its sockets."}</span>
+            <span class="hint">{p.params.includes(HAPTICS_DISABLED) ? "VRCFury's haptics were off when this avatar was uploaded, so its sockets can't be read. Turn on Tools > VRCFury > Settings > Enable SPS Haptics in Unity and upload again." : p.params.length ? "This avatar has no SPS sockets (VRCFury SPS adds OGB/... parameters)." : "Wear this avatar in VRChat so the app can read its sockets."}</span>
           </details>
         {:else}
           {@const socks = socketsFrom(p.params)}
@@ -492,11 +497,18 @@
     </section>
   {/if}
 
-  {#if profiles.length === 0}
-    <section class="card empty">
-      <div class="big" aria-hidden="true">🎭</div>
-      <p class="muted">Avatars show up here when you switch to them in VRChat (with OSC on).</p>
+  {#if noneWithSystem && !searching}
+    <section class="card empty plug">
+      <div class="big" aria-hidden="true">🤰</div>
+      <h2>{profiles.length ? "No avatars with the Pregnancy System yet" : "No avatars yet"}</h2>
+      <p class="muted">The Pregnancy System gives your avatar a growing belly, kicks and births. Add it in Unity and upload, then wear the avatar and it shows up here.</p>
+      <button onclick={() => api.openSystemPage().catch(errorToast)}>✨ Get the Pregnancy System</button>
+      {#if !profiles.length}<p class="muted small">Already have it? Switch to the avatar in VRChat (with OSC on).</p>{/if}
     </section>
+  {/if}
+
+  {#if profiles.length === 0}
+    <!-- Nothing to list yet. -->
   {:else if searching}
     <section class="card">
       <h2>Found {results.length}</h2>
@@ -807,6 +819,16 @@
   }
   .empty {
     text-align: center;
+  }
+  .plug {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+  .plug h2,
+  .plug p {
+    margin: 0;
   }
   .wearing-note {
     background: var(--bg-3);

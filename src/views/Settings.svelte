@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, setContext } from "svelte";
   import Toggle from "../components/Toggle.svelte";
-  import Section from "../components/Section.svelte";
+  import Section, { FILTER_KEY, type SectionFilter } from "../components/Section.svelte";
   import AccentPicker from "../components/AccentPicker.svelte";
   import { forgetHeight, hipWarning, setHeightNow } from "../lib/posture";
   import DebugPanel from "../components/DebugPanel.svelte";
@@ -12,7 +12,7 @@
   import { HEX } from "../lib/theme";
   import { api, inTauri, pickFolder, pickTextFile, saveTextFile } from "../lib/api";
   import { MULTIPLES_LABEL, graceMs, termMs } from "../lib/fertility";
-  import { HOLE_TYPES } from "../lib/sps";
+  import { HAPTICS_DISABLED, HOLE_TYPES, KNOWN_SPS_VERSION, spsTooNew, spsVersion } from "../lib/sps";
   import { FEATURES, FIXED, PARAM_INFO, PARAM_ORDER, REQUIRED, SYNC_ROLES, hasParam, syncLabel } from "../lib/params";
   import { humanDuration, week as weekOf } from "../lib/timeline";
   import { pregnancyFor } from "../lib/scope";
@@ -378,6 +378,12 @@
     { v: 0.9, label: "Very likely", hint: "about 90%" },
   ];
   const status = $derived(app.status);
+
+  // The search box: cards without the words hide, the rest open up.
+  const filter = $state<SectionFilter>({ q: "", hits: {} });
+  setContext(FILTER_KEY, filter);
+  const searching = $derived(!!filter.q.trim());
+  const noHits = $derived(searching && !Object.values(filter.hits).some(Boolean));
   // Some Linux desktops have no tray (the browser preview pretends there is one).
   const trayOk = $derived(!inTauri || (status?.trayAvailable ?? true));
 
@@ -417,7 +423,9 @@
 {/snippet}
 
 <div class="page">
-  <h3 class="cat">In VRChat</h3>
+  <input class="search" type="search" bind:value={filter.q} placeholder="🔍 Search settings" aria-label="Search settings" />
+  {#if noHits}<p class="muted small center">Nothing in Settings matches "{filter.q.trim()}".</p>{/if}
+  <h3 class="cat" hidden={searching}>In VRChat</h3>
   <Section id="vrchat" title="🔗 VRChat" open>
     {#snippet extra()}{#if status}<span class="pill" class:ok={status.oscActive} class:off={!status.oscActive}>{status.oscActive ? "linked" : "not linked"}</span>{/if}{/snippet}
     <Toggle bind:checked={s.osc.enabled} label="Control my avatar's belly" hint="Overrides the avatar's own counter while the app runs" onchange={() => commit(true)} />
@@ -437,7 +445,11 @@
       {#if portError}<span class="small err">{portError}</span>{/if}
     {/if}
     {#if status}
-      <LinkInfo {status} />
+      <details class="details">
+        <summary>Connection details</summary>
+        <LinkInfo {status} hint={false} />
+      </details>
+      <LinkInfo {status} list={false} />
       {#if status.note}<span class="muted small">{status.note}</span>{/if}
     {/if}
   </Section>
@@ -541,8 +553,11 @@
         </div>
       </div>
       <div class="soon">
+        {#if worn && spsTooNew(worn.params)}
+          <span class="small cant">⚠️ The avatar you're wearing uses a newer SPS (version {spsVersion(worn.params)}) than this app knows ({KNOWN_SPS_VERSION}), so WooHoo detection may not work. Check Updates below for a newer app.</span>
+        {/if}
         {#if !status?.spsFound?.length}
-          <span class="muted small">{status?.vrchatRunning ? "No SPS sockets found on the avatar you're wearing. Sockets need VRCFury haptics turned on." : "Open VRChat to find the sockets on your avatar."}</span>
+          <span class="muted small">{!status?.vrchatRunning ? "Open VRChat to find the sockets on your avatar." : worn?.params.includes(HAPTICS_DISABLED) ? "VRCFury's haptics were off when the avatar you're wearing was uploaded, so its sockets can't be read. Turn on Tools > VRCFury > Settings > Enable SPS Haptics in Unity and upload again." : "No SPS sockets found on the avatar you're wearing. Sockets need VRCFury haptics turned on."}</span>
         {:else}
           <strong class="small">Sockets on the avatar you're wearing</strong>
           {#each status.spsLive as live (live.name)}
@@ -597,7 +612,7 @@
     <Toggle bind:checked={s.showPictures} label="Show VRChat pictures" hint="Profile pictures and avatar thumbnails from public vrchat.com pages. No login needed." onchange={() => commit()} />
   </Section>
 
-  <h3 class="cat">Pregnancy</h3>
+  <h3 class="cat" hidden={searching}>Pregnancy</h3>
   <Section id="fertility" title="🌸 Fertility">
     {#snippet extra()}<span class="pill" class:ok={s.fertility} class:off={!s.fertility}>{s.fertility ? "cycle on" : "off"}</span>{/snippet}
     <Toggle bind:checked={s.fertility} label="Fertility cycle and grace period" hint="Off: a pregnancy starts the moment you WooHoo" onchange={() => commit()} />
@@ -749,7 +764,7 @@
     {#if lacks("labor")}{@render cantShow("labor", "Labor")}{/if}
   </Section>
 
-  <h3 class="cat">App</h3>
+  <h3 class="cat" hidden={searching}>App</h3>
   <Section id="notifications" title="🔔 Notifications">
     {#snippet extra()}<span class="pill" class:ok={vrTargets.length > 0} class:off={vrTargets.length === 0}>VR: {vrTargets.length ? vrTargets.map((t) => VR_APP_NAMES[t]).join(" + ") : "nowhere now"}</span>{/snippet}
     <span class="hint">Labor, births, achievements and more.</span>
@@ -956,7 +971,9 @@
     {/if}
   </Section>
 
-  {#if inTauri}
+  {#if searching}
+    <!-- Only the matching cards while searching. -->
+  {:else if inTauri}
     <div class="row quit">
       <button class="danger small" onclick={quit}>Quit app</button>
     </div>
@@ -1247,8 +1264,21 @@
     letter-spacing: 0.08em;
     color: var(--muted);
   }
-  .cat:first-child {
-    margin-top: 0;
+  .cat[hidden] {
+    display: none;
+  }
+  .search {
+    width: 100%;
+  }
+  /* The VRChat card's ports and addresses, folded away. */
+  .details summary {
+    cursor: pointer;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--muted);
+  }
+  .details[open] summary {
+    margin-bottom: 6px;
   }
   .sub {
     margin: 10px 0 0;

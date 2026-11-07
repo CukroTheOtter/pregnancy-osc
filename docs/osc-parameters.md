@@ -57,7 +57,9 @@ Found in the avatar's Settings > App Controls menu. These names can't be changed
 | Parameter | Type | Who sets it | What it does |
 |---|---|---|---|
 | `OGB/Orf/<socket>/...` | float, local | VRChat (SPS) | **How deep another player is in a socket.** The app watches these to notice a WooHoo. Made by VRCFury SPS sockets with haptics on. See [SPS sockets](#2c-sps-sockets-read-only-for-detecting-woohoos). |
-| `OGB_ENABLED` | bool, local | App | Turns those socket values on (VRCFury keeps them at 0 until an app asks). |
+| `OGB/Socket/<socket>/...` | float/bool, local | VRChat (SPS3) | The same for avatars built with SPS3 (VRCFury 1.1442 and later): how far another player's plug tip is, and the plug's length. |
+| `OGB_ENABLED`, `OGB/Enabled` | bool, local | App | Turns those socket values on (VRCFury keeps them at 0 until an app asks). |
+| `OGB/HapticsDisabled` | bool, local | VRChat (SPS3) | There when VRCFury's haptics were off at upload: no socket values, so no WooHoo detection on that avatar. |
 
 ---
 
@@ -129,6 +131,16 @@ VRCFury SPS sockets with haptics on expose `OGB/Orf/<socket>/<channel>` floats (
 
 - Watched channel per socket (best available): `PenOthersNewRoot`, then `PenOthers`, then `PenOthersNewTip`. "Others" = another player.
 - "Self" channels (your own touches) and plugs (`OGB/Pen/...`) are ignored.
+
+**SPS3** (VRCFury 1.1442 and later; it removes the `OGB/Orf/` names on upload) uses `OGB/Socket/<socket>/...` instead, with no ready-made depth. The app works it out like OSC Goes Brrr 2.1.31:
+
+- `DepthOthers`: 0 to 1, above 0 when another player's plug is in range. `DepthOthers_PointSeparation`: meters from the plug's tip to the socket.
+- An SPS3 plug (any `DepthOthers_CollisionTag_SPS/Plug/...` on) gives its length as `DepthOthers_SenderLossyScaleZ`. An older plug's length is guessed on first contact from the socket's `DepthRadius` (read from OSCQuery: it never changes, so VRChat never sends it) and kept while it's all the way in.
+- Depth = 1 − separation ÷ length, 0 to 1, then the same depth and time rules as below. Socket names are the same as before, so hole types and picked sockets carry over.
+- The app sends `OGB/Enabled` true as well (in SPS3 it only gates touch contacts, which the app doesn't use; OSC Goes Brrr sends it too).
+- Built from VRCFury's release candidate (1.1442.1-beta.8) and OSC Goes Brrr 2.1.31; not yet tested on a live SPS3 avatar.
+
+**Newer SPS versions.** VRCFury adds `OGB/Version/<n>` to every haptics avatar (11 for SPS3) and bumps it when sockets or plugs change. The app knows up to 11. An avatar with a higher number gets a warning in Settings > Detecting WooHoos and on its Avatars page ("uses a newer SPS than this app knows"), instead of detection quietly stopping. Avatars without the parameter (older builds) get no warning.
 - **Hole types (global):** each socket gets a type from its name: Vaginal (vagina, pussy, womb…), Anal (anal, ass, butt…), Oral (mouth, throat…) or Other. Settings chooses which types count on every avatar (default: Vaginal only).
 - **Per avatar** (its page under Avatars): fix a socket's type if its name is unusual, or pick exactly which sockets count on that avatar (overrides the global types).
 - A WooHoo counts when a socket that counts is past the depth you set for the total time you set (default 30% for 20 s). One per session; a session ends after a quiet gap (default 2 min), or when a WooHoo's result is revealed. A socket value that hasn't changed for a whole gap doesn't count (VRChat only sends changes, so a lost 0 can't keep a session open).

@@ -2,7 +2,8 @@
   import type { Status } from "../lib/types";
 
   // How the app is linked to VRChat: who it found, which ports, and whether VRChat is talking back.
-  let { status }: { status: Status | null } = $props();
+  // `list` / `hint` let Settings fold the details away and keep the warning in sight.
+  let { status, list = true, hint = true }: { status: Status | null; list?: boolean; hint?: boolean } = $props();
 
   function ago(ms: number | null): string {
     if (ms == null) return "never";
@@ -16,7 +17,7 @@
   const quiet = $derived(!!status?.oscActive && (status.lastHeardMs == null || Date.now() - status.lastHeardMs > 60_000));
 </script>
 
-{#if status}
+{#if status && list}
   <dl class="link-info">
     <dt>VRChat</dt>
     <dd>{status.vrchatRunning ? "running" : "not running"}</dd>
@@ -37,6 +38,8 @@
     <dt>Heard from VRChat</dt>
     <dd>{ago(status.lastHeardMs)}</dd>
   </dl>
+{/if}
+{#if status && hint}
   {#if quiet && status.vrchatRunning}
     <p class="hint">VRChat isn't sending to the app (menu buttons won't work). Toggle OSC off and on in VRChat's Action Menu.</p>
   {/if}

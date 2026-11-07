@@ -18,6 +18,7 @@
   import { dueMs, humanDuration, pause, progress, resume, retime, setProgress, TERM_WEEKS } from "../lib/timeline";
   import type { Settings } from "../lib/types";
   import { instanceName } from "../lib/safety";
+  import { babySize } from "../lib/sizes";
 
   const p = $derived(currentPregnancy());
   const w = $derived(currentPending());
@@ -168,6 +169,10 @@
         <!-- Weeks are scaled to the pregnancy length; this is the real time. -->
         <span class="muted real" title="Real time left, whatever the pregnancy length">⏳ {#if isDue}{pr > 1.01 ? `${humanDuration(app.now - due)} late` : "any moment"}{:else}{humanDuration(due - app.now)} left{/if}</span>
       </ProgressRing>
+      {#if !isDue}
+        <!-- "Each" only once how many is known. -->
+        <span class="size">{babySize(week, week >= BABY_REVEAL_WEEK && p.babyCount > 1)}</span>
+      {/if}
       <div class="facts">
         <div class="fact">
           <span class="muted small">Due date</span>
@@ -250,10 +255,8 @@
       <h2>⏱ Length</h2>
       <SpeedPicker value={startSpeed} onchange={(s) => { startSpeed = s; rememberLength(s); }} />
       <p class="muted small" style="margin-top:10px">Used for the next pregnancy, and your cycle scales with it.</p>
+      <button class="soft start" onclick={start} disabled={busy}>Start a pregnancy now 💕</button>
     </section>
-    <div class="row end">
-      <button class="ghost small" onclick={start} disabled={busy}>Start a pregnancy now 💕</button>
-    </div>
   {/if}
 
   <FunHistory avatarId={aid} />
@@ -381,6 +384,13 @@
   }
   .end {
     justify-content: center;
+  }
+  .size {
+    font-weight: 700;
+    margin-top: -4px;
+  }
+  .start {
+    width: 100%;
   }
   .center {
     text-align: center;

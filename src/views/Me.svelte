@@ -32,6 +32,9 @@
   // Ones unlocked in debug mode don't count.
   const unlocked = $derived(ACHIEVEMENTS.filter((a) => d.achievements?.[a.id] != null && !isTest(a.id)).length);
   let sharing = $state(false);
+  const got = (id: string) => d.achievements?.[id] != null && !isTest(id);
+  let show = $state<"all" | "unlocked" | "locked">("all");
+  const listed = $derived(show === "all" ? ACHIEVEMENTS : ACHIEVEMENTS.filter((a) => got(a.id) === (show === "unlocked")));
 </script>
 
 <div class="page">
@@ -73,8 +76,16 @@
       <span class="pill">{unlocked} / {ACHIEVEMENTS.length}</span>
       <button class="small soft" onclick={() => (sharing = true)}>📤 Share</button>
     </div>
+    <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax={ACHIEVEMENTS.length} aria-valuenow={unlocked} aria-label="Achievements unlocked">
+      <span style="width:{(unlocked / ACHIEVEMENTS.length) * 100}%"></span>
+    </div>
+    <div class="segmented filter">
+      <button class:on={show === "all"} onclick={() => (show = "all")}>All</button>
+      <button class:on={show === "unlocked"} onclick={() => (show = "unlocked")}>Unlocked</button>
+      <button class:on={show === "locked"} onclick={() => (show = "locked")}>Locked</button>
+    </div>
     <div class="achievements">
-      {#each ACHIEVEMENTS as a (a.id)}
+      {#each listed as a (a.id)}
         {@const at = d.achievements?.[a.id]}
         <div class="achievement" class:locked={at == null} class:test={isTest(a.id)}>
           <span class="emoji" aria-hidden="true">{at == null ? "🔒" : a.emoji}</span>
@@ -85,6 +96,8 @@
             <span class="muted small">{at == null ? (a.secret ?? a.hint) : `${a.hint} · ${dateFmt.format(at)}`}</span>
           </span>
         </div>
+      {:else}
+        <p class="muted small none">{show === "unlocked" ? "None yet. Your first one is close! 💕" : "You've got them all! 🎉"}</p>
       {/each}
     </div>
   </section>
@@ -143,6 +156,28 @@
   }
   .fav {
     margin: 10px 0 0;
+  }
+  .bar {
+    height: 8px;
+    border-radius: 999px;
+    background: var(--bg-3);
+    overflow: hidden;
+    margin: 0 0 10px;
+  }
+  .bar span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--accent);
+    transition: width 0.4s ease;
+  }
+  .filter {
+    margin-bottom: 10px;
+  }
+  .none {
+    grid-column: 1 / -1;
+    text-align: center;
+    margin: 6px 0;
   }
   .achievements {
     display: grid;

@@ -87,11 +87,13 @@
 {/snippet}
 
 <div class="page">
-  <section class="card totals">
-    <div><strong>{totals.fun}</strong><span class="muted small">💕 WooHoos</span></div>
-    <div><strong>{totals.pregnancies}</strong><span class="muted small">🤰 pregnancies</span></div>
-    <div><strong>{totals.kids}</strong><span class="muted small">👶 kids</span></div>
-  </section>
+  {#if list.length || totals.fun}
+    <section class="card totals">
+      <div><strong>{totals.fun}</strong><span class="muted small">💕 WooHoos</span></div>
+      <div><strong>{totals.pregnancies}</strong><span class="muted small">🤰 pregnancies</span></div>
+      <div><strong>{totals.kids}</strong><span class="muted small">👶 kids</span></div>
+    </section>
+  {/if}
 
   {#if list.length === 0}
     <section class="card empty">

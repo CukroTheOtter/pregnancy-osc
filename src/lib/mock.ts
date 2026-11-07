@@ -35,7 +35,7 @@ const DEMO_PEOPLE: Person[] = [
 
 const prof = (id: string, name: string): AvatarProfile => ({
   id, name, species: null, kind: null, hideBelly: null, bellyScale: null, fetalSounds: null, pregnancyId: null,
-  followGlobal: false, lastSeenMs: Date.now(), params: ["Pregnancy/Stage", "Pregnancy/HideBelly", "Pregnancy/AppActive", "OGB/Orf/Pussy/PenOthersNewRoot", "OGB/Orf/Mouth/PenOthersNewRoot", "OGB/Orf/Hole1/PenOthersNewRoot"], groupId: null, paramNames: {},
+  followGlobal: false, lastSeenMs: Date.now(), params: ["Pregnancy/Stage", "Pregnancy/HideBelly", "Pregnancy/AppActive", "OGB/Orf/Pussy/PenOthersNewRoot", "OGB/Orf/Mouth/PenOthersNewRoot", "OGB/Socket/Hole1/DepthOthers", "OGB/Socket/Hole1/DepthOthers_PointSeparation", "OGB/Socket/Hole1/DepthRadius", "OGB/Version/11"], groupId: null, paramNames: {},
   sps: { custom: false, sockets: [], types: {} },
 });
 

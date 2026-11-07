@@ -4,6 +4,26 @@ import type { AvatarProfile, HoleType, Settings } from "./types";
 
 const PREFIX = "OGB/Orf/";
 const OTHERS = ["PenOthersNewRoot", "PenOthers", "PenOthersNewTip"];
+/** SPS3 (VRCFury 1.1442+): `OGB/Socket/<socket>/DepthOthers`. */
+const V3_PREFIX = "OGB/Socket/";
+const V3_CHANNEL = "DepthOthers";
+/** Newest `OGB/Version/<n>` this app understands (mirrors KNOWN_VERSION in sps.rs). */
+export const KNOWN_SPS_VERSION = 11;
+const VERSION_PREFIX = "OGB/Version/";
+
+/** The avatar's SPS haptics version, if it says (older avatars don't). */
+export function spsVersion(params: string[]): number | null {
+  const found = params.filter((p) => p.startsWith(VERSION_PREFIX)).map((p) => Number(p.slice(VERSION_PREFIX.length))).filter(Number.isInteger);
+  return found.length ? Math.max(...found) : null;
+}
+
+/** True when the avatar's SPS is newer than this app knows. */
+export function spsTooNew(params: string[]): boolean {
+  return (spsVersion(params) ?? 0) > KNOWN_SPS_VERSION;
+}
+
+/** On avatars uploaded with VRCFury's haptics off. */
+export const HAPTICS_DISABLED = "OGB/HapticsDisabled";
 const ORAL = ["mouth", "oral", "throat", "blowjob", "lips", "face"];
 const ANAL = ["anal", "anus", "ass", "butt", "rear", "booty"];
 const VAGINAL = ["vagina", "vag", "pussy", "womb", "cervix", "vulva", "cunt", "front"];
@@ -25,9 +45,10 @@ export function classify(socket: string): HoleType {
 export function socketsFrom(params: string[]): string[] {
   const out = new Set<string>();
   for (const p of params) {
-    if (!p.startsWith(PREFIX)) continue;
-    const [socket, channel] = p.slice(PREFIX.length).split("/");
-    if (socket && OTHERS.includes(channel)) out.add(socket);
+    const v3 = p.startsWith(V3_PREFIX);
+    if (!v3 && !p.startsWith(PREFIX)) continue;
+    const [socket, channel] = p.slice(v3 ? V3_PREFIX.length : PREFIX.length).split("/");
+    if (socket && (v3 ? channel === V3_CHANNEL : OTHERS.includes(channel))) out.add(socket);
   }
   return [...out].sort();
 }

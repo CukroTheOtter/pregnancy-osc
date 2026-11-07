@@ -28,6 +28,7 @@ Desktop app that drives the avatar's pregnancy over OSC. Tauri 2 + Rust + Svelte
 - The log writes "Entering Room" BEFORE "Joining wrld_…" (see `instance.rs`).
 - Sending `/avatar/change` for an avatar you can't wear: the log says "Trying to change to an inaccessible avatar" and VRChat keeps the old one, but its OSCQuery reports the new ID. So the app doubts that ID (`refused.rs`) and goes back to the avatar before it.
 - After uploading an avatar update, VRChat can keep reporting the OLD parameter list (its OSC config is stale). Fix: reset the avatar's OSC config in VRChat (Action Menu > Options > OSC > Reset Config), then switch avatars.
+- SPS parameters aren't a public API (VRCFury's author won't support them). OGB's source is the spec: when VRCFury changes SPS, diff OGB's release and port its maths and tests into `pregsys-core/src/sps.rs` (one reader per format, never drop an old one). Bump `KNOWN_VERSION` there and `KNOWN_SPS_VERSION` in `src/lib/sps.ts` together; avatars with a higher `OGB/Version/<n>` get a "newer SPS" warning.
 - "Belly not changing" is often Hide Belly on, or Settings > Safety hiding it in a public instance (Home shows a 🙈 note with Show / Show here). `belly-cli --query` shows live values.
 
 ## Commands (bash needs `~/.cargo/bin` and `/c/Program Files/nodejs` on PATH)

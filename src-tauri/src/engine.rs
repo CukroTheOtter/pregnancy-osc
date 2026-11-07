@@ -723,19 +723,23 @@ impl Engine {
         }
         let params = info.params;
         // Ask VRChat to send this avatar's SPS socket values.
-        let mut sps_names: Vec<String> = params
-            .iter()
-            .filter(|p| pregsys_core::sps::split(&p.name).is_some_and(|(_, c)| pregsys_core::sps::is_others_channel(c)))
-            .map(|p| p.name.clone())
-            .collect();
+        let mut sps_names: Vec<String> = params.iter().filter(|p| pregsys_core::sps::wanted(&p.name)).map(|p| p.name.clone()).collect();
         sps_names.sort();
-        // Switch VRCFury's haptics channels on (until it's on, every socket reads 0).
+        // An SPS3 socket's radius never changes, so VRChat never sends it: read it here.
+        for p in params.iter().filter(|p| pregsys_core::sps::is_constant(&p.name)) {
+            if let Some(v) = p.value.as_ref().and_then(|v| v.as_f32()) {
+                self.sps.on_param(&p.name, v);
+            }
+        }
+        // Switch VRCFury's haptics channels on (until it's on, every old socket reads 0;
+        // SPS3's OGB/Enabled only gates touch for now, but OGB sends it too).
         let sps_on = self.shared.data.lock().unwrap().settings.sps.enabled;
-        let enable = pregsys_core::sps::ENABLE_PARAM;
-        let off = params.iter().any(|p| p.name == enable && p.value.as_ref().and_then(|v| v.as_f32()) != Some(1.0));
-        if sps_on && !sps_names.is_empty() && off {
-            if let Some(b) = &self.bridge {
-                b.send(&format!("{OSC_PARAM_PREFIX}{enable}"), OscValue::Bool(true));
+        for enable in [pregsys_core::sps::ENABLE_PARAM, pregsys_core::sps::ENABLE_PARAM_V3] {
+            let off = params.iter().any(|p| p.name == enable && p.value.as_ref().and_then(|v| v.as_f32()) != Some(1.0));
+            if sps_on && !sps_names.is_empty() && off {
+                if let Some(b) = &self.bridge {
+                    b.send(&format!("{OSC_PARAM_PREFIX}{enable}"), OscValue::Bool(true));
+                }
             }
         }
         if sps_names != self.sps_listen {
@@ -1416,6 +1420,8 @@ impl Engine {
                 "velocity": self.posture.velocity,
                 "vrMode": self.posture.vr,
                 "spsListening": self.sps_listen.len(),
+                "spsVersion": self.driver.avatar_param_names().and_then(pregsys_core::sps::version),
+                "spsKnownVersion": pregsys_core::sps::KNOWN_VERSION,
                 "shownHere": self.shown_here.is_some(),
                 "nextParamsFetchMs": self.pending_params_fetch.map(|t| t.saturating_duration_since(Instant::now()).as_millis() as u64),
             },

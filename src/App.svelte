@@ -238,7 +238,7 @@
     left: 4px;
     width: calc((100% - 8px - 16px) / 5);
     border-radius: 999px;
-    background: var(--bg-2);
+    background: var(--accent);
     box-shadow: var(--shadow);
     transform: translateX(calc(var(--i) * (100% + 4px)));
     transition: transform 0.32s cubic-bezier(0.34, 1.3, 0.5, 1);
@@ -255,7 +255,11 @@
     padding: 7px 4px;
     font-size: 0.85rem;
     gap: 4px;
-    transition: transform 0.15s ease;
+    transition: transform 0.15s ease, color 0.2s ease;
+  }
+  /* The chosen tab sits on the accent pill. */
+  .tab.on {
+    color: var(--accent-text, #fff);
   }
   /* The tab under the mouse grows a little; with none hovered, the chosen one does. */
   .tab:hover,
