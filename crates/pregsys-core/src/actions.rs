@@ -194,6 +194,21 @@ pub fn record_fun(data: &mut AppData, now_ms: i64, roll: f64) -> FunOutcome {
     FunOutcome::Pending
 }
 
+/// Settings changed: a wait already running follows the new wait length
+/// (pregnancy length or "Find out after"), counted from its first WooHoo. One
+/// that's over by then finds out on the next check. True if anything moved.
+pub fn retime_waits(data: &mut AppData, old: &Settings) -> bool {
+    let grace = fertility::grace_ms(&data.settings);
+    if grace == fertility::grace_ms(old) || data.waiting.is_empty() {
+        return false;
+    }
+    for w in &mut data.waiting {
+        let first = w.fun_times.iter().copied().fold(w.time_ms, i64::min);
+        w.reveal_ms = first + grace;
+    }
+    true
+}
+
 /// Ends the grace period if it's time. Returns the outcome when it does.
 pub fn resolve_due(data: &mut AppData, now_ms: i64) -> Option<bool> {
     let i = data.waiting.iter().position(|w| w.reveal_ms <= now_ms)?;
@@ -1124,6 +1139,26 @@ mod tests {
         assert_eq!(resolve_due(&mut d, reveal), Some(false));
         assert!(d.current_pregnancy(Some("avtr_a")).is_some());
         assert!(d.current_pregnancy(Some("avtr_b")).is_none());
+    }
+
+    #[test]
+    fn a_running_wait_follows_a_new_length() {
+        use crate::timeline::DAY_MS;
+        let mut d = with_instance(&["Fox"]);
+        d.settings.default_mode = DurationMode::Realtime;
+        assert_eq!(record_fun(&mut d, LATER, 0.0), FunOutcome::Pending);
+        record_fun(&mut d, LATER + 60_000, 0.0);
+        assert_eq!(d.waiting[0].reveal_ms, LATER + 14 * DAY_MS, "9 months: two weeks to find out");
+        // Switched to 10 minutes: the wait shrinks, counted from the first WooHoo.
+        let old = d.settings.clone();
+        d.settings.default_mode = DurationMode::Custom;
+        d.settings.default_custom_ms = Some(10 * 60_000);
+        assert!(retime_waits(&mut d, &old));
+        assert_eq!(d.waiting[0].reveal_ms, LATER + 60_000, "a twentieth of 10 minutes is under the 1-minute floor");
+        assert_eq!(resolve_due(&mut d, LATER + 60_000), Some(true));
+        // Nothing to move when the wait length stays the same.
+        let same = d.settings.clone();
+        assert!(!retime_waits(&mut d, &same));
     }
 
     #[test]

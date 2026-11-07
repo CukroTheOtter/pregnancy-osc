@@ -60,6 +60,8 @@ pub fn save_settings(app: AppHandle, s: S, settings: Settings) -> R<Option<Strin
         if old.debug && !settings.debug {
             pregsys_core::testbuddy::remove_all(&mut d, now_ms());
         }
+        // A wait to find out follows a new pregnancy length (or wait setting).
+        actions::retime_waits(&mut d, &old);
         old
     };
     changed(&app, &s, true);

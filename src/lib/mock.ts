@@ -370,6 +370,9 @@ export const mock = {
   async save_settings({ settings }: { settings: Settings }) {
     // Turning debug mode off removes Test Buddy.
     if (data.settings.debug && !settings.debug) removeTestBuddy();
+    // A wait to find out follows a new pregnancy length (actions.rs retime_waits).
+    const grace = graceMs(settings);
+    if (grace !== graceMs(data.settings)) for (const w of data.waiting) w.revealMs = Math.min(w.timeMs, ...(w.funTimes ?? [])) + grace;
     data.settings = settings;
     changed();
     return null;
