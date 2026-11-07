@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fakeName, myShownName, shownName } from "./privacy";
+import { fakeName, hidesMe, myShownName, shownName } from "./privacy";
 import { emptyData } from "./testdata";
 
 describe("privacy mode", () => {
@@ -21,6 +21,18 @@ describe("privacy mode", () => {
     expect(shownName(d, "Rex", "usr_2")).not.toBe(a);
     expect(shownName(d, null)).toBeNull();
     expect(myShownName(d, "Spiro")).toBe("You");
+  });
+
+  it("can still show you while hiding others", () => {
+    const d = emptyData();
+    d.settings.privacyMode = true;
+    d.settings.privacyShowMe = true;
+    expect(myShownName(d, "Spiro")).toBe("Spiro");
+    expect(hidesMe(d)).toBe(false);
+    expect(shownName(d, "Ember Fox", "usr_1")).not.toBe("Ember Fox");
+    // "Still show me" means nothing with privacy mode off.
+    d.settings.privacyMode = false;
+    expect(hidesMe(d)).toBe(false);
   });
 
   it("rarely gives two people the same made-up name", () => {

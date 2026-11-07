@@ -5,7 +5,7 @@
 import { BABY_REVEAL_WEEK, GENDER_REVEAL_WEEK, babyWord, genderText } from "./fertility";
 import { progress, timeAtProgress, TERM_WEEKS } from "./timeline";
 import { rng } from "./scanstats";
-import { isPrivate, shownName } from "./privacy";
+import { hidesMe, shownName } from "./privacy";
 import type { AppData, Pregnancy } from "./types";
 
 /** Rare scans: something cute caught on camera (see Ultrasound.svelte). */
@@ -113,7 +113,7 @@ export function scanMeta(d: AppData, p: Pregnancy, timeMs: number, scanWeek: num
   const genders = d.settings.genderMode === "random" && p.genders.length && scanWeek >= GENDER_REVEAL_WEEK ? p.genders : null;
   return {
     // Privacy mode: no name on the scan screen.
-    patient: showName && !isPrivate(d) ? (d.instance.local?.name ?? null) : null,
+    patient: showName && !hidesMe(d) ? (d.instance.local?.name ?? null) : null,
     timeMs,
     dueMs: timeAtProgress(p.timeline, p.endedMs ?? timeMs, 1),
     genders,

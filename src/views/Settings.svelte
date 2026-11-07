@@ -864,7 +864,10 @@
         <span class="hint">A full set of matching colors, or Custom to pick your own.</span>
       {/if}
     </div>
-    <Toggle bind:checked={s.privacyMode} label="🙈 Privacy mode" hint="For streaming and screenshots: everyone gets a made-up name (like “Sleepy Otter”, always the same for the same person), pictures are blurred, and your name shows as “You”. Nothing changes in VRChat. While it's on, a 🙈 Private pill at the top turns it off." onchange={() => commit(true)} />
+    <Toggle bind:checked={s.privacyMode} label="🙈 Privacy mode" hint="For streaming and screenshots: everyone gets a made-up name (like “Sleepy Otter”, always the same for the same person) and their pictures are blurred. Nothing changes in VRChat. While it's on, a 🙈 Private pill at the top turns it off." onchange={() => commit(true)} />
+    {#if s.privacyMode}
+      <Toggle bind:checked={s.privacyShowMe} label="Still show me" hint={s.privacyShowMe ? "Your own name and picture stay; only other people are hidden" : "You show as “You”, with your picture blurred too"} onchange={() => commit(true)} />
+    {/if}
   </Section>
 
   <TroubleshootCard />

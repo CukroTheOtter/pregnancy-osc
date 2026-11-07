@@ -147,6 +147,8 @@ export interface Settings {
   showPictures: boolean;
   /** Privacy mode: names become "Hidden #123", pictures are blurred. */
   privacyMode: boolean;
+  /** Privacy mode still shows your own name and picture. */
+  privacyShowMe: boolean;
   fertility: boolean;
   fertilityPeak: number;
   /** Minutes from a WooHoo until you find out (null = match the pregnancy length). */

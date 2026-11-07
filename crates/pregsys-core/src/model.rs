@@ -240,6 +240,8 @@ pub struct Settings {
     /// Privacy mode (UI only): people's names become "Hidden #123" and their
     /// pictures are blurred, for streaming and screenshots.
     pub privacy_mode: bool,
+    /// Privacy mode still shows your own name and picture (only others are hidden).
+    pub privacy_show_me: bool,
     /// Fertility cycle + grace period: in-game fun doesn't start a pregnancy
     /// right away; the outcome is rolled and revealed later.
     pub fertility: bool,
@@ -311,6 +313,7 @@ impl Default for Settings {
             read_logs: true,
             show_pictures: false,
             privacy_mode: false,
+            privacy_show_me: false,
             fertility: true,
             fertility_peak: 0.6,
             grace_minutes: None,

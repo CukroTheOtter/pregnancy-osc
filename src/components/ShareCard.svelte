@@ -5,6 +5,7 @@
   import { app, errorToast, toast } from "../lib/app.svelte";
   import { api, saveBlob } from "../lib/api";
   import { drawShareCard } from "../lib/sharecard";
+  import { hidesMe } from "../lib/privacy";
   import { ACHIEVEMENTS } from "../lib/achievements";
 
   let { onclose }: { onclose: () => void } = $props();
@@ -36,8 +37,8 @@
     ];
     const input = {
       // Privacy mode: no name or picture on the card.
-      name: (showName && !d.settings.privacyMode && me?.name) || "Someone",
-      picture: showPicture && !d.settings.privacyMode ? picture : null,
+      name: (showName && !hidesMe(d) && me?.name) || "Someone",
+      picture: showPicture && !hidesMe(d) ? picture : null,
       unlocked: ACHIEVEMENTS.filter((a) => d.achievements?.[a.id] != null && !d.testAchievements?.includes(a.id)).map((a) => a.id),
       stats,
     };

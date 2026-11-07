@@ -9,6 +9,9 @@ type Data = Pick<AppData, "settings"> | null | undefined;
 
 export const isPrivate = (d: Data): boolean => !!d?.settings.privacyMode;
 
+/** Privacy mode hides you too (unless "Still show me" is on). */
+export const hidesMe = (d: Data): boolean => isPrivate(d) && !d?.settings.privacyShowMe;
+
 const ADJECTIVES = [
   "Sleepy", "Fluffy", "Bouncy", "Cozy", "Sparkly", "Giggly", "Snuggly", "Wiggly",
   "Sunny", "Comfy", "Fuzzy", "Peppy", "Dreamy", "Silly", "Zippy", "Cuddly",
@@ -47,7 +50,7 @@ export function shownName(d: Data, name: string | null, userId: string | null = 
   return fakeName(userId ?? name.trim().toLowerCase());
 }
 
-/** Your own name as shown: yours, or "You" in privacy mode. */
+/** Your own name as shown: yours, or "You" in privacy mode (unless it still shows you). */
 export function myShownName(d: Data, name: string | null): string | null {
-  return name && isPrivate(d) ? "You" : name;
+  return name && hidesMe(d) ? "You" : name;
 }

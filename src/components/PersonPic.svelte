@@ -24,13 +24,16 @@
 <script lang="ts">
   import { app } from "../lib/app.svelte";
   import { testBuddyPicture } from "../lib/testbuddy";
+  import { hidesMe, isPrivate } from "../lib/privacy";
 
   let { name, userId = null, size = 46 }: { name: string; userId?: string | null; size?: number } = $props();
 
   let src = $state<string | null>(null);
   const enabled = $derived(!!app.data?.settings.showPictures);
   // Privacy mode: the picture is blurred and the initial hidden.
-  const hidden = $derived(!!app.data?.settings.privacyMode);
+  // Your own picture stays clear with "Still show me".
+  const isMe = $derived(!!userId && userId === app.data?.instance.local?.userId);
+  const hidden = $derived(isMe ? hidesMe(app.data) : isPrivate(app.data));
 
   $effect(() => {
     src = null;
