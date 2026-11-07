@@ -2,7 +2,7 @@
 
 import { api, listen } from "./api";
 import type { AppData, Pregnancy, PendingConception, Status, UpdateInfo } from "./types";
-import { pendingFor, pregnancyFor } from "./scope";
+import { ownerAvatar, pendingFor, pregnancyAvatar, pregnancyFor } from "./scope";
 import { ACHIEVEMENTS } from "./achievements";
 
 export type View = "home" | "me" | "partners" | "avatars" | "settings";
@@ -65,6 +65,23 @@ export function confirmAsk(opts: Omit<Ask, "resolve">): Promise<boolean> {
 /** The avatar Home is about. */
 export function homeAvatarId(): string | null {
   return app.viewAvatarId ?? app.data?.currentAvatarId ?? null;
+}
+
+/** Shows an avatar on Home (null or the worn one: back to the worn one) and scrolls up. */
+export function viewOnHome(avatarId: string | null) {
+  app.viewAvatarId = avatarId && avatarId !== app.data?.currentAvatarId ? avatarId : null;
+  app.view = "home";
+  document.querySelector("main")?.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+/** Shows a pregnancy on Home: an avatar it's on (the worn one in global mode). */
+export function viewPregnancy(p: Pregnancy) {
+  if (app.data) viewOnHome(pregnancyAvatar(app.data, p));
+}
+
+/** Shows a WooHoo waiting for its result on Home. */
+export function viewPending(w: PendingConception) {
+  if (app.data) viewOnHome(ownerAvatar(app.data, w.avatarId));
 }
 
 export function currentPregnancy(): Pregnancy | undefined {

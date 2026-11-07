@@ -1,5 +1,6 @@
 <script lang="ts">
   import PersonPic from "../components/PersonPic.svelte";
+  import PartnerPregnancies from "../components/PartnerPregnancies.svelte";
   import { app, confirmAsk, errorToast } from "../lib/app.svelte";
   import { api } from "../lib/api";
   import { partnerStats, personKey, type PartnerStats } from "../lib/scope";
@@ -34,6 +35,8 @@
     }
     return out;
   });
+  // The partner whose pregnancies are open.
+  let opened = $state<string | null>(null);
   const pins = $derived(app.data?.settings.pinnedPartners ?? []);
   const pinned = $derived(shown.filter((x) => pins.includes(x.key)));
   const others = $derived(shown.filter((x) => !pins.includes(x.key)));
@@ -83,6 +86,14 @@
       <div><strong>{s.pregnancies}</strong><span>🤰 pregnant</span></div>
       <div><strong>{s.kids}</strong><span>👶 kids</span></div>
     </div>
+    {#if s.pregnancies || now.get(s.key)?.waiting}
+      {@const live = (now.get(s.key)?.weeks.length ?? 0) + (now.get(s.key)?.waiting ? 1 : 0)}
+      <button class="soft small more" onclick={() => (opened = opened === s.key ? null : s.key)} aria-expanded={opened === s.key}>
+        🤰 {opened === s.key ? "Hide pregnancies" : live ? `See pregnancies (${live} now)` : "See pregnancies"}
+        <span class="chev" class:open={opened === s.key} aria-hidden="true">›</span>
+      </button>
+      {#if opened === s.key}<PartnerPregnancies partnerKey={s.key} />{/if}
+    {/if}
   </section>
 {/snippet}
 
@@ -197,6 +208,19 @@
   }
   .empty {
     text-align: center;
+  }
+  .more {
+    width: 100%;
+    margin-top: 10px;
+    justify-content: space-between;
+  }
+  .chev {
+    font-size: 1.2rem;
+    line-height: 1;
+    transition: transform 0.15s;
+  }
+  .chev.open {
+    transform: rotate(90deg);
   }
   .big {
     font-size: 2.6rem;

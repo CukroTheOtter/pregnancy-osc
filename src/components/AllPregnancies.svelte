@@ -4,8 +4,8 @@
   import JournalList from "./JournalList.svelte";
   import Modal from "./Modal.svelte";
   import { journalFor } from "../lib/journal";
-  import { app, homeAvatarId, currentPregnancy } from "../lib/app.svelte";
-  import { groupMembers, owner, ownerAvatar, ownerName, pregnancyIdOf } from "../lib/scope";
+  import { app, homeAvatarId, currentPregnancy, viewPending, viewPregnancy } from "../lib/app.svelte";
+  import { groupMembers, owner, ownerAvatar, ownerName, pregnancyAvatar, pregnancyAvatarNames, pregnancyGroup } from "../lib/scope";
   import { babyWord, genderText } from "../lib/fertility";
   import { progress, humanDuration, TERM_WEEKS } from "../lib/timeline";
   import type { Pregnancy } from "../lib/types";
@@ -19,36 +19,15 @@
   /** Past pregnancies shown before "Show all". */
   const PAST_SHOWN = 5;
 
-  /** Avatars a pregnancy is on (the ones linked to it, or all in global mode). */
-  function avatarsOf(p: Pregnancy): string[] {
-    if (d.settings.syncScope === "global") return p.id === d.activePregnancyId ? ["every avatar"] : [];
-    return Object.values(d.avatars)
-      .filter((a) => pregnancyIdOf(d, owner(d, a.id)) === p.id)
-      .map((a) => a.name ?? "Unnamed avatar");
-  }
-
-  /** The group a pregnancy belongs to (per-avatar mode only). */
-  function groupOf(p: Pregnancy) {
-    if (d.settings.syncScope === "global") return undefined;
-    return Object.values(d.groups ?? {}).find((g) => g.pregnancyId === p.id);
-  }
-
-  function firstAvatarOf(p: Pregnancy): string | null {
-    if (d.settings.syncScope === "global") return null;
-    const a = Object.values(d.avatars).find((x) => pregnancyIdOf(d, owner(d, x.id)) === p.id);
-    return a?.id ?? null;
-  }
+  const avatarsOf = (p: Pregnancy) => pregnancyAvatarNames(d, p);
+  const groupOf = (p: Pregnancy) => pregnancyGroup(d, p);
+  const firstAvatarOf = (p: Pregnancy) => pregnancyAvatar(d, p);
 
   const active = $derived(d.pregnancies.filter((p) => !p.endedMs && p.id !== shown?.id));
   const waiting = $derived(d.waiting.filter((w) => w.avatarId !== owner(d, homeAvatarId())));
   const past = $derived(d.pregnancies.filter((p) => p.endedMs).sort((a, b) => (b.endedMs ?? 0) - (a.endedMs ?? 0)));
   const dateFmt = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" });
 
-  function open(p: Pregnancy) {
-    const id = firstAvatarOf(p);
-    if (id) app.viewAvatarId = id === d.currentAvatarId ? null : id;
-    document.querySelector("main")?.scrollTo({ top: 0, behavior: "smooth" });
-  }
 </script>
 
 {#if active.length || waiting.length || past.length}
@@ -73,7 +52,7 @@
             <div class="bar"><div style="width:{Math.min(100, pr * 100)}%"></div></div>
             <span class="muted small">{p.partner.name ? `with ${p.partner.name}` : "partner unknown"}{p.timeline.pausedAtMs ? " · paused" : ""}</span>
           </div>
-          {#if aid}<button class="small soft" onclick={() => open(p)}>Open</button>{/if}
+          {#if aid}<button class="small soft" onclick={() => viewPregnancy(p)}>Open</button>{/if}
         </li>
       {/each}
       {#each waiting as w}
@@ -85,7 +64,7 @@
             <strong>{wg ? "💞 " : ""}{w.avatarId ? ownerName(d, w.avatarId) : "Your avatar"}</strong>
             <div class="muted small">💕 WooHoo'd{w.partner.name ? ` with ${w.partner.name}` : ""} · find out in {humanDuration(Math.max(0, w.revealMs - app.now))}</div>
           </div>
-          {#if wa}<button class="small soft" onclick={() => { app.viewAvatarId = wa === d.currentAvatarId ? null : wa; }}>Open</button>{/if}
+          {#if wa}<button class="small soft" onclick={() => viewPending(w)}>Open</button>{/if}
         </li>
       {/each}
     </ul>

@@ -42,6 +42,31 @@ export function ownerName(d: AppData, ownerId: string | null): string {
   return g ? g.name : avatarName(d, ownerId);
 }
 
+/** Names of the avatars a pregnancy is on (linked to it, or "every avatar" in global mode). */
+export function pregnancyAvatarNames(d: AppData, p: Pregnancy): string[] {
+  if (d.settings.syncScope === "global") return p.id === d.activePregnancyId ? ["every avatar"] : [];
+  return Object.values(d.avatars)
+    .filter((a) => pregnancyIdOf(d, owner(d, a.id)) === p.id)
+    .map((a) => a.name ?? "Unnamed avatar");
+}
+
+/** The group a pregnancy belongs to (per-avatar mode only). */
+export function pregnancyGroup(d: AppData, p: Pregnancy) {
+  if (d.settings.syncScope === "global") return undefined;
+  return Object.values(d.groups ?? {}).find((g) => g.pregnancyId === p.id);
+}
+
+/** An avatar showing this pregnancy, to open it on Home (null in global mode). */
+export function pregnancyAvatar(d: AppData, p: Pregnancy): string | null {
+  if (d.settings.syncScope === "global") return null;
+  return Object.values(d.avatars).find((x) => pregnancyIdOf(d, owner(d, x.id)) === p.id)?.id ?? null;
+}
+
+/** Can Home show this pregnancy? (On an avatar, or the one global pregnancy.) */
+export function canOpenPregnancy(d: AppData, p: Pregnancy): boolean {
+  return !p.endedMs && (d.settings.syncScope === "global" ? p.id === d.activePregnancyId : !!pregnancyAvatar(d, p));
+}
+
 /** An avatar to show (and open) for an owner: itself, or the group's last worn. */
 export function ownerAvatar(d: AppData, ownerId: string | null): string | null {
   if (!ownerId) return null;
