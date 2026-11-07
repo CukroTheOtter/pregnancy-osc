@@ -79,7 +79,7 @@
     try {
       await api.saveSettings(s);
       app.data.settings.privacyMode = on;
-      toast(on ? "🙈 Privacy mode on" : "Privacy mode off", on ? "Names are hidden and pictures blurred." : undefined, "info", 3000);
+      toast(on ? "🙈 Privacy mode on" : "Privacy mode off", on ? "People get made-up names and blurred pictures." : undefined, "info", 3000);
     } catch {
       toast("Couldn't change privacy mode", undefined, "error");
     }
@@ -108,10 +108,10 @@
       {/if}
     </div>
     <span class="grow"></span>
-    {#if app.data}
-      <button class="privacy" class:on={privacy} onclick={togglePrivacy} aria-pressed={privacy}
-        title={privacy ? "Privacy mode is on: names hidden, pictures blurred. Click to turn off." : "Privacy mode: hide names and blur pictures (streaming, screenshots)"}>
-        {privacy ? "🙈 Private" : "👁"}
+    <!-- Only while privacy mode is on (turned on in Settings > Safety): a reminder, click to turn it off. -->
+    {#if privacy}
+      <button class="privacy" onclick={togglePrivacy} title="Privacy mode is on: made-up names, blurred pictures. Click to turn it off.">
+        <span class="pill">🙈 Private</span>
       </button>
     {/if}
     <!-- Hover (or focus) shows how it's linked; click opens Settings. -->
@@ -176,15 +176,12 @@
     position: relative;
   }
   .privacy {
-    background: var(--bg-3);
-    color: var(--text);
-    padding: 4px 10px;
-    font-size: 0.8rem;
-    border-radius: 999px;
-  }
-  .privacy.on {
-    background: var(--accent);
-    color: var(--accent-text, #fff);
+    background: none;
+    border: 0;
+    padding: 0;
+    box-shadow: none;
+    cursor: pointer;
+    font: inherit;
   }
   .link-btn {
     background: none;

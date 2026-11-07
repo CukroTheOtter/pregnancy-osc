@@ -1,6 +1,6 @@
 <script lang="ts">
   import { shownName } from "../lib/privacy";
-  import { onMount, setContext } from "svelte";
+  import { onMount, setContext, untrack } from "svelte";
   import Toggle from "../components/Toggle.svelte";
   import Section, { FILTER_KEY, type SectionFilter } from "../components/Section.svelte";
   import AccentPicker from "../components/AccentPicker.svelte";
@@ -86,6 +86,13 @@
   }
 
   let s = $state<Settings>(withChatRows(structuredClone($state.snapshot(app.data!.settings)) as Settings));
+  // The header's 🙈 Private pill turns privacy mode off from outside: follow it, so a later save doesn't undo it.
+  $effect(() => {
+    const on = !!app.data?.settings.privacyMode;
+    untrack(() => {
+      if (s.privacyMode !== on) s.privacyMode = on;
+    });
+  });
   // Your own background sets light or dark, so no theme button is in charge and none looks picked.
   const ownBackgroundOn = $derived(!!s.theme.customAccent && !!s.theme.background && s.theme.mode !== "black");
   let mapInfo = $state<MappingInfo | null>(null);
@@ -857,6 +864,12 @@
         <span class="hint">A full set of matching colors, or Custom to pick your own.</span>
       {/if}
     </div>
+  </Section>
+
+  <Section id="privacy" title="🙈 Privacy mode">
+    {#snippet extra()}<span class="pill" class:ok={s.privacyMode} class:off={!s.privacyMode}>{s.privacyMode ? "on" : "off"}</span>{/snippet}
+    <Toggle bind:checked={s.privacyMode} label="Hide people in the app" hint="For streaming and screenshots: everyone gets a made-up name (like “Sleepy Otter”, always the same for the same person), pictures are blurred, and your name shows as “You”. Nothing changes in VRChat." onchange={() => commit(true)} />
+    <span class="hint">While it's on, a 🙈 Private pill shows at the top; click it to turn it off.</span>
   </Section>
 
   <TroubleshootCard />

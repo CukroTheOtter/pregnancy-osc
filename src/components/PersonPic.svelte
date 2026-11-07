@@ -74,7 +74,7 @@
   }
   /* Scaled up so the blur doesn't leave soft edges showing the background. */
   img.blur {
-    filter: blur(10px);
-    transform: scale(1.3);
+    filter: blur(4px);
+    transform: scale(1.15);
   }
 </style>
