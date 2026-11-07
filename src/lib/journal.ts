@@ -33,6 +33,8 @@ export interface JournalItem {
   rare?: boolean;
   /** The pregnancy week it belongs to (keeps the order when times are the same). */
   week?: number;
+  /** Sorts by this instead of the week when times are the same (the start comes first). */
+  order?: number;
 }
 
 /** A journal moment's polaroid (MomentCard.svelte). */
@@ -146,20 +148,24 @@ export function journalFor(d: AppData, p: Pregnancy, now: number): JournalItem[]
   // Nothing is dated before the pregnancy started: jumping ahead with "Adjust
   // progress" puts the weeks it skipped right at the start, in week order.
   const startedMs = p.source === "conception" ? Math.min(p.timeline.startMs, p.createdMs) : p.createdMs;
-  const at = (week: number) => Math.max(startedMs, Math.min(until, timeAtProgress(p.timeline, until, week / TERM_WEEKS)));
+  // Scans and cravings wait until you found out (a short pregnancy can pass
+  // week 8 before the reveal): the ones before it are dated at the reveal.
+  const knownMs = Math.max(startedMs, p.createdMs);
+  const at = (week: number) => Math.max(knownMs, Math.min(until, timeAtProgress(p.timeline, until, week / TERM_WEEKS)));
   const weekAt = (t: number) => progress(p.timeline, Math.min(t, until)) * TERM_WEEKS;
   const genders = d.settings.genderMode === "random" && p.genders.length > 0;
   const seed = seedOf(p.id);
   const out: JournalItem[] = [];
-  const add = (key: string, timeMs: number, emoji: string, title: string, text = "", scan: Scan | null = null, week = weekAt(timeMs)) =>
-    out.push({ key, timeMs, emoji, title, text, scan, card: null, note: false, week });
+  const add = (key: string, timeMs: number, emoji: string, title: string, text = "", scan: Scan | null = null, week = weekAt(timeMs), order?: number) =>
+    out.push({ key, timeMs, emoji, title, text, scan, card: null, note: false, week, ...(order != null ? { order } : {}) });
 
   const withPartner = p.partner.name ? `With ${p.partner.name}` : "";
   if (p.source === "conception") {
-    add("conceived", startedMs, "💕", "A little one on the way", [withPartner, p.worldName ? `in ${p.worldName}` : ""].filter(Boolean).join(" "), null, -2);
-    if (p.createdMs > startedMs + 60_000) add("found-out", p.createdMs, "💫", "Found out you're pregnant", "", null, -1);
+    add("conceived", startedMs, "💕", "A little one on the way", [withPartner, p.worldName ? `in ${p.worldName}` : ""].filter(Boolean).join(" "), null, 0, -2);
+    // Its real week (it used to say Week 0), but still first among things at the same time.
+    if (p.createdMs > startedMs + 60_000) add("found-out", p.createdMs, "💫", "Found out you're pregnant", "", null, weekAt(p.createdMs), -1);
   } else {
-    add("started", p.createdMs, "🤰", "Pregnancy started", withPartner, null, -2);
+    add("started", p.createdMs, "🤰", "Pregnancy started", withPartner, null, 0, -2);
   }
 
   for (const w of SCAN_WEEKS) {
@@ -210,5 +216,6 @@ export function journalFor(d: AppData, p: Pregnancy, now: number): JournalItem[]
     if (j.kind !== "note") continue;
     out.push({ key: j.id, timeMs: j.timeMs, emoji: "📝", title: j.title && j.title !== "Note" ? j.title : "", text: j.text, scan: parseScan(j.image), card: null, note: true });
   }
-  return out.sort((a, b) => b.timeMs - a.timeMs || (b.week ?? weekAt(b.timeMs)) - (a.week ?? weekAt(a.timeMs)));
+  const rank = (x: JournalItem) => x.order ?? x.week ?? weekAt(x.timeMs);
+  return out.sort((a, b) => b.timeMs - a.timeMs || rank(b) - rank(a));
 }

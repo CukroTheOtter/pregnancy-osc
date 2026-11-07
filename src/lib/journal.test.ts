@@ -52,6 +52,20 @@ describe("journal", () => {
     expect(items.every((x) => x.timeMs >= created)).toBe(true);
   });
 
+  it("found out shows its real week, and nothing comes before it", () => {
+    const d = emptyData();
+    // Conceived at week 0, found out at week 8.4 (a short pregnancy, a long wait).
+    const found = week(8.4);
+    const p = pregnancy({ source: "conception", createdMs: found, timeline: pregnancy().timeline });
+    const items = journalFor(d, p, week(9)).filter((x) => !x.rare);
+    expect(items.map((x) => x.key)).toEqual(["scan-8", "found-out", "conceived"]);
+    expect(Math.floor(items.find((x) => x.key === "found-out")!.week!)).toBe(8);
+    expect(items.find((x) => x.key === "conceived")!.week).toBe(0);
+    // The week 8 scan waited for the reveal.
+    expect(items.find((x) => x.key === "scan-8")!.timeMs).toBe(found);
+    expect(journalFor(d, p, week(9)).every((x) => x.key === "conceived" || x.timeMs >= found)).toBe(true);
+  });
+
   it("reads only real scan tags", () => {
     expect(parseScan("scan:2:12:99")).toEqual({ babies: 2, week: 12, seed: 99 });
     expect(parseScan("scan:2:20:99:wave")).toEqual({ babies: 2, week: 20, seed: 99, variant: "wave" });
