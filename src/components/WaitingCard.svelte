@@ -1,7 +1,7 @@
 <script lang="ts">
   import { shownName } from "../lib/privacy";
-  import { app, errorToast } from "../lib/app.svelte";
-  import { api, inTauri } from "../lib/api";
+  import { app, confirmAsk, errorToast, toast } from "../lib/app.svelte";
+  import { api } from "../lib/api";
   import { humanDuration } from "../lib/timeline";
   import PersonPic from "./PersonPic.svelte";
   import PersonSearch from "./PersonSearch.svelte";
@@ -20,6 +20,21 @@
     try {
       await api.setWaitingPartner(w.timeMs, person, name, random);
       changing = false;
+    } catch (e) {
+      errorToast(e);
+    }
+  }
+
+  async function findOutNow() {
+    if (!(await confirmAsk({ title: "Find out now? 💞", text: "No more waiting: you'll know in a moment if a little one is on the way.", ok: "Find out now" }))) return;
+    api.findOutNow(w.timeMs).catch(errorToast);
+  }
+
+  async function protection() {
+    if (!(await confirmAsk({ title: "You used protection? 🛡️", text: "Then nothing comes of it: the wait is called off. The WooHoo stays in your history as Protected, not as a try.", ok: "Call it off" }))) return;
+    try {
+      await api.usedProtection(w.timeMs);
+      toast("Called off 🛡️", "Kept in your history as Protected.", "info", 4000);
     } catch (e) {
       errorToast(e);
     }
@@ -55,9 +70,10 @@
     {#if left > 0}<span class="muted small">{revealFmt.format(w.revealMs)}</span>{/if}
   </div>
   <p class="muted small">Your belly stays flat until then. 🤫</p>
-  {#if !inTauri}
-    <button class="ghost small" onclick={() => api.skipWaiting()}>Preview: find out now</button>
-  {/if}
+  <div class="row choices">
+    <button class="soft" onclick={findOutNow}>💞 Find out now</button>
+    <button class="ghost" onclick={protection}>🛡️ We used protection</button>
+  </div>
 </section>
 
 <style>
@@ -68,6 +84,12 @@
     text-align: center;
     gap: 8px;
     padding: 28px 18px;
+  }
+  .choices {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 4px;
   }
   .bubble {
     font-size: 3.2rem;

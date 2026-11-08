@@ -37,7 +37,7 @@
 
   async function setAsPartner() {
     if (!p) return;
-    await run(`${tName.trim()} is the partner`, () =>
+    await run(`${tName.trim()} is the other parent`, () =>
       api.setPartner(p!.id, { name: tName.trim(), userId: tId.trim() || null, avatarName: null, lastSeenMs: Date.now() }, null),
     );
   }
@@ -169,7 +169,7 @@
     <div class="row">
       <button class="small soft" onclick={checkPicture} disabled={!tId.trim() || !tIdOk}>📷 Check picture</button>
       <button class="small" onclick={addToInstance} disabled={!tName.trim() || !tIdOk}>➕ Add to instance</button>
-      {#if p}<button class="small soft" onclick={setAsPartner} disabled={!tName.trim() || !tIdOk}>💞 Set as partner</button>{/if}
+      {#if p}<button class="small soft" onclick={setAsPartner} disabled={!tName.trim() || !tIdOk}>👪 Set as other parent</button>{/if}
     </div>
     {#if pic}
       <div class="pic-result">

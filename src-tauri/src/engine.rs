@@ -971,7 +971,7 @@ impl Engine {
                 }
                 Some(Ok(WooHooLabor::TooEarly)) => None,
                 Some(Ok(WooHooLabor::Paused)) => Some("WooHoo noticed, but the pregnancy is paused.".to_string()),
-                Some(Ok(WooHooLabor::NoPartner)) => Some("WooHoo noticed, but labor waits for your partner.".to_string()),
+                Some(Ok(WooHooLabor::NoPartner)) => Some("WooHoo noticed, but labor waits for the other parent.".to_string()),
                 Some(Err(why)) => Some(why.to_string()),
                 None => None,
             };
@@ -985,7 +985,7 @@ impl Engine {
         self.shared.mark_dirty();
         self.driver.resync();
         let _ = self.app.emit("data-changed", ());
-        if outcome != actions::FunOutcome::AlreadyPregnant || labor_started.is_some() {
+        if !matches!(outcome, actions::FunOutcome::AlreadyPregnant | actions::FunOutcome::NotPartner) || labor_started.is_some() {
             self.chat("woohoo", Vars::default());
         }
         if let Some(water_first) = labor_started {
@@ -1004,6 +1004,10 @@ impl Engine {
                 crate::notify(&self.app, "💕 WooHoo!", "You'll find out later if a little one is on the way.");
             }
             actions::FunOutcome::AlreadyPregnant => {}
+            // Shown quietly on Home, like the labor notes (names left out).
+            actions::FunOutcome::NotPartner => {
+                self.woohoo_note = Some(("WooHoo noticed, but not with one of your 💞 partners, so it doesn't count (Settings > Detecting WooHoos).".to_string(), now));
+            }
         }
     }
 

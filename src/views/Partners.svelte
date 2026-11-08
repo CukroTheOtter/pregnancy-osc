@@ -3,10 +3,11 @@
   import PersonPic from "../components/PersonPic.svelte";
   import PartnerPregnancies from "../components/PartnerPregnancies.svelte";
   import PartnerWooHoos from "../components/PartnerWooHoos.svelte";
+  import PersonSearch from "../components/PersonSearch.svelte";
   import { app, confirmAsk, errorToast } from "../lib/app.svelte";
   import { api } from "../lib/api";
   import { partnerStats, personKey, type PartnerStats } from "../lib/scope";
-  import type { Settings } from "../lib/types";
+  import type { Person } from "../lib/types";
   import { humanDuration, progress, TERM_WEEKS } from "../lib/timeline";
 
   const list = $derived(app.data ? partnerStats(app.data) : []);
@@ -42,20 +43,29 @@
   function toggle(key: string, what: "pregnancies" | "woohoos") {
     opened = opened?.key === key && opened.what === what ? null : { key, what };
   }
-  const pins = $derived(app.data?.settings.pinnedPartners ?? []);
-  const pinned = $derived(shown.filter((x) => pins.includes(x.key)));
-  const others = $derived(shown.filter((x) => !pins.includes(x.key)));
+  // Your partners (💞, added by hand) on top, then everyone else from your history.
+  const mine = $derived(shown.filter((x) => x.mine));
+  const others = $derived(shown.filter((x) => !x.mine));
 
-  async function togglePin(s: PartnerStats) {
-    if (!app.data) return;
-    const next = pins.includes(s.key) ? pins.filter((k) => k !== s.key) : [...pins, s.key];
-    const settings: Settings = { ...($state.snapshot(app.data.settings) as Settings), pinnedPartners: next };
+  let adding = $state(false);
+  // To pick from: who's here now, then people met before (past partners come too).
+  const here = $derived((app.data?.instance.present ?? []).filter((x) => x.userId !== app.data?.instance.local?.userId));
+  const met = $derived(app.data?.instance.history ?? []);
+
+  async function setMine(name: string, userId: string | null, on: boolean) {
+    if (!on && !(await confirmAsk({ title: `Remove ${shownName(app.data, name, userId)} from your partners?`, text: app.data?.settings.partnersOnly ? "Their history stays. With Only my partners on, WooHoos with them won't count any more." : "Their history stays; they move down to the others.", ok: "Remove" }))) return;
     try {
-      await api.saveSettings(settings);
-      app.data.settings.pinnedPartners = next;
+      await api.setMyPartner(name, userId, on);
     } catch (e) {
       errorToast(e);
     }
+  }
+
+  async function add(person: Person | null, name: string | null) {
+    const n = person?.name ?? name;
+    if (!n) return;
+    await setMine(n, person?.userId ?? null, true);
+    adding = false;
   }
 
   async function forget(name: string, userId: string | null) {
@@ -65,11 +75,11 @@
   }
 </script>
 
-{#snippet card(s: PartnerStats, isPinned: boolean)}
+{#snippet card(s: PartnerStats)}
   {@const hasPreg = !!s.pregnancies || !!now.get(s.key)?.waiting}
   {@const live = (now.get(s.key)?.weeks.length ?? 0) + (now.get(s.key)?.waiting ? 1 : 0)}
   {@const showing = opened?.key === s.key ? opened.what : null}
-  <section class="card partner" class:pinned={isPinned}>
+  <section class="card partner" class:mine={s.mine}>
     <div class="row">
       <PersonPic name={s.name} userId={s.userId} size={52} />
       <div class="grow">
@@ -81,12 +91,20 @@
           <span class="pill live">💕 Waiting to find out</span>
         {/if}
         <div class="muted small">
-          Last time {app.now - s.lastMs < 60_000 ? "just now" : `${humanDuration(app.now - s.lastMs)} ago`}{s.firstMs !== s.lastMs ? ` · first ${dateFmt.format(s.firstMs)}` : ""}
+          {#if !s.fun && !s.pregnancies}
+            Added {dateFmt.format(s.firstMs)} · nothing yet
+          {:else}
+            Last time {app.now - s.lastMs < 60_000 ? "just now" : `${humanDuration(app.now - s.lastMs)} ago`}{s.firstMs !== s.lastMs ? ` · first ${dateFmt.format(s.firstMs)}` : ""}
+          {/if}
         </div>
       </div>
-      <button class="pin" class:on={isPinned} onclick={() => togglePin(s)} aria-pressed={isPinned} aria-label="{isPinned ? 'Unpin' : 'Pin'} {s.name}" title={isPinned ? "Unpin" : "Pin to the top"}>📌</button>
+      {#if s.mine}
+        <button class="heart" onclick={() => setMine(s.name, s.userId, false)} aria-label="Remove {shownName(app.data, s.name, s.userId)} from your partners" title="Your partner (tap to remove)">💞</button>
+      {:else}
+        <button class="soft small" onclick={() => setMine(s.name, s.userId, true)} aria-label="Make {shownName(app.data, s.name, s.userId)} your partner">💞 Make partner</button>
+      {/if}
       {#if s.userId || s.name}
-        <button class="ghost small" onclick={() => forget(s.name, s.userId)} aria-label="Forget {s.name}">Forget</button>
+        <button class="ghost small" onclick={() => forget(s.name, s.userId)} aria-label="Forget {shownName(app.data, s.name, s.userId)}">Forget</button>
       {/if}
     </div>
     <div class="nums">
@@ -124,24 +142,39 @@
     </section>
   {/if}
 
-  {#if list.length === 0}
-    <section class="card empty">
-      <div class="big" aria-hidden="true">💞</div>
-      <p class="muted">Partners show up here after a WooHoo in-game, or when you pick a partner for a pregnancy.</p>
+  {#if adding}
+    <section class="card adder">
+      <strong>Add a partner</strong>
+      <span class="muted small">Pick someone you've met, or type a name.</span>
+      <PersonSearch candidates={here} {met} onpick={add} />
+      <button class="ghost small" onclick={() => (adding = false)}>Cancel</button>
     </section>
+  {:else}
+    <button class="soft add" onclick={() => (adding = true)}>＋ Add partner</button>
   {/if}
 
   {#if list.length >= SEARCH_FROM}
-    <input class="search" type="search" bind:value={query} placeholder="🔍 Search {list.length} partners" aria-label="Search partners" />
-    {#if !shown.length}<p class="muted small none">No partner called "{query.trim()}".</p>{/if}
+    <input class="search" type="search" bind:value={query} placeholder="🔍 Search {list.length} people" aria-label="Search partners" />
+    {#if !shown.length}<p class="muted small none">Nobody called "{query.trim()}".</p>{/if}
   {/if}
 
-  {#if pinned.length}
-    <h3 class="shelf">📌 Pinned</h3>
-    {#each pinned as s (s.key)}{@render card(s, true)}{/each}
-    {#if others.length}<h3 class="shelf">Everyone else</h3>{/if}
+  {#if !query.trim() || mine.length}
+    <h3 class="shelf">💞 My partners</h3>
   {/if}
-  {#each others as s (s.key)}{@render card(s, false)}{/each}
+  {#each mine as s (s.key)}{@render card(s)}{/each}
+  {#if !mine.length && !query.trim()}
+    <section class="card empty">
+      <p class="muted small">
+        {#if app.data?.settings.partnersOnly}⚠️ Only WooHoos with your partners count (Settings), and you have none yet.{:else}Nobody yet.{/if}
+        Add someone{others.length ? ", or tap 💞 Make partner on anyone below" : ""}.
+      </p>
+    </section>
+  {/if}
+
+  {#if others.length}
+    <h3 class="shelf">Others you've WooHoo'd with</h3>
+    {#each others as s (s.key)}{@render card(s)}{/each}
+  {/if}
 </div>
 
 <style>
@@ -205,27 +238,35 @@
     font-size: 0.9rem;
     color: var(--muted);
   }
-  .pinned {
+  .mine {
     box-shadow: 0 0 0 2px var(--accent);
   }
-  .pin {
+  .heart {
     background: none;
     border: none;
     box-shadow: none;
     padding: 4px 6px;
-    font-size: 1.1rem;
-    filter: grayscale(1);
-    opacity: 0.45;
+    font-size: 1.2rem;
   }
-  .pin:hover {
-    opacity: 0.8;
+  .heart:hover {
+    opacity: 0.7;
   }
-  .pin.on {
-    filter: none;
-    opacity: 1;
+  .add {
+    align-self: center;
   }
   .empty {
     text-align: center;
+  }
+  .adder {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .adder > button {
+    align-self: flex-start;
+  }
+  .empty p {
+    margin: 0;
   }
   .mores {
     display: grid;
@@ -247,8 +288,5 @@
   }
   .chev.open {
     transform: rotate(90deg);
-  }
-  .big {
-    font-size: 2.6rem;
   }
 </style>

@@ -427,7 +427,7 @@
       </button>
       <button class="opt" class:on={perAvatar} onclick={() => setScope(true)}>
         <strong>Each avatar has its own</strong>
-        <span>Different partners and progress. Put avatars in a group to share.</span>
+        <span>Their own pregnancy and progress. Put avatars in a group to share.</span>
       </button>
     </div>
   </section>

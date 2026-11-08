@@ -77,6 +77,7 @@ export function defaultSettings(): Settings {
     safety: { hideBellyIn: ["public", "groupPublic"], laborWaitsIn: ["public", "groupPublic"] },
     sps: { enabled: true, types: { vaginal: true, anal: false, oral: false, other: false }, depth: 0.3, seconds: 20, gapSeconds: 120 },
     pinnedPartners: [],
+    partnersOnly: false,
     onboarded: false,
   };
 }
@@ -98,6 +99,7 @@ export function emptyData(): AppData {
     waiting: [],
     lastReveal: null,
     funLog: [],
+    myPartners: [],
     syncValues: {},
     achievements: {},
   };

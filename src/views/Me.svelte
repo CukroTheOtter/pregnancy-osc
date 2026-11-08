@@ -17,7 +17,7 @@
     const now = app.now;
     const lengths = d.pregnancies.map((p) => (p.endedMs ?? now) - p.timeline.startMs);
     const born = d.pregnancies.filter((p) => p.born);
-    const fav = [...partnerStats(d)].sort((a, b) => b.pregnancies - a.pregnancies || b.fun - a.fun)[0];
+    const fav = partnerStats(d).filter((s) => s.fun || s.pregnancies).sort((a, b) => b.pregnancies - a.pregnancies || b.fun - a.fun)[0];
     return {
       woohoos: d.funLog.length,
       pregnancies: d.pregnancies.length,
@@ -68,7 +68,7 @@
       <div><strong>{stats.longestMs ? humanDuration(stats.longestMs) : "–"}</strong><span>🐢 longest to birth</span></div>
       <div><strong>{stats.avatars}</strong><span>🎭 avatars</span></div>
     </div>
-    {#if stats.favourite}<p class="muted small fav">💞 Favourite partner: <strong>{stats.favourite}</strong></p>{/if}
+    {#if stats.favourite}<p class="muted small fav">💞 Most pregnancies with: <strong>{stats.favourite}</strong></p>{/if}
   </section>
 
   <section class="card">

@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Start with what you're seeing. Short versions of these are in the app too, under **Settings > 🩹 Troubleshooting**.
+Start with what you're seeing. Short versions of these are in the app too, under **Settings > 🩹 Troubleshooting**. Its **Checkup** shows whether VRChat, OSC, your avatar and the logs are working, and finds problems in your save or settings (like **Only my partners** on with no partners, or a pregnancy whose WooHoo is gone), each with a button to fix it.
 
 The app learns what's on an avatar from VRChat. If VRChat reports an old list of parameters, the app can only show that old list.
 
@@ -10,7 +10,7 @@ The app learns what's on an avatar from VRChat. If VRChat reports an old list of
 - [It says "No OSC" or "Waiting for VRChat"](#it-says-no-osc-or-waiting-for-vrchat)
 - [Labor won't start, or is paused](#labor-wont-start-or-is-paused)
 - [WooHoos aren't being detected](#woohoos-arent-being-detected)
-- [The partner says "Partner unknown"](#the-partner-says-partner-unknown)
+- [The other parent is unknown](#the-other-parent-is-unknown)
 - [The weeks and the wait don't seem to match](#the-weeks-and-the-wait-dont-seem-to-match)
 - [The chatbox status disappeared](#the-chatbox-status-disappeared)
 - [Asking for help](#asking-for-help)
@@ -55,7 +55,7 @@ Labor only starts or moves while you're in VRChat, on an avatar that has `Pregna
 - **Instance type:** by default labor waits in Public and Group Public (**Settings > Safety**).
 - **AFK:** labor stops while VRChat says you're AFK.
 - **Resting holds off labor:** if this is on, labor only starts while you're standing.
-- **Labor waits for your partner:** if this is on, they have to be in the instance.
+- **Labor waits for the other parent:** if this is on, the one you're pregnant by has to be in the instance.
 
 Home's **Welcome your baby** always skips straight to the birth.
 
@@ -65,8 +65,9 @@ Home's **Welcome your baby** always skips straight to the birth.
 - **No sockets listed?** Sockets need VRCFury haptics turned on, on your avatar.
 - **The hole type has to count.** A socket gets its type from its name. You can fix the type under **Avatars > Edit > SPS sockets**.
 - **Already pregnant?** WooHoos are ignored during a pregnancy, except that one can start labor if you've turned that on.
+- **Only my partners on?** Then a WooHoo only counts with someone under 💞 My partners (Partners tab). Others are kept as "Not a partner".
 
-## The partner says "Partner unknown"
+## The other parent is unknown
 
 This is normal. VRChat's log says who's in the instance, but not who you WooHoo'd with. The app only fills in a name by itself when:
 

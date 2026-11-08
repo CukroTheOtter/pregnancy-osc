@@ -92,6 +92,8 @@ pub enum FunOutcome {
     Pending,
     /// Already pregnant: kept in the history (and partner counts), nothing else.
     AlreadyPregnant,
+    /// "Only my partners" is on and it wasn't with one: kept in the history, nothing else.
+    NotPartner,
 }
 
 /// Someone from `candidates` at random. `roll` is a random number in [0, 1).
@@ -117,23 +119,98 @@ fn fun_partner(data: &AppData, now_ms: i64, roll: f64) -> Partner {
     }
 }
 
+/// The same person as a partner you added: by user ID when both have one, else by name.
+fn same_partner(m: &MyPartner, name: &str, user_id: Option<&str>) -> bool {
+    match (m.user_id.as_deref(), user_id) {
+        (Some(a), Some(b)) => a == b,
+        _ => m.name.trim().eq_ignore_ascii_case(name.trim()),
+    }
+}
+
+/// One of your partners.
+pub fn is_my_partner(data: &AppData, name: Option<&str>, user_id: Option<&str>) -> bool {
+    name.is_some_and(|n| data.my_partners.iter().any(|m| same_partner(m, n, user_id)))
+}
+
+/// Adds someone to your partners, or takes them off (`on` false).
+pub fn set_my_partner(data: &mut AppData, name: &str, user_id: Option<&str>, on: bool, now_ms: i64) {
+    let name = name.trim();
+    let added_ms = data.my_partners.iter().find(|m| same_partner(m, name, user_id)).map_or(now_ms, |m| m.added_ms);
+    data.my_partners.retain(|m| !same_partner(m, name, user_id));
+    if on && !name.is_empty() {
+        data.my_partners.push(MyPartner { name: name.to_string(), user_id: user_id.map(str::to_string), added_ms });
+    }
+}
+
+/// Old saves: pinned partners (📌, by user ID or lower-case name) become
+/// your partners (💞), which took their place at the top of the Partners tab.
+pub fn pins_to_partners(data: &mut AppData) {
+    for key in std::mem::take(&mut data.settings.pinned_partners) {
+        let people = data
+            .fun_log
+            .iter()
+            .map(|f| (f.partner_name.as_deref(), f.partner_user_id.as_deref(), f.time_ms))
+            .chain(data.pregnancies.iter().map(|p| (p.partner.name.as_deref(), p.partner.user_id.as_deref(), p.timeline.start_ms)));
+        let found = people
+            .filter_map(|(n, u, t)| Some((n?, u, t)))
+            .filter(|(n, u, _)| u.map_or_else(|| n.trim().to_lowercase(), str::to_string) == key)
+            .min_by_key(|(_, _, t)| *t)
+            .map(|(n, u, t)| (n.to_string(), u.map(str::to_string), t));
+        if let Some((name, user_id, t)) = found {
+            set_my_partner(data, &name, user_id.as_deref(), true, t);
+        }
+    }
+}
+
+/// "Only my partners": who a WooHoo was with, narrowed to your partners.
+/// None when it can't have been one of them. Someone named (and not picked
+/// at random) counts only if they're a partner; otherwise it's the partners
+/// still here: none = doesn't count, one = them, more = random picks among
+/// them (if it was picked at random) or "Who was it?".
+fn only_partners(data: &AppData, partner: Partner, roll: f64) -> Option<Partner> {
+    if is_my_partner(data, partner.name.as_deref(), partner.user_id.as_deref()) {
+        return Some(partner);
+    }
+    if partner.name.is_some() && partner.status != PartnerStatus::Random {
+        return None;
+    }
+    // The candidate list starts with the people still here.
+    let here = data.instance.others().len().min(partner.candidates.len());
+    let mine: Vec<Person> = partner.candidates[..here].iter().filter(|c| is_my_partner(data, Some(&c.name), c.user_id.as_deref())).cloned().collect();
+    match mine.len() {
+        0 => None,
+        1 => Some(partner_from(data, &mine[0], PartnerStatus::Guessed, partner.candidates)),
+        _ if partner.status == PartnerStatus::Random => pick(&mine, roll).map(|p| partner_from(data, p, PartnerStatus::Random, partner.candidates.clone())),
+        _ => Some(Partner { candidates: partner.candidates, ..Default::default() }),
+    }
+}
+
 /// In-game fun was detected. `roll` is a random number in [0, 1).
 pub fn record_fun(data: &mut AppData, now_ms: i64, roll: f64) -> FunOutcome {
     let partner = fun_partner(data, now_ms, fertility::roll());
-    if data.current_pregnancy(data.current_avatar_id.as_deref()).is_some() {
+    let already = data.current_pregnancy(data.current_avatar_id.as_deref()).is_some();
+    let partner = match (already, data.settings.partners_only) {
+        (false, true) => only_partners(data, partner.clone(), fertility::roll()).ok_or(partner),
+        _ => Ok(partner),
+    };
+    let partner = match partner {
+        Ok(p) if !already => p,
         // Not a try (no wait, no result), but it still happened.
-        data.fun_log.push(FunEvent {
-            time_ms: now_ms,
-            partner_name: partner.name,
-            partner_user_id: partner.user_id,
-            avatar_id: data.current_avatar_id.clone(),
-            world_name: data.instance.world_name.clone(),
-            already_pregnant: true,
-            test_buddies_here: crate::testbuddy::here(data),
-            ..Default::default()
-        });
-        return FunOutcome::AlreadyPregnant;
-    }
+        Ok(p) | Err(p) => {
+            data.fun_log.push(FunEvent {
+                time_ms: now_ms,
+                partner_name: p.name,
+                partner_user_id: p.user_id,
+                avatar_id: data.current_avatar_id.clone(),
+                world_name: data.instance.world_name.clone(),
+                already_pregnant: already,
+                not_partner: !already,
+                test_buddies_here: crate::testbuddy::here(data),
+                ..Default::default()
+            });
+            return if already { FunOutcome::AlreadyPregnant } else { FunOutcome::NotPartner };
+        }
+    };
     data.fun_log.push(FunEvent {
         time_ms: now_ms,
         partner_name: partner.name.clone(),
@@ -144,6 +221,8 @@ pub fn record_fun(data: &mut AppData, now_ms: i64, roll: f64) -> FunOutcome {
         wait_ms: None,
         test_buddies_here: crate::testbuddy::here(data),
         already_pregnant: false,
+        not_partner: false,
+        protected: false,
     });
     if !data.settings.fertility {
         start_pregnancy(data, NewPregnancy { source: PregnancySource::Conception, partner: Some(partner), ..Default::default() }, now_ms);
@@ -192,6 +271,27 @@ pub fn record_fun(data: &mut AppData, now_ms: i64, roll: f64) -> FunOutcome {
         }),
     }
     FunOutcome::Pending
+}
+
+/// "Find out now": the wait for this WooHoo (by its first time) ends now.
+/// The engine's next check (`resolve_due`) reveals it.
+pub fn find_out_now(data: &mut AppData, time_ms: i64, now_ms: i64) {
+    if let Some(w) = data.waiting.iter_mut().find(|w| w.time_ms == time_ms) {
+        w.reveal_ms = w.reveal_ms.min(now_ms);
+    }
+}
+
+/// "We used protection": the wait is called off. Its WooHoos stay in the
+/// history, marked protected (not tries, no result).
+pub fn used_protection(data: &mut AppData, time_ms: i64) {
+    let Some(i) = data.waiting.iter().position(|w| w.time_ms == time_ms) else { return };
+    let w = data.waiting.remove(i);
+    let times: Vec<i64> = w.fun_times.iter().copied().chain([w.time_ms]).chain(w.later.map(|l| l.time_ms)).collect();
+    for f in data.fun_log.iter_mut().filter(|f| times.contains(&f.time_ms)) {
+        f.protected = true;
+        f.took = None;
+        f.wait_ms = None;
+    }
 }
 
 /// Settings changed: a wait already running follows the new wait length
@@ -306,7 +406,7 @@ pub fn start_pregnancy(data: &mut AppData, np: NewPregnancy, now_ms: i64) -> Str
         kind: "event".into(),
         title: title.into(),
         text: match &p.partner.name {
-            Some(n) => format!("{} (partner guessed: {n})", p.name),
+            Some(n) => format!("{} (other parent guessed: {n})", p.name),
             None => p.name.clone(),
         },
         image: None,
@@ -452,8 +552,7 @@ pub fn forget_person(data: &mut AppData, name: &str, user_id: Option<&str>) {
         _ => n == Some(name),
     };
     data.instance.forget(name, user_id);
-    let key = user_id.map(str::to_string).unwrap_or_else(|| name.trim().to_lowercase());
-    data.settings.pinned_partners.retain(|k| *k != key);
+    set_my_partner(data, name, user_id, false, 0);
     if let Some(u) = user_id {
         data.species_answers.remove(u);
     }
@@ -511,7 +610,7 @@ pub fn reset_data(data: &mut AppData, kind: ResetKind) {
             data.fun_log.clear();
             data.instance.history.clear();
             data.species_answers.clear();
-            data.settings.pinned_partners.clear();
+            data.my_partners.clear();
         }
         ResetKind::Achievements => {
             data.achievements.clear();
@@ -806,9 +905,10 @@ mod tests {
         let id = start_pregnancy(&mut d, NewPregnancy::default(), LATER);
         d.fun_log.push(FunEvent { time_ms: LATER, partner_name: Some("Fox".into()), partner_user_id: Some("usr_Fox".into()), ..Default::default() });
         d.fun_log.push(FunEvent { time_ms: LATER, partner_name: Some("Wolf".into()), ..Default::default() });
-        d.settings.pinned_partners = vec!["usr_Fox".into(), "wolf".into()];
+        set_my_partner(&mut d, "Fox", Some("usr_Fox"), true, 0);
+        set_my_partner(&mut d, "Wolf", None, true, 0);
         forget_person(&mut d, "Fox", Some("usr_Fox"));
-        assert_eq!(d.settings.pinned_partners, ["wolf"], "unpinned, others stay pinned");
+        assert_eq!(d.my_partners.iter().map(|m| m.name.as_str()).collect::<Vec<_>>(), ["Wolf"], "only them off your partners");
         let p = d.pregnancy(&id).unwrap();
         assert!(p.partner.name.is_none());
         assert!(p.partner.candidates.is_empty());
@@ -824,10 +924,10 @@ mod tests {
         start_pregnancy(&mut d, NewPregnancy::default(), LATER);
         touch_avatar(&mut d, "avtr_a", 0);
         d.fun_log.push(FunEvent::default());
-        d.settings.pinned_partners.push("usr_x".into());
+        set_my_partner(&mut d, "X", Some("usr_x"), true, 0);
         reset_data(&mut d, ResetKind::Partners);
         assert!(d.fun_log.is_empty() && d.instance.history.is_empty());
-        assert!(d.settings.pinned_partners.is_empty(), "pins go with the partners");
+        assert!(d.my_partners.is_empty(), "your partners go too");
         assert_eq!(d.pregnancies.len(), 1, "pregnancies kept");
         reset_data(&mut d, ResetKind::Pregnancies);
         assert!(d.pregnancies.is_empty() && d.active_pregnancy_id.is_none());
@@ -1174,6 +1274,90 @@ mod tests {
         assert_eq!(f.partner_name.as_deref(), Some("Fox"));
         assert_eq!(d.fun_log.len(), 2);
         assert!(d.waiting.is_empty());
+    }
+
+    #[test]
+    fn only_my_partners_keeps_others_out() {
+        let mut d = with_instance(&["Fox"]);
+        d.settings.fertility = false;
+        d.settings.partners_only = true;
+        // Fox isn't a partner: kept in the history, nothing starts.
+        assert_eq!(record_fun(&mut d, LATER, 0.0), FunOutcome::NotPartner);
+        let f = d.fun_log.last().unwrap();
+        assert!(f.not_partner && !f.already_pregnant && f.took.is_none());
+        assert_eq!(f.partner_name.as_deref(), Some("Fox"));
+        assert!(d.current_pregnancy(None).is_none());
+        // Added (by name, their user ID matches too): it counts.
+        set_my_partner(&mut d, "fox", None, true, 5);
+        assert_eq!(record_fun(&mut d, LATER + 1, 0.0), FunOutcome::Started);
+        assert_eq!(d.current_pregnancy(None).unwrap().partner.name.as_deref(), Some("Fox"));
+        // Taken off again, and the setting off: anyone counts.
+        set_my_partner(&mut d, "Fox", Some("usr_Fox"), false, 6);
+        assert!(d.my_partners.is_empty());
+    }
+
+    #[test]
+    fn only_my_partners_narrows_who_it_was() {
+        let mut d = with_instance(&["Fox", "Wolf", "Bear"]);
+        d.settings.partners_only = true;
+        // Nobody can be named with three here, and no partner among them.
+        assert_eq!(record_fun(&mut d, LATER, 0.0), FunOutcome::NotPartner);
+        // One partner here: it was them.
+        set_my_partner(&mut d, "Wolf", Some("usr_Wolf"), true, 0);
+        assert_eq!(record_fun(&mut d, LATER + 1, 0.0), FunOutcome::Pending);
+        assert_eq!(d.waiting[0].partner.name.as_deref(), Some("Wolf"));
+        assert_eq!(d.waiting[0].partner.status, PartnerStatus::Guessed);
+        // Two partners here: "Who was it?" (or random, among them only).
+        let mut d2 = with_instance(&["Fox", "Wolf", "Bear"]);
+        d2.settings.partners_only = true;
+        set_my_partner(&mut d2, "Wolf", Some("usr_Wolf"), true, 0);
+        set_my_partner(&mut d2, "Bear", Some("usr_Bear"), true, 0);
+        assert_eq!(record_fun(&mut d2, LATER, 0.0), FunOutcome::Pending);
+        assert!(d2.waiting[0].partner.name.is_none());
+        for i in 1..6 {
+            record_fun(&mut d2, LATER + i, 0.0);
+        }
+        let named = d2.waiting[0].partner.name.clone();
+        assert!(named.is_none() || matches!(named.as_deref(), Some("Wolf" | "Bear")));
+    }
+
+    #[test]
+    fn old_pins_become_partners() {
+        let mut d = AppData::new();
+        d.fun_log.push(FunEvent { time_ms: 30, partner_name: Some("Fox".into()), partner_user_id: Some("usr_fox".into()), ..Default::default() });
+        d.fun_log.push(FunEvent { time_ms: 10, partner_name: Some("Fox".into()), partner_user_id: Some("usr_fox".into()), ..Default::default() });
+        d.fun_log.push(FunEvent { time_ms: 20, partner_name: Some("Wolf Pup".into()), ..Default::default() });
+        d.settings.pinned_partners = vec!["usr_fox".into(), "wolf pup".into(), "nobody".into()];
+        pins_to_partners(&mut d);
+        assert!(d.settings.pinned_partners.is_empty());
+        let got: Vec<_> = d.my_partners.iter().map(|m| (m.name.as_str(), m.user_id.as_deref(), m.added_ms)).collect();
+        assert_eq!(got, [("Fox", Some("usr_fox"), 10), ("Wolf Pup", None, 20)]);
+    }
+
+    #[test]
+    fn protection_calls_the_wait_off_and_find_out_now_ends_it() {
+        let mut d = with_instance(&["Fox"]);
+        assert_eq!(record_fun(&mut d, LATER, 0.0), FunOutcome::Pending);
+        record_fun(&mut d, LATER + 5, 0.0);
+        used_protection(&mut d, LATER);
+        assert!(d.waiting.is_empty());
+        assert!(d.fun_log.iter().all(|f| f.protected && f.took.is_none() && f.wait_ms.is_none()));
+        // Next time: find out right away.
+        assert_eq!(record_fun(&mut d, LATER * 2, 0.0), FunOutcome::Pending);
+        find_out_now(&mut d, LATER * 2, LATER * 2 + 1);
+        assert_eq!(resolve_due(&mut d, LATER * 2 + 1), Some(true));
+        assert!(d.current_pregnancy(None).is_some());
+    }
+
+    #[test]
+    fn forgetting_a_partner_takes_them_off() {
+        let mut d = AppData::new();
+        set_my_partner(&mut d, "Fox", Some("usr_fox"), true, 1);
+        set_my_partner(&mut d, "Fox", Some("usr_fox"), true, 9);
+        assert_eq!(d.my_partners.len(), 1);
+        assert_eq!(d.my_partners[0].added_ms, 1, "added again keeps when");
+        forget_person(&mut d, "Fox", Some("usr_fox"));
+        assert!(d.my_partners.is_empty());
     }
 
     #[test]

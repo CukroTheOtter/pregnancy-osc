@@ -48,6 +48,11 @@ export const api = {
   deleteGroup: (id: string) => call<void>("delete_group", { id }),
   setSpeciesAnswer: (key: string, species: string) => call<void>("set_species_answer", { key, species }),
   forgetPerson: (name: string, userId: string | null) => call<void>("forget_person", { name, userId }),
+  findOutNow: (timeMs: number) => call<void>("find_out_now", { timeMs }),
+  usedProtection: (timeMs: number) => call<void>("used_protection", { timeMs }),
+  checkProblems: () => call<import("./types").Problem[]>("check_problems"),
+  fixProblem: (id: string, fix: number) => call<boolean>("fix_problem", { id, fix }),
+  setMyPartner: (name: string, userId: string | null, on: boolean) => call<void>("set_my_partner", { name, userId, on }),
   forgetStandingHeight: () => call<void>("forget_standing_height"),
   setStandingHeightNow: () => call<number>("set_standing_height_now"),
   testNotice: () => call<string[]>("test_notice"),
@@ -103,8 +108,6 @@ export const api = {
   addAvatar: (avatarId: string, name: string | null) => call<import("./types").AvatarProfile>("add_avatar", { avatarId, name }),
   dismissReveal: () => call<void>("dismiss_reveal"),
   restartCycle: () => call<void>("restart_cycle"),
-  /** Browser preview only: end the grace period now. */
-  skipWaiting: () => call<void>("skip_waiting"),
   /** Browser preview only: pretend you switched avatar. */
   simulateAvatar: (id: string) => call<void>("simulate_avatar", { id }),
 };

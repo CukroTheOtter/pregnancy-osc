@@ -269,9 +269,13 @@ pub struct Settings {
     pub safety: crate::safety::SafetySettings,
     /// Detecting WooHoos from SPS sockets.
     pub sps: SpsSettings,
-    /// Partners pinned to the top of the Partners tab (their user ID, else
-    /// their name in lower case).
+    /// Old saves only: partners pinned to the top of the Partners tab (their
+    /// user ID, else their name in lower case). Turned into your partners on
+    /// load (`actions::pins_to_partners`).
     pub pinned_partners: Vec<String>,
+    /// Only WooHoos with one of your partners (`AppData::my_partners`) can
+    /// start a pregnancy or a wait. Others are kept in the history.
+    pub partners_only: bool,
     /// Hidden debug tools (tap the title 5 times).
     pub debug: bool,
     pub onboarded: bool,
@@ -330,6 +334,7 @@ impl Default for Settings {
             safety: Default::default(),
             sps: SpsSettings::default(),
             pinned_partners: Vec::new(),
+            partners_only: false,
             debug: false,
             onboarded: false,
         }
@@ -651,6 +656,20 @@ pub struct FunEvent {
     pub test_buddies_here: Vec<String>,
     /// While already pregnant: not a try, so never part of a wait or a result.
     pub already_pregnant: bool,
+    /// "Only my partners" was on and it wasn't with one: not a try either.
+    pub not_partner: bool,
+    /// "We used protection" while waiting to find out: the wait was called
+    /// off, so not a try either.
+    pub protected: bool,
+}
+
+/// Someone you added to your partners (💞 on the Partners tab).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct MyPartner {
+    pub name: String,
+    pub user_id: Option<String>,
+    pub added_ms: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -701,6 +720,8 @@ pub struct AppData {
     /// Your headset's height above the floor when standing, learned from
     /// SteamVR (see `posture`), so starting seated still counts as resting.
     pub vr_standing_m: Option<f32>,
+    /// Your partners, added by hand (see `Settings::partners_only`).
+    pub my_partners: Vec<MyPartner>,
 }
 
 impl AppData {

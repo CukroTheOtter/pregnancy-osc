@@ -26,7 +26,7 @@
   const many = $derived(p.babyCount > 1 && week >= BABY_REVEAL_WEEK);
   // "Resting holds off labor": whether you're up right now (in-game only).
   const resting = $derived(!!settings?.labor.restingHolds && canShow && status?.up === false);
-  // "Labor waits for your partner", and they aren't in the instance (same as labor.rs).
+  // "Labor waits for the other parent", and they aren't in the instance (same as labor.rs).
   const waitingPartner = $derived(!!settings?.labor.waitsForPartner && !!partner && status?.partnerHere === false);
   const welcome = $derived(many ? "Welcome your babies 🍼" : "Welcome your baby 🍼");
   let busy = $state(false);

@@ -96,7 +96,7 @@ function momentItem(d: AppData, id: string, title: string, timeMs: number, text:
   const seed = seedOf(id);
   const base = { key: id, timeMs, scan: null, note: false, rare: true };
   if (title === "partner-kicks") {
-    const who = shownName(d, p.partner.name, p.partner.userId) ?? "your partner";
+    const who = shownName(d, p.partner.name, p.partner.userId) ?? "the other parent";
     return { ...base, emoji: "💞", title: "Knows their other parent", text: `Kicked and kicked while ${who} was around.`, card: { kind: "partner-kicks", seed, emoji: "💞🦶", caption: `Kicking for ${who}!`, sub: "they know you're here", person: { name: who, userId: p.partner.userId } } };
   }
   if (title === "well-travelled") {

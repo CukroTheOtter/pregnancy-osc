@@ -111,7 +111,7 @@
   async function birth() {
     if (!p) return;
     const many = p.babyCount > 1;
-    if (await confirmAsk({ title: many ? "Welcome your babies? 🍼" : "Welcome your baby? 🍼", text: "This ends the pregnancy with a birth and counts toward your partner stats.", ok: many ? "Welcome them!" : "Welcome baby!" })) {
+    if (await confirmAsk({ title: many ? "Welcome your babies? 🍼" : "Welcome your baby? 🍼", text: "This ends the pregnancy with a birth and counts in your stats.", ok: many ? "Welcome them!" : "Welcome baby!" })) {
       await api.giveBirth(p.id);
       toast(many ? `${babyWord(p.babyCount)} Congratulations! 🍼` : "Congratulations! 🍼", undefined, "success", 8000);
     }
@@ -119,7 +119,7 @@
 
   async function endEarly() {
     if (!p) return;
-    if (await confirmAsk({ title: "End this pregnancy?", text: "The belly goes back to flat. This doesn't count as a birth.", ok: "End pregnancy", danger: true })) {
+    if (await confirmAsk({ title: "End this pregnancy?", text: isDue ? "The belly goes back to flat and it doesn't count as a birth. For a birth, use “Welcome your baby” instead." : "The belly goes back to flat and it doesn't count as a birth.", ok: "End pregnancy", danger: true })) {
       await api.endPregnancy(p.id);
     }
   }
@@ -201,9 +201,10 @@
         <div class="hidden-note">🙈 <span><strong>Hidden in this {instanceName(status?.instanceKind)} instance.</strong> It comes back when you leave (Settings > Safety).</span><button class="small" onclick={() => api.showBellyHere().catch(errorToast)}>Show here</button></div>
       {/if}
       <LaborCard {p} {week} {isDue} {viewingOther} onbirth={birth} />
-      <div class="row">
+      <div class="row controls">
         <button class="soft" onclick={togglePause}>{paused ? "▶ Resume" : "⏸ Pause"}</button>
         <button class="soft" onclick={openAdjust}>Adjust progress</button>
+        <button class="soft stop" onclick={endEarly} title="Ends it without a birth">✕ End pregnancy</button>
       </div>
       {#if adjusting}
         <div class="adjust">
@@ -233,11 +234,9 @@
       <p class="muted small" style="margin-top:10px">Changing this keeps the belly where it is; only the time left changes.</p>
     </section>
 
-    <div class="row end">
-      <button class="ghost small" onclick={endEarly}>End early</button>
-    </div>
   {:else if w}
     <WaitingCard {w} />
+    {#if status?.woohooNote}<p class="muted small center">💕 {status.woohooNote}</p>{/if}
   {:else}
     {#if app.data?.settings.fertility}
       <CycleCard />
@@ -248,6 +247,7 @@
       </section>
     {/if}
     <p class="muted small center">
+      {#if status?.woohooNote}💕 {status.woohooNote}<br />{/if}
       {app.data?.settings.fertility ? "After a WooHoo in-game, you'll find out after a little while if a little one is on the way." : "A pregnancy starts as soon as you WooHoo in-game."}
     </p>
 
@@ -382,8 +382,13 @@
   .adjust input {
     width: 100%;
   }
-  .end {
+  .controls {
+    flex-wrap: wrap;
     justify-content: center;
+    gap: 8px;
+  }
+  .stop {
+    color: var(--danger);
   }
   .size {
     font-weight: 700;

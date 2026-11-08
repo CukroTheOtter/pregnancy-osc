@@ -168,8 +168,10 @@ export interface Settings {
   labor: LaborSettings;
   safety?: SafetySettings;
   sps: { enabled: boolean; types: Record<HoleType, boolean>; depth: number; seconds: number; gapSeconds: number };
-  /** Partners pinned to the top of the Partners tab (see `personKey`). */
+  /** Old saves only: pins, turned into `AppData.myPartners` on load (pins_to_partners in actions.rs). */
   pinnedPartners?: string[];
+  /** Only WooHoos with one of your partners (`AppData.myPartners`) count. */
+  partnersOnly?: boolean;
   onboarded: boolean;
 }
 
@@ -316,6 +318,17 @@ export interface FunEvent {
   testBuddiesHere?: string[];
   /** While already pregnant: not a try, so never part of a wait or a result. */
   alreadyPregnant?: boolean;
+  /** "Only my partners" was on and it wasn't with one: not a try either. */
+  notPartner?: boolean;
+  /** "We used protection" while waiting: the wait was called off, so not a try either. */
+  protected?: boolean;
+}
+
+/** Someone you added to your partners (💞 on the Partners tab). */
+export interface MyPartner {
+  name: string;
+  userId: string | null;
+  addedMs: number;
 }
 
 export interface AvatarGroup {
@@ -340,6 +353,8 @@ export interface AppData {
   waiting: PendingConception[];
   lastReveal: RevealResult | null;
   funLog: FunEvent[];
+  /** Your partners, added by hand (see `Settings.partnersOnly`). */
+  myPartners?: MyPartner[];
   syncValues: Record<string, number>;
   achievements: Record<string, number>;
   /** Debug: unlocked while debug mode was on. Marked on Me, left out of the count and Share. */
@@ -486,4 +501,15 @@ export interface MappingInfo {
   path: string;
   syncedBits: number;
   syncedBitsAll: number;
+}
+
+/** Settings > Troubleshooting: something wrong in the save or settings (pregsys-core/src/check.rs). */
+export interface Problem {
+  id: string;
+  text: string;
+  atMs: number | null;
+  /** Ways to fix it; the index is what `fixProblem` takes. */
+  fixes: string[];
+  /** A tab that helps. */
+  go: "partners" | null;
 }

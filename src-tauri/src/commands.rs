@@ -224,6 +224,38 @@ pub fn forget_person(app: AppHandle, s: S, name: String, user_id: Option<String>
     changed(&app, &s, false);
 }
 
+fn check_env(d: &AppData) -> pregsys_core::check::Env {
+    pregsys_core::check::Env { log_dir_missing: d.settings.log_dir.as_deref().is_some_and(|p| !std::path::Path::new(p).is_dir()) }
+}
+
+/// Settings > Troubleshooting: problems in the save and settings.
+#[tauri::command]
+pub fn check_problems(s: S) -> Vec<pregsys_core::check::Problem> {
+    let d = s.data.lock().unwrap();
+    pregsys_core::check::problems(&d, check_env(&d))
+}
+
+/// Applies one of a problem's fixes. False if it was already gone.
+#[tauri::command]
+pub fn fix_problem(app: AppHandle, s: S, id: String, fix: usize) -> bool {
+    let done = {
+        let mut d = s.data.lock().unwrap();
+        let env = check_env(&d);
+        pregsys_core::check::fix(&mut d, env, &id, fix)
+    };
+    if done {
+        changed(&app, &s, true);
+    }
+    done
+}
+
+/// Adds someone to your 💞 partners, or takes them off.
+#[tauri::command]
+pub fn set_my_partner(app: AppHandle, s: S, name: String, user_id: Option<String>, on: bool) {
+    actions::set_my_partner(&mut s.data.lock().unwrap(), &name, user_id.as_deref(), on, now_ms());
+    changed(&app, &s, false);
+}
+
 /// Forgets your standing height (SteamVR learns it again while you stand).
 #[tauri::command]
 pub fn forget_standing_height(app: AppHandle, s: S) {
@@ -634,6 +666,20 @@ pub fn debug_reveal_now(app: AppHandle, s: S) {
         w.reveal_ms = now;
     }
     changed(&app, &s, false);
+}
+
+/// "Find out now" on the waiting card (the engine reveals it within a second).
+#[tauri::command]
+pub fn find_out_now(app: AppHandle, s: S, time_ms: i64) {
+    actions::find_out_now(&mut s.data.lock().unwrap(), time_ms, now_ms());
+    changed(&app, &s, false);
+}
+
+/// "We used protection": calls the wait off.
+#[tauri::command]
+pub fn used_protection(app: AppHandle, s: S, time_ms: i64) {
+    actions::used_protection(&mut s.data.lock().unwrap(), time_ms);
+    changed(&app, &s, true);
 }
 
 /// Debug: takes back everything unlocked while debug mode was on.

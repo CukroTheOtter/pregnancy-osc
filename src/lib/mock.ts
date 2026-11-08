@@ -1,11 +1,11 @@
 // Browser-only stand-in for the Rust backend, so the UI can be previewed
 // with `npm run dev` in any browser. Data lives in localStorage.
 
-import type { AppData, AvatarProfile, InstanceKind, JournalEntry, Keepsake, Mapping, MappingInfo, NewPregnancy, Partner, Person, Pregnancy, ResetKind, Settings, Status } from "./types";
+import type { AppData, AvatarProfile, InstanceKind, JournalEntry, Keepsake, Mapping, MappingInfo, NewPregnancy, Partner, Person, Pregnancy, Problem, ResetKind, Settings, Status } from "./types";
 import { emptyData, baby, defaultSettings } from "./testdata";
 import { newTimeline, progress } from "./timeline";
 import { chance, cycleDay, cycleMs, graceMs } from "./fertility";
-import { groupMembers, owner, pendingFor, personKey, pregnancyFor, pregnancyIdOf } from "./scope";
+import { groupMembers, isMyPartner, owner, pendingFor, pregnancyFor, pregnancyIdOf, samePartner } from "./scope";
 import { socketCounts, typeOf } from "./sps";
 import { FIXED } from "./params";
 import { TEST_BUDDIES, isTestBuddy } from "./testbuddy";
@@ -201,6 +201,38 @@ function funPartner(now: number): Partner {
   return !partner.name && here >= 2 && woohoos >= here ? chosenPartner(partner.candidates, null, null, true) : partner;
 }
 
+/** The settings checks and the simple save ones from check.rs (the WooHoo/try links are only checked in the app). */
+function mockProblems(): { problem: Problem; fns: (() => void)[] }[] {
+  const out: { problem: Problem; fns: (() => void)[] }[] = [];
+  const add = (id: string, text: string, fixes: [string, () => void][], go: Problem["go"] = null) =>
+    out.push({ problem: { id, text, atMs: null, fixes: fixes.map((f) => f[0]), go }, fns: fixes.map((f) => f[1]) });
+  const s = data.settings;
+  if (s.partnersOnly && !data.myPartners?.length)
+    add("partners-none", "Only my partners is on, but you have no partners, so no WooHoo can start a pregnancy.", [["Turn off Only my partners", () => (s.partnersOnly = false)]], "partners");
+  if (s.partnersOnly && !s.readLogs)
+    add("partners-logs", "Only my partners needs log reading to know who it was. With it off, no WooHoo counts.", [
+      ["Turn on log reading", () => (s.readLogs = true)],
+      ["Turn off Only my partners", () => (s.partnersOnly = false)],
+    ]);
+  const ids = new Set(data.pregnancies.map((p) => p.id));
+  const j = data.journal.filter((e) => e.pregnancyId && !ids.has(e.pregnancyId)).length;
+  if (j) add("journal", `${j} journal entr${j > 1 ? "ies are" : "y is"} for a pregnancy that's gone.`, [["Remove them", () => (data.journal = data.journal.filter((e) => !e.pregnancyId || ids.has(e.pregnancyId)))]]);
+  for (const p of data.pregnancies.filter((p) => p.born && p.endedMs == null))
+    add(`born:${p.id}`, `“${p.name}” is marked born but never ended.`, [["Not born yet", () => (p.born = false)]]);
+  return out;
+}
+
+/** "Only my partners": the partner narrowed to yours, or null when it can't count (only_partners in actions.rs). */
+function onlyPartners(partner: Partner): Partner | null {
+  if (isMyPartner(data, partner.name, partner.userId)) return partner;
+  if (partner.name && partner.status !== "random") return null;
+  const mine = partner.candidates.filter((c) => isMyPartner(data, c.name, c.userId));
+  if (!mine.length) return null;
+  if (mine.length === 1) return partnerOf(mine[0], "guessed", partner.candidates);
+  if (partner.status === "random") return partnerOf(mine[Math.floor(Math.random() * mine.length)], "random", partner.candidates);
+  return unknownPartner(partner.candidates);
+}
+
 function creditFun(timeMs: number, partner: Partner) {
   const f = data.funLog.find((x) => x.timeMs === timeMs);
   if (f) Object.assign(f, { partnerName: partner.name, partnerUserId: partner.userId });
@@ -258,9 +290,9 @@ function createPregnancy(opts: NewPregnancy & { partner?: Partner; babyCount?: n
   return p;
 }
 
-function resolveDue(force = false) {
+function resolveDue() {
   const now = Date.now();
-  const i = data.waiting.findIndex((w) => force || w.revealMs <= now);
+  const i = data.waiting.findIndex((w) => w.revealMs <= now);
   if (i < 0) return;
   const w = data.waiting.splice(i, 1)[0];
   const later = w.later;
@@ -473,14 +505,44 @@ export const mock = {
   async set_species_answer() {},
   async forget_person({ name, userId }: { name: string; userId: string | null }) {
     const same = (n: string | null, u: string | null) => (userId && u ? u === userId : n === name);
-    const key = personKey(name, userId);
-    data.settings.pinnedPartners = (data.settings.pinnedPartners ?? []).filter((k) => k !== key);
+    data.myPartners = (data.myPartners ?? []).filter((m) => !samePartner(m, name, userId));
     data.instance.history = data.instance.history.filter((p) => !same(p.name, p.userId));
     data.funLog = data.funLog.filter((f) => !same(f.partnerName, f.partnerUserId));
     for (const p of data.pregnancies) {
       p.partner.candidates = p.partner.candidates.filter((c) => !same(c.name, c.userId));
       if (same(p.partner.name, p.partner.userId)) p.partner = { ...p.partner, status: "unknown", name: null, userId: null, avatarName: null, species: null };
     }
+    changed();
+  },
+  /** Same as find_out_now / used_protection in actions.rs. */
+  async find_out_now({ timeMs }: { timeMs: number }) {
+    const w = data.waiting.find((x) => x.timeMs === timeMs);
+    if (w) w.revealMs = Math.min(w.revealMs, Date.now());
+    changed();
+  },
+  async used_protection({ timeMs }: { timeMs: number }) {
+    const w = data.waiting.find((x) => x.timeMs === timeMs);
+    if (!w) return;
+    data.waiting = data.waiting.filter((x) => x !== w);
+    const times = new Set([w.timeMs, ...(w.funTimes ?? []), ...(w.later ? [w.later.timeMs] : [])]);
+    for (const f of data.funLog) if (times.has(f.timeMs)) Object.assign(f, { protected: true, took: null, waitMs: null });
+    changed();
+  },
+  async check_problems() {
+    return mockProblems().map((x) => x.problem);
+  },
+  async fix_problem({ id, fix }: { id: string; fix: number }) {
+    const fn = mockProblems().find((x) => x.problem.id === id)?.fns[fix];
+    if (!fn) return false;
+    fn();
+    changed();
+    return true;
+  },
+  async set_my_partner({ name, userId, on }: { name: string; userId: string | null; on: boolean }) {
+    const list = data.myPartners ?? [];
+    const addedMs = list.find((m) => samePartner(m, name, userId))?.addedMs ?? Date.now();
+    data.myPartners = list.filter((m) => !samePartner(m, name, userId));
+    if (on && name.trim()) data.myPartners.push({ name: name.trim(), userId, addedMs });
     changed();
   },
   async test_notice() {
@@ -537,7 +599,7 @@ export const mock = {
       data.funLog = [];
       data.instance.history = [];
       data.speciesAnswers = {};
-      data.settings.pinnedPartners = [];
+      data.myPartners = [];
     }
     if (kind === "achievements") Object.assign(data, { achievements: {}, testAchievements: [] });
     if (kind === "settings") data.settings = fresh.settings;
@@ -639,9 +701,6 @@ export const mock = {
   async restart_cycle() {
     data.settings.cycleAnchorMs = Date.now();
     changed();
-  },
-  async skip_waiting() {
-    resolveDue(true);
   },
   async debug_woohoo({ outcome }: { outcome: boolean | null }) {
     await woohoo(outcome);
@@ -788,12 +847,20 @@ async function woohoo(forced: boolean | null) {
         preg.labor = { phase: "early", startedMs: now, elapsedMs: 0, waterFirst: false, waterBrokeMs: null, paused: false, partnerAtBirth: false, cause: "wooHoo" };
         changed();
       } else if (s.labor.woohooStarts && !preg.labor && week >= 37) {
-        const text = partnerAway ? "WooHoo noticed, but labor waits for your partner." : `WooHoo noticed, but labor didn't start (${Math.round(chance * 100)}% chance). Next try after a ${s.sps.gapSeconds % 60 ? `${s.sps.gapSeconds}-second` : `${s.sps.gapSeconds / 60}-minute`} break.`;
+        const text = partnerAway ? "WooHoo noticed, but labor waits for the other parent." : `WooHoo noticed, but labor didn't start (${Math.round(chance * 100)}% chance). Next try after a ${s.sps.gapSeconds % 60 ? `${s.sps.gapSeconds}-second` : `${s.sps.gapSeconds / 60}-minute`} break.`;
         woohooNote = { text, at: now };
       }
       return;
     }
-    const partner = funPartner(now);
+    const guessed = funPartner(now);
+    const partner = s.partnersOnly ? onlyPartners(guessed) : guessed;
+    if (!partner) {
+      // Kept in the history as "Not a partner" (record_fun in actions.rs).
+      data.funLog.push({ timeMs: now, partnerName: guessed.name, partnerUserId: guessed.userId, avatarId: data.currentAvatarId, worldName: data.instance.worldName, notPartner: true, testBuddiesHere: data.instance.present.map((x) => x.userId ?? "").filter(isTestBuddy) });
+      woohooNote = { text: "WooHoo noticed, but not with one of your 💞 partners, so it doesn't count (Settings > Detecting WooHoos).", at: now };
+      changed();
+      return;
+    }
     data.funLog.push({ timeMs: now, partnerName: partner.name, partnerUserId: partner.userId, avatarId: data.currentAvatarId, worldName: data.instance.worldName, took: s.fertility ? null : true, testBuddiesHere: data.instance.present.map((x) => x.userId ?? "").filter(isTestBuddy) });
     if (!s.fertility) {
       createPregnancy({ source: "conception", partner });

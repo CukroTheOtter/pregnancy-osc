@@ -86,11 +86,16 @@
   }
 
   let s = $state<Settings>(withChatRows(structuredClone($state.snapshot(app.data!.settings)) as Settings));
-  // The header's 🙈 Private pill turns privacy mode off from outside: follow it, so a later save doesn't undo it.
+  // Changed from outside (the header's 🙈 Private pill, Troubleshooting's fixes): follow them, so a later save doesn't undo them.
   $effect(() => {
-    const on = !!app.data?.settings.privacyMode;
+    const d = app.data?.settings;
+    const on = !!d?.privacyMode;
+    const outside = { partnersOnly: !!d?.partnersOnly, readLogs: !!d?.readLogs, logDir: d?.logDir ?? null };
     untrack(() => {
       if (s.privacyMode !== on) s.privacyMode = on;
+      if (!!s.partnersOnly !== outside.partnersOnly) s.partnersOnly = outside.partnersOnly;
+      if (s.readLogs !== outside.readLogs) s.readLogs = outside.readLogs;
+      if ((s.logDir ?? null) !== outside.logDir) s.logDir = outside.logDir;
     });
   });
   // Your own background sets light or dark, so no theme button is in charge and none looks picked.
@@ -214,6 +219,9 @@
     s.safety = cur;
     commit();
   }
+
+  // "Only my partners" with nobody added: nothing can count.
+  const noPartners = $derived(!!s.partnersOnly && !app.data?.myPartners?.length);
 
   function commit(now = false) {
     app.data!.settings = structuredClone($state.snapshot(s)) as Settings;
@@ -516,7 +524,7 @@
         <label class="field">Status text
           <input bind:value={s.chatbox.statusText} maxlength="144" placeholder="🤰 Week {'{week}'} of 40" oninput={() => commit()} />
         </label>
-        <Toggle bind:checked={s.chatbox.statusPartner} label="Show partner in status" onchange={() => commit()} />
+        <Toggle bind:checked={s.chatbox.statusPartner} label="Show the other parent in status" onchange={() => commit()} />
         <Toggle checked={!s.chatbox.statusWhenHidden} label="Hide the status while my belly is hidden" hint="Hide Belly, or hidden in this instance (Safety)" onchange={(v) => { s.chatbox.statusWhenHidden = !v; commit(); }} />
         <div class="chat-preview" aria-label="Preview">{statusPreview}</div>
       {/if}
@@ -546,7 +554,11 @@
   </Section>
 
   <Section id="woohoos" title="💕 Detecting WooHoos">
-    {#snippet extra()}<span class="pill" class:ok={s.sps.enabled} class:off={!s.sps.enabled}>{s.sps.enabled ? "on" : "off"}</span>{/snippet}
+    {#snippet extra()}{#if noPartners}<span class="pill warn">no partners</span>{/if}<span class="pill" class:ok={s.sps.enabled} class:off={!s.sps.enabled}>{s.sps.enabled ? "on" : "off"}</span>{/snippet}
+    <Toggle bind:checked={s.partnersOnly} disabled={!s.readLogs && !s.partnersOnly} label="Only my partners" hint={s.readLogs ? "A WooHoo only starts a pregnancy (or a wait to find out) with someone under 💞 My partners on the Partners tab. Others still go in your history." : "Needs log reading (Logs and pictures)"} onchange={() => commit()} />
+    {#if noPartners}
+      <span class="small warn-text">⚠️ You have no 💞 partners yet, so no WooHoo can start a pregnancy. <button class="link-inline" onclick={() => (app.view = "partners")}>Add one on the Partners tab</button></span>
+    {/if}
     <Toggle bind:checked={s.sps.enabled} label="Use SPS sockets" hint="Something from another player inside a socket for long enough (like OSC Goes Brrr reads)" onchange={() => commit()} />
     {#if s.sps.enabled}
       <div class="field">
@@ -695,7 +707,7 @@
         </div>
         <span class="hint">Twins and more kick more often.</span>
       </div>
-      <Toggle bind:checked={s.kicksWithPartner} disabled={!s.readLogs} label="More active with your partner here" hint={s.readLogs ? "Kicks come twice as often (and stronger) while the partner is in the instance" : "Needs log reading (Logs and pictures)"} onchange={() => commit()} />
+      <Toggle bind:checked={s.kicksWithPartner} disabled={!s.readLogs} label="More active with the other parent here" hint={s.readLogs ? "Kicks come twice as often (and stronger) while the other parent (the one you're pregnant by) is in the instance" : "Needs log reading (Logs and pictures)"} onchange={() => commit()} />
       <div class="field">
         <strong>Kinds of kicks</strong>
         <Toggle bind:checked={s.allowedKicks.weak} label="Little kicks" hint="From week 16" onchange={() => commit()} />
@@ -727,11 +739,11 @@
         {/each}
       </div>
       <span class="hint">{s.labor.induceWeek
-        ? `A deadline: if labor hasn't started by week ${s.labor.induceWeek} (for "When I say", if you haven't started it), it starts then. It also beats "Resting holds off labor", but still waits for VRChat, your partner (if that's on) and Safety.`
+        ? `A deadline: if labor hasn't started by week ${s.labor.induceWeek} (for "When I say", if you haven't started it), it starts then. It also beats "Resting holds off labor", but still waits for VRChat, the other parent (if that's on) and Safety.`
         : "Off: labor only starts as set above (it could go on overdue). Pick a week as a deadline: labor starts then if it hasn't yet."}</span>
     </div>
     <Toggle bind:checked={s.labor.woohooStarts} label="A WooHoo can start labor" hint="An extra way in, on top of the above: from week 37 each WooHoo has a 25% chance, rising to 75% from week 40" onchange={() => commit()} />
-    <Toggle bind:checked={s.labor.waitsForPartner} disabled={!s.readLogs} label="Labor waits for your partner" hint={s.readLogs ? "Labor doesn't start until the partner is in the instance. Once it starts, it keeps going." : "Needs log reading (Logs and pictures)"} onchange={() => commit()} />
+    <Toggle bind:checked={s.labor.waitsForPartner} disabled={!s.readLogs} label="Labor waits for the other parent" hint={s.readLogs ? "Labor doesn't start until the other parent (the one you're pregnant by) is in the instance. Once it starts, it keeps going." : "Needs log reading (Logs and pictures)"} onchange={() => commit()} />
     <strong class="sub">⏱️ How it goes</strong>
     <div class="field">
       <strong>Labor length</strong>

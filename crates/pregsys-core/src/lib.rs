@@ -3,6 +3,7 @@
 pub mod achievements;
 pub mod actions;
 pub mod chatbox;
+pub mod check;
 pub mod controls;
 pub mod driver;
 pub mod fertility;

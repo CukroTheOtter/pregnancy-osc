@@ -89,6 +89,17 @@
   const wearing = $derived(app.data?.currentAvatarId ? avatarName(app.data, app.data.currentAvatarId) : null);
   // Switching avatars: the app is waiting for the new one (and keeps a hidden belly hidden).
   const hidden = $derived(!!status?.hideBelly && (app.data?.syncValues?.[status.hideBelly] ?? 0) > 0.5);
+
+  /** A tab: tapping Settings again while there's something to fix goes to Troubleshooting. */
+  // Looking at Home clears its outline.
+  $effect(() => {
+    if (app.view === "home") app.homeNews = false;
+  });
+
+  function tabClick(id: View) {
+    if (id === "settings" && app.view === "settings" && app.problems.length) app.openSection = { id: "troubleshooting", n: Date.now() };
+    app.view = id;
+  }
 </script>
 
 <div class="shell">
@@ -137,8 +148,11 @@
       <button
         class="tab"
         class:on={app.view === t.id}
+        class:warn={t.id === "settings" && app.problems.length > 0}
+        class:news={t.id === "home" && app.homeNews && app.view !== "home"}
         aria-current={app.view === t.id ? "page" : undefined}
-        onclick={() => (app.view = t.id)}
+        title={t.id === "settings" && app.problems.length ? `${app.problems.length} thing${app.problems.length > 1 ? "s" : ""} to fix${app.view === "settings" ? ": tap to see" : ": tap twice to see"}` : undefined}
+        onclick={() => tabClick(t.id)}
       >
         <span aria-hidden="true">{t.icon}</span>
         {t.label}
@@ -289,6 +303,39 @@
   /* The chosen tab sits on the accent pill. */
   .tab.on {
     color: var(--accent-text, #fff);
+  }
+  /* Something to fix (Settings > Troubleshooting): a yellow outline, or a
+     yellow dot while it's the open tab (an outline clashes with the pill). */
+  .tab.warn:not(.on) {
+    box-shadow: inset 0 0 0 2px var(--warn);
+    border-radius: 999px;
+  }
+  .tab.warn.on::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    right: 6px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--warn);
+    box-shadow: 0 0 0 2px var(--bg-2);
+  }
+  /* Something new on Home: an accent outline that gently pulses. */
+  .tab.news {
+    box-shadow: inset 0 0 0 2px var(--accent);
+    border-radius: 999px;
+    animation: news 1.6s ease-in-out infinite;
+  }
+  @keyframes news {
+    50% {
+      box-shadow: inset 0 0 0 2px transparent;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tab.news {
+      animation: none;
+    }
   }
   /* The tab under the mouse grows a little; with none hovered, the chosen one does. */
   .tab:hover,

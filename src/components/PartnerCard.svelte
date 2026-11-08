@@ -52,7 +52,7 @@
 </script>
 
 <section class="card">
-  <h2>💞 Partner</h2>
+  <h2>👪 Other parent</h2>
 
   {#if partner.name}
     <div class="chosen">

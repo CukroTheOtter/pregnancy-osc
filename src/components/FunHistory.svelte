@@ -7,7 +7,7 @@
 
   let { avatarId }: { avatarId: string | null } = $props();
 
-  const LABEL = { waiting: "⏳ Waiting", pregnant: "🤰 Pregnant", notPregnant: "🤍 Not this time", alreadyPregnant: "🤰 Already pregnant" };
+  const LABEL = { waiting: "⏳ Waiting", pregnant: "🤰 Pregnant", notPregnant: "🤍 Not this time", alreadyPregnant: "🤰 Already pregnant", notPartner: "🚫 Not a partner", protected: "🛡️ Protected" };
   const rows = $derived(app.data ? funRows(app.data, avatarId) : []);
   const fmt = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 </script>
@@ -20,7 +20,7 @@
         <li>
           <div class="grow">
             <strong class="small">{fmt.format(r.timeMs)}</strong>
-            <div class="muted small">{[r.worldName, r.partnerName ? `with ${shownName(app.data, r.partnerName, r.partnerUserId)}` : "Partner unknown", r.count > 1 ? `💕 ${r.count}` : null].filter(Boolean).join(" · ")}</div>
+            <div class="muted small">{[r.worldName, r.partnerName ? `with ${shownName(app.data, r.partnerName, r.partnerUserId)}` : "With someone", r.count > 1 ? `💕 ${r.count}` : null].filter(Boolean).join(" · ")}</div>
           </div>
           <span class="small result">{LABEL[r.result]}</span>
         </li>

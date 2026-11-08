@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { funRows, partnerFunRows, personKey } from "./scope";
+import { funRows, isMyPartner, partnerFunRows, partnerStats, personKey } from "./scope";
 import { emptyData } from "./testdata";
 import type { FunEvent, PendingConception } from "./types";
 
@@ -64,5 +64,32 @@ describe("partnerFunRows", () => {
     const d = emptyData();
     d.funLog = [fun(100, { partnerName: null, partnerUserId: null })];
     expect(partnerFunRows(d, personKey(null, null))).toEqual([]);
+  });
+});
+
+describe("my partners", () => {
+  it("are listed before anything happened, and marked once something has", () => {
+    const d = emptyData();
+    d.funLog = [fun(100, ember, { waitMs: 100, took: false })];
+    d.myPartners = [{ name: "ember fox", userId: null, addedMs: 50 }, { name: "Mika", userId: "usr_9", addedMs: 70 }];
+    const st = partnerStats(d);
+    expect(st.map((s) => [s.name, s.mine, s.fun])).toEqual([["Ember Fox", true, 1], ["Mika", true, 0]]);
+    expect(isMyPartner(d, "Mika", "usr_9")).toBe(true);
+    expect(isMyPartner(d, "Mika", "usr_other")).toBe(false);
+    expect(isMyPartner(d, "Rex", "usr_2")).toBe(false);
+  });
+
+  it("lists a WooHoo that wasn't with a partner on its own", () => {
+    const d = emptyData();
+    d.funLog = [fun(100, rex, { notPartner: true }), fun(200, { partnerName: null, partnerUserId: null }, { notPartner: true })];
+    expect(funRows(d, null).map((r) => [r.timeMs, r.result])).toEqual([[100, "notPartner"]]);
+    expect(partnerFunRows(d, personKey("Rex", "usr_2")).map((r) => r.result)).toEqual(["notPartner"]);
+  });
+
+  it("lists protected WooHoos on their own", () => {
+    const d = emptyData();
+    d.funLog = [fun(100, rex, { protected: true }), fun(200, { partnerName: null, partnerUserId: null }, { protected: true })];
+    // Also with nobody named: you called it off yourself.
+    expect(funRows(d, null).map((r) => [r.timeMs, r.result])).toEqual([[200, "protected"], [100, "protected"]]);
   });
 });

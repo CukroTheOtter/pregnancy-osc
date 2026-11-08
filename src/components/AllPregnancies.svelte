@@ -51,7 +51,7 @@
               <span class="muted small">Week {Math.floor(pr * TERM_WEEKS)}</span>
             </div>
             <div class="bar"><div style="width:{Math.min(100, pr * 100)}%"></div></div>
-            <span class="muted small">{p.partner.name ? `with ${shownName(d, p.partner.name, p.partner.userId)}` : "partner unknown"}{p.timeline.pausedAtMs ? " · paused" : ""}</span>
+            <span class="muted small">{p.partner.name ? `with ${shownName(d, p.partner.name, p.partner.userId)}` : "other parent unknown"}{p.timeline.pausedAtMs ? " · paused" : ""}</span>
           </div>
           {#if aid}<button class="small soft" onclick={() => viewPregnancy(p)}>Open</button>{/if}
         </li>

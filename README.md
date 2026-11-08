@@ -5,14 +5,14 @@ A small, cute desktop app that runs your avatar's pregnancy from outside VRChat:
 1. **Overrides the avatar's own counter.** The app writes the belly size over OSC, so it's in charge while it runs.
 2. **Speed and progress.** See the week, percent and time left. Pick real time, 1 day = 1 week, 1 hour = 1 week or a custom length. Pause, or jump to a week.
 3. **WooHoos and fertility.** A WooHoo in-game (SPS sockets) starts a wait to find out, with a fertility cycle deciding the odds. Twins and more can happen.
-4. **Partner.** If it was just the two of you in the instance, the app guesses them. Otherwise it lists who was in the instance at conception, and you pick (or type a name, or roll 🎲).
+4. **Other parent.** If it was just the two of you in the instance, the app guesses who you're pregnant by. Otherwise it lists who was in the instance at conception, and you pick (or type a name, or roll 🎲).
 5. **Movement.** Kicks on your avatar from week 16, and a chart of the last 24 hours, like a heart rate chart. Tap a bar to see that hour.
 6. **Journal.** A timeline of each pregnancy, with your own notes:
    - Scans at weeks 8, 12, 20 and 36: made-up, toony and blurry (nobody can tell the species), each baby circled, with fake readouts like a real screen (your name, due date, weight, heart rate, girl or boy).
    - Rare weeks bring surprises: a wave at the camera, a yawn, hiccups, a high five between twins, cravings.
-   - Moments from how you play: lots of kicks with your partner around (with their profile picture), late-night kicks, kicks in lots of worlds.
+   - Moments from how you play: lots of kicks with the other parent around (with their profile picture), late-night kicks, kicks in lots of worlds.
    - Tap any picture to copy or save it.
-7. **Partners.** WooHoos, pregnancies and kids with each partner. Pin your favourites to the top, and see who you're pregnant with right now.
+7. **Partners.** WooHoos, pregnancies and kids with everyone you've been with, and who you're pregnant with right now. **💞 My partners** sit at the top: add them with ＋ Add partner, or 💞 Make partner on anyone listed. With **Only my partners** on (Settings > Detecting WooHoos), a WooHoo with anyone else stays in the history as "Not a partner" and starts nothing.
 8. **Avatars.** One pregnancy on every avatar, or one each. Put avatars in groups (shown like folders on a phone) to share a pregnancy.
 9. **Me.** Your stats and achievements, and a share card to show them off.
 
@@ -27,7 +27,7 @@ The pregnancy is stored as a **start time**, never a current size, so it's right
   <tr>
     <td><img src="docs/screenshots/home.png" alt="Home: twins at week 24, due date and the 24-hour kick chart" width="280"></td>
     <td><img src="docs/screenshots/journal.png" alt="Journal: a note with a rare scan of a baby waving, a craving and the week 20 scan" width="280"></td>
-    <td><img src="docs/screenshots/partners.png" alt="Partners: a pinned partner and who you're pregnant with right now" width="280"></td>
+    <td><img src="docs/screenshots/partners.png" alt="Partners: one of your partners and who you're pregnant with right now" width="280"></td>
   </tr>
   <tr>
     <td align="center"><b>Home</b></td>
@@ -100,11 +100,12 @@ The manifest grants: network (OSC/OSCQuery), read-only access to the VRChat fold
 | VRChat starts | Links up, snaps the belly to the app's timeline. |
 | Avatar switch | Snaps the belly on the new avatar. |
 | Pregnancy paused | Lets go of the belly and extra size, so you can set them in-game. |
-| Chatbox on (Settings) | Shows your own message in the chatbox when a pregnancy starts, pauses, resumes, stops, and more, then clears it. Can also always show your pregnancy status (and partner); by default not while your belly is hidden. |
+| Chatbox on (Settings) | Shows your own message in the chatbox when a pregnancy starts, pauses, resumes, stops, and more, then clears it. Can also always show your pregnancy status (and the other parent); by default not while your belly is hidden. |
 | Public instance (Settings > Safety) | By default the belly is hidden and labor waits in Public and Group Public instances (pick any instance types). Your own Hide Belly isn't changed, so it's back as you left it in the next instance. Home's **Show here** shows it anyway until you leave. |
-| A WooHoo (SPS sockets, see Settings) | Starts the grace period (or a pregnancy right away with Fertility off) and guesses the partner from the log. With 2+ others around you pick who it was (or 🎲 Random); once you've WooHoo'd as many times in one instance as there are other people in it, it picks at random for you. |
-| Exactly one other person in the instance, nobody came or went for 10 min | Partner shown as **Guessed**, with confirm or change. |
-| More people, or joins/leaves | Partner **Unknown**, with a list of who was in that instance to pick from. |
+| A WooHoo (SPS sockets, see Settings) | Starts the grace period (or a pregnancy right away with Fertility off) and guesses who it was from the log. With 2+ others around you pick who it was (or 🎲 Random); once you've WooHoo'd as many times in one instance as there are other people in it, it picks at random for you. With **Only my partners** on, only your 💞 partners count: someone else named doesn't count, and with nobody named it's your partners still in the instance (none: it doesn't count; one: them; more: you pick, and 🎲 Random picks among them). |
+| Waiting to find out | The waiting card on Home has **Find out now** (after a confirm), and **We used protection**, which calls the wait off. Those WooHoos stay in the history as "Protected", not tries. |
+| Exactly one other person in the instance, nobody came or went for 10 min | Other parent shown as **Guessed**, with confirm or change. |
+| More people, or joins/leaves | Other parent **Unknown**, with a list of who was in that instance to pick from. |
 | App closes | Sends the final belly value and releases the app-active flag. |
 
 ---

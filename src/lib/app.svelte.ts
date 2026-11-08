@@ -1,7 +1,7 @@
 // Global UI state (Svelte 5 runes).
 
 import { api, listen } from "./api";
-import type { AppData, Pregnancy, PendingConception, Status, UpdateInfo } from "./types";
+import type { AppData, Pregnancy, PendingConception, Problem, Status, UpdateInfo } from "./types";
 import { ownerAvatar, pendingFor, pregnancyAvatar, pregnancyFor } from "./scope";
 import { ACHIEVEMENTS } from "./achievements";
 
@@ -36,7 +36,22 @@ export const app = $state({
   version: "",
   /** A newer version on GitHub, if the last check found one. */
   update: null as UpdateInfo | null,
+  /** Problems in the save or settings (Settings > Troubleshooting; the Settings tab is outlined while there are any). */
+  problems: [] as Problem[],
+  /** Asks a Settings section to open and scroll into view (n changes each time). */
+  openSection: null as { id: string; n: number } | null,
+  /** Something new on Home (a WooHoo, a result) while you were on another tab: its tab is outlined until you look. */
+  homeNews: false,
 });
+
+/** Checks the save and settings again (pregsys-core/src/check.rs). */
+export async function checkProblems() {
+  try {
+    app.problems = await api.checkProblems();
+  } catch {
+    // Keeps the last list; the check runs again on the next change.
+  }
+}
 
 let toastId = 0;
 export function toast(title: string, text?: string, kind: Toast["kind"] = "info", ms = 5000) {
@@ -115,6 +130,7 @@ export async function refresh() {
   } catch (e) {
     errorToast(e);
   }
+  checkProblems();
 }
 
 /** Edits a pregnancy locally (instant UI) and saves it. */
@@ -133,7 +149,12 @@ export async function updatePregnancy(id: string, change: (p: Pregnancy) => void
 /** Shows Home after something happened in-game, unless you're testing in the
  * Debug panel (Settings with debug mode on): then you stay where you are. */
 function showHome() {
-  if (app.view === "settings" && app.data?.settings.debug) return;
+  if (app.view === "home") return;
+  // Busy on another tab (the window has focus), or testing in Debug: outline Home instead of pulling you away.
+  if ((app.view === "settings" && app.data?.settings.debug) || (typeof document !== "undefined" && document.hasFocus())) {
+    app.homeNews = true;
+    return;
+  }
   app.view = "home";
   app.viewAvatarId = null;
 }

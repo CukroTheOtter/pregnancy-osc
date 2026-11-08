@@ -9,9 +9,10 @@
   // first, then past partners. Typing a new name offers to use it.
   let {
     candidates,
+    met = [],
     selected = null,
     onpick,
-  }: { candidates: Person[]; selected?: string | null; onpick: (person: Person | null, name: string | null) => void } = $props();
+  }: { candidates: Person[]; met?: Person[]; selected?: string | null; onpick: (person: Person | null, name: string | null) => void } = $props();
 
   let query = $state("");
   let open = $state(false);
@@ -29,7 +30,13 @@
       out.push({ person, tag });
     };
     candidates.forEach((p) => add(p, "in the instance"));
-    if (app.data) partnerStats(app.data).forEach((s) => add(personFromStats(s), "past partner"));
+    // Your partners, then everyone else you've WooHoo'd (or had a pregnancy) with.
+    if (app.data) {
+      const st = partnerStats(app.data);
+      st.filter((s) => s.mine).forEach((s) => add(personFromStats(s), "💞 partner"));
+      st.filter((s) => !s.mine).forEach((s) => add(personFromStats(s), s.fun ? "past WooHoo" : "past pregnancy"));
+    }
+    met.forEach((p) => add(p, "met before"));
     return out;
   });
 
@@ -105,7 +112,7 @@
         </li>
       {/if}
       {#if !count}
-        <li class="empty">No one from that instance or past partners yet. Type a name.</li>
+        <li class="empty">Nobody from that instance or your history yet. Type a name.</li>
       {/if}
     </ul>
   {/if}

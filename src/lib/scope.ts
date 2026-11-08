@@ -92,6 +92,10 @@ export function avatarName(d: AppData, id: string | null): string {
 
 // ---------- partner stats ----------
 
+/** Already pregnant, "Only my partners" and not with one, or protected: no wait, no result. */
+const notTry = (f: FunEvent) => !!(f.alreadyPregnant || f.notPartner || f.protected);
+const notTryResult = (f: FunEvent) => (f.alreadyPregnant ? ("alreadyPregnant" as const) : f.notPartner ? ("notPartner" as const) : f.protected ? ("protected" as const) : null);
+
 export interface PartnerFunRow {
   /** Their first WooHoo in that wait. */
   timeMs: number;
@@ -101,7 +105,7 @@ export interface PartnerFunRow {
   /** WooHoos with them in that wait. */
   count: number;
   /** "pregnant" only if it was them; "unknown" for WooHoos from before results were saved. */
-  result: "waiting" | "pregnant" | "notPregnant" | "alreadyPregnant" | "unknown";
+  result: "waiting" | "pregnant" | "notPregnant" | "alreadyPregnant" | "notPartner" | "protected" | "unknown";
 }
 
 /**
@@ -116,8 +120,8 @@ export function partnerFunRows(d: AppData, partnerKey: string): PartnerFunRow[] 
   for (const f of d.funLog) {
     const w = waitOf(f);
     const wait = w ? Math.min(w.timeMs, ...(w.funTimes ?? [])) : (f.waitMs ?? (f.took != null ? f.timeMs : null));
-    // Old WooHoos with no wait saved, and ones while already pregnant: one row each.
-    const key = f.alreadyPregnant ? `p${f.timeMs}` : wait != null ? `w${wait}` : `f${f.timeMs}`;
+    // Old WooHoos with no wait saved, and ones that weren't tries: one row each.
+    const key = notTry(f) ? `p${f.timeMs}` : wait != null ? `w${wait}` : `f${f.timeMs}`;
     groups.set(key, [...(groups.get(key) ?? []), f]);
   }
   const out: PartnerFunRow[] = [];
@@ -131,7 +135,7 @@ export function partnerFunRows(d: AppData, partnerKey: string): PartnerFunRow[] 
       worldName: mine[0].worldName,
       avatarId: mine[0].avatarId,
       count: mine.length,
-      result: list[0].alreadyPregnant ? "alreadyPregnant" : list.some(waitOf) ? "waiting" : took ? (theirs(took) ? "pregnant" : "notPregnant") : known ? "notPregnant" : "unknown",
+      result: notTryResult(list[0]) ?? (list.some(waitOf) ? "waiting" : took ? (theirs(took) ? "pregnant" : "notPregnant") : known ? "notPregnant" : "unknown"),
     });
   }
   return out.sort((a, b) => b.timeMs - a.timeMs);
@@ -144,7 +148,7 @@ export interface FunRow {
   partnerName: string | null;
   partnerUserId: string | null;
   count: number;
-  result: "waiting" | "pregnant" | "notPregnant" | "alreadyPregnant";
+  result: "waiting" | "pregnant" | "notPregnant" | "alreadyPregnant" | "notPartner" | "protected";
 }
 
 /**
@@ -161,11 +165,12 @@ export function funRows(d: AppData, avatarId: string | null): FunRow[] {
   const waits = new Map<string, FunEvent[]>();
   const waitOf = (f: FunEvent) => d.waiting.find((w) => w.timeMs === f.timeMs || w.funTimes?.includes(f.timeMs));
   for (const f of d.funLog) {
-    // Already pregnant with nobody named: there's no picking who, so it only counts (Me), never listed.
-    if (f.alreadyPregnant && !f.partnerName) continue;
+    // Not a try with nobody named: there's no picking who, so it only counts (Me), never listed.
+    // Protected ones are, since you called them off yourself.
+    if (notTry(f) && !f.protected && !f.partnerName) continue;
     const w = waitOf(f);
     const wait = w ? Math.min(w.timeMs, ...(w.funTimes ?? [])) : (f.waitMs ?? (f.took != null ? f.timeMs : null));
-    const key = f.alreadyPregnant ? `p${f.timeMs}` : wait != null ? `w${wait}` : null;
+    const key = notTry(f) ? `p${f.timeMs}` : wait != null ? `w${wait}` : null;
     if (key != null) waits.set(key, [...(waits.get(key) ?? []), f]);
   }
   return [...waits.values()]
@@ -179,7 +184,7 @@ export function funRows(d: AppData, avatarId: string | null): FunRow[] {
         partnerName: (took ?? fs.find((f) => f.partnerName))?.partnerName ?? null,
         partnerUserId: (took ?? fs.find((f) => f.partnerName))?.partnerUserId ?? null,
         count: fs.length,
-        result: fs[0].alreadyPregnant ? ("alreadyPregnant" as const) : fs.some(waitOf) ? ("waiting" as const) : took ? ("pregnant" as const) : ("notPregnant" as const),
+        result: notTryResult(fs[0]) ?? (fs.some(waitOf) ? ("waiting" as const) : took ? ("pregnant" as const) : ("notPregnant" as const)),
       };
     })
     .sort((a, b) => b.timeMs - a.timeMs);
@@ -194,9 +199,18 @@ export interface PartnerStats {
   kids: number;
   firstMs: number;
   lastMs: number;
+  /** One of your 💞 partners (added by hand). */
+  mine: boolean;
 }
 
 export const personKey = (name: string | null, userId: string | null) => userId ?? (name ?? "").trim().toLowerCase();
+
+/** The same person as a partner you added: by user ID when both have one, else by name (as in actions.rs). */
+export const samePartner = (m: { name: string; userId: string | null }, name: string, userId: string | null) =>
+  m.userId && userId ? m.userId === userId : m.name.trim().toLowerCase() === name.trim().toLowerCase();
+
+/** One of your 💞 partners. */
+export const isMyPartner = (d: AppData, name: string | null, userId: string | null) => !!name && (d.myPartners ?? []).some((m) => samePartner(m, name, userId));
 
 export function partnerStats(d: AppData): PartnerStats[] {
   const map = new Map<string, PartnerStats>();
@@ -204,7 +218,7 @@ export function partnerStats(d: AppData): PartnerStats[] {
     const key = personKey(name, userId);
     let s = map.get(key);
     if (!s) {
-      s = { key, name, userId, fun: 0, pregnancies: 0, kids: 0, firstMs: t, lastMs: t };
+      s = { key, name, userId, fun: 0, pregnancies: 0, kids: 0, firstMs: t, lastMs: t, mine: false };
       map.set(key, s);
     }
     s.firstMs = Math.min(s.firstMs, t);
@@ -222,6 +236,12 @@ export function partnerStats(d: AppData): PartnerStats[] {
     s.lastMs = Math.max(s.lastMs, p.endedMs ?? p.createdMs);
     s.pregnancies++;
     if (p.born) s.kids += p.babyCount;
+  }
+  // Your partners: listed even before anything happened (from when they were added).
+  for (const m of d.myPartners ?? []) {
+    const found = [...map.values()].find((s) => samePartner(m, s.name, s.userId));
+    if (found) found.mine = true;
+    else map.set(personKey(m.name, m.userId), { key: personKey(m.name, m.userId), name: m.name, userId: m.userId, fun: 0, pregnancies: 0, kids: 0, firstMs: m.addedMs, lastMs: m.addedMs, mine: true });
   }
   return [...map.values()].sort((a, b) => b.lastMs - a.lastMs);
 }

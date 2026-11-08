@@ -8,7 +8,8 @@
 </script>
 
 <script lang="ts">
-  import { getContext, untrack, type Snippet } from "svelte";
+  import { getContext, tick, untrack, type Snippet } from "svelte";
+  import { app } from "../lib/app.svelte";
 
   // A settings card that folds away. Which ones are open is remembered on this computer.
   let { id, title, open = false, extra, children }: { id: string; title: string; open?: boolean; extra?: Snippet; children: Snippet } = $props();
@@ -45,6 +46,19 @@
     filter.hits[id] = hit;
     return () => delete filter.hits[id];
   });
+  // Asked to open from elsewhere (e.g. the Settings tab tapped again with something to fix).
+  $effect(() => {
+    const ask = app.openSection;
+    if (ask?.id !== id) return;
+    untrack(async () => {
+      if (!isOpen) toggle();
+      await tick();
+      el?.scrollIntoView({ behavior: "smooth", block: "start" });
+      // Used up: a later visit to Settings must not scroll here again.
+      if (app.openSection === ask) app.openSection = null;
+    });
+  });
+
   const searching = $derived(!!q);
   const shown = $derived(searching ? hit : isOpen);
 </script>
