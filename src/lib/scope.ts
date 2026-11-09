@@ -203,6 +203,9 @@ export interface PartnerStats {
   mine: boolean;
 }
 
+/** Ended without a birth: left out of counts and achievements (as in model.rs). */
+export const isStopped = (p: Pregnancy) => p.endedMs != null && !p.born;
+
 export const personKey = (name: string | null, userId: string | null) => userId ?? (name ?? "").trim().toLowerCase();
 
 /** The same person as a partner you added: by user ID when both have one, else by name (as in actions.rs). */
@@ -234,7 +237,7 @@ export function partnerStats(d: AppData): PartnerStats[] {
     // When it really happened: conception for "first", the latest event for "last".
     const s = get(p.partner.name, p.partner.userId, p.timeline.startMs);
     s.lastMs = Math.max(s.lastMs, p.endedMs ?? p.createdMs);
-    s.pregnancies++;
+    if (!isStopped(p)) s.pregnancies++;
     if (p.born) s.kids += p.babyCount;
   }
   // Your partners: listed even before anything happened (from when they were added).

@@ -7,6 +7,7 @@
   import { drawShareCard } from "../lib/sharecard";
   import { hidesMe } from "../lib/privacy";
   import { ACHIEVEMENTS } from "../lib/achievements";
+  import { isStopped } from "../lib/scope";
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -32,7 +33,7 @@
     const born = d.pregnancies.filter((p) => p.born);
     const stats = [
       ...(showWoohoos ? [{ label: "WooHoos", value: d.funLog.length }] : []),
-      { label: "Pregnancies", value: d.pregnancies.length },
+      { label: "Pregnancies", value: d.pregnancies.filter((p) => !isStopped(p)).length },
       { label: "Babies", value: born.reduce((n, p) => n + p.babyCount, 0) },
     ];
     const input = {

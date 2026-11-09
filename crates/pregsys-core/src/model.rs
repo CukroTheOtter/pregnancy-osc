@@ -504,6 +504,11 @@ impl Pregnancy {
         self.ended_ms.is_none()
     }
 
+    /// Ended without a birth: left out of counts and achievements.
+    pub fn stopped(&self) -> bool {
+        self.ended_ms.is_some() && !self.born
+    }
+
     /// Makes `babies` match `baby_count`, keeping existing entries.
     pub fn sync_babies(&mut self) {
         let n = self.baby_count.clamp(1, 8);

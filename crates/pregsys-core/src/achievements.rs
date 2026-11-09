@@ -2,7 +2,7 @@
 //! time it happened (`AppData::achievements`). Emoji and hints for the UI live
 //! in `src/lib/achievements.ts`; keep the ids and titles in step.
 
-use crate::model::{AppData, FunEvent, PartnerStatus};
+use crate::model::{AppData, FunEvent, PartnerStatus, Pregnancy};
 use crate::timeline::{DAY_MS, TERM_WEEKS};
 use std::collections::{BTreeSet, HashMap};
 
@@ -17,13 +17,18 @@ fn person_key(name: &str, user_id: Option<&str>) -> String {
     user_id.map(str::to_string).unwrap_or_else(|| format!("name:{}", name.to_lowercase()))
 }
 
+/// Pregnancies that count: stopped ones (ended without a birth) don't.
+fn counted(d: &AppData) -> impl Iterator<Item = &Pregnancy> + '_ {
+    d.pregnancies.iter().filter(|p| !p.stopped())
+}
+
 fn babies_born(d: &AppData) -> u32 {
-    d.pregnancies.iter().filter(|p| p.born).map(|p| p.baby_count).sum()
+    counted(d).filter(|p| p.born).map(|p| p.baby_count).sum()
 }
 
 /// Babies you know about: born, or seen on a scan (week 12).
 fn known_babies(d: &AppData, now: i64, at_least: u32) -> bool {
-    d.pregnancies.iter().any(|p| {
+    counted(d).any(|p| {
         let week = p.timeline.progress(p.ended_ms.unwrap_or(now)) * TERM_WEEKS;
         p.baby_count >= at_least && (p.born || week >= crate::fertility::BABY_REVEAL_WEEK)
     })
@@ -36,7 +41,7 @@ fn partners(d: &AppData) -> BTreeSet<String> {
             out.insert(person_key(n, f.partner_user_id.as_deref()));
         }
     }
-    for p in &d.pregnancies {
+    for p in counted(d) {
         if let Some(n) = &p.partner.name {
             out.insert(person_key(n, p.partner.user_id.as_deref()));
         }
@@ -46,11 +51,11 @@ fn partners(d: &AppData) -> BTreeSet<String> {
 
 /// How far along each birth was (1 = the due date).
 fn birth_progress(d: &AppData) -> impl Iterator<Item = f64> + '_ {
-    d.pregnancies.iter().filter(|p| p.born).filter_map(|p| p.ended_ms.map(|e| p.timeline.progress(e)))
+    counted(d).filter(|p| p.born).filter_map(|p| p.ended_ms.map(|e| p.timeline.progress(e)))
 }
 
 fn birth_lengths(d: &AppData) -> impl Iterator<Item = i64> + '_ {
-    d.pregnancies.iter().filter(|p| p.born).filter_map(|p| p.ended_ms.map(|e| e - p.timeline.start_ms))
+    counted(d).filter(|p| p.born).filter_map(|p| p.ended_ms.map(|e| e - p.timeline.start_ms))
 }
 
 /// WooHoos with a saved result, oldest first.
@@ -91,7 +96,7 @@ fn worlds(d: &AppData) -> HashMap<&str, usize> {
 
 /// Both a girl and a boy, once genders are known (a birth or week 20).
 fn one_of_each(d: &AppData, now: i64) -> bool {
-    d.pregnancies.iter().any(|p| {
+    counted(d).any(|p| {
         let week = p.timeline.progress(p.ended_ms.unwrap_or(now)) * TERM_WEEKS;
         let known = p.born || week >= crate::fertility::GENDER_REVEAL_WEEK;
         known && p.genders.iter().any(|g| g == "girl") && p.genders.iter().any(|g| g == "boy")
@@ -101,23 +106,23 @@ fn one_of_each(d: &AppData, now: i64) -> bool {
 pub const ALL: &[Achievement] = &[
     Achievement { id: "first_woohoo", title: "First WooHoo", earned: |d, _| !d.fun_log.is_empty() },
     Achievement { id: "busy_bee", title: "Busy Bee", earned: |d, _| d.fun_log.len() >= 25 },
-    Achievement { id: "little_bean", title: "Little Bean", earned: |d, _| !d.pregnancies.is_empty() },
+    Achievement { id: "little_bean", title: "Little Bean", earned: |d, _| counted(d).next().is_some() },
     Achievement { id: "double_trouble", title: "Double Trouble", earned: |d, now| known_babies(d, now, 2) },
     Achievement { id: "triple_treat", title: "Triple Treat", earned: |d, now| known_babies(d, now, 3) },
-    Achievement { id: "welcome_home", title: "Welcome Home", earned: |d, _| d.pregnancies.iter().any(|p| p.born) },
+    Achievement { id: "welcome_home", title: "Welcome Home", earned: |d, _| counted(d).any(|p| p.born) },
     Achievement { id: "full_house", title: "Full House", earned: |d, _| babies_born(d) >= 5 },
     Achievement {
         id: "fashionably_late",
         title: "Fashionably Late",
-        earned: |d, now| d.pregnancies.iter().any(|p| p.timeline.progress(p.ended_ms.unwrap_or(now)) > 1.01),
+        earned: |d, now| counted(d).any(|p| p.timeline.progress(p.ended_ms.unwrap_or(now)) > 1.01),
     },
-    Achievement { id: "splash", title: "Splash!", earned: |d, _| d.pregnancies.iter().any(|p| p.born && p.labor.as_ref().is_some_and(|l| l.water_first)) },
+    Achievement { id: "splash", title: "Splash!", earned: |d, _| counted(d).any(|p| p.born && p.labor.as_ref().is_some_and(|l| l.water_first)) },
     Achievement { id: "right_on_time", title: "Right On Time", earned: |d, _| birth_progress(d).any(|x| (x - 1.0).abs() <= 1.0 / 280.0) },
     Achievement { id: "early_bird", title: "Early Bird", earned: |d, _| birth_progress(d).any(|x| x * TERM_WEEKS < 37.0) },
     Achievement {
         id: "right_here_with_me",
         title: "Right Here With Me",
-        earned: |d, _| d.pregnancies.iter().any(|p| p.born && p.labor.as_ref().is_some_and(|l| l.partner_at_birth)),
+        earned: |d, _| counted(d).any(|p| p.born && p.labor.as_ref().is_some_and(|l| l.partner_at_birth)),
     },
     Achievement { id: "speedrun", title: "Speedrun", earned: |d, _| birth_lengths(d).any(|ms| ms <= DAY_MS) },
     Achievement { id: "long_haul", title: "The Long Haul", earned: |d, _| birth_lengths(d).any(|ms| ms >= 270 * DAY_MS) },
@@ -127,7 +132,7 @@ pub const ALL: &[Achievement] = &[
         title: "Soulmates",
         earned: |d, _| {
             let mut n: HashMap<String, u32> = HashMap::new();
-            for p in &d.pregnancies {
+            for p in counted(d) {
                 if let Some(name) = &p.partner.name {
                     *n.entry(person_key(name, p.partner.user_id.as_deref())).or_default() += 1;
                 }
@@ -135,7 +140,7 @@ pub const ALL: &[Achievement] = &[
             n.values().any(|&c| c >= 3)
         },
     },
-    Achievement { id: "kick_counter", title: "Kick Counter", earned: |d, _| d.pregnancies.iter().map(|p| p.kicks.len()).sum::<usize>() >= 100 },
+    Achievement { id: "kick_counter", title: "Kick Counter", earned: |d, _| counted(d).map(|p| p.kicks.len()).sum::<usize>() >= 100 },
     Achievement { id: "wardrobe", title: "Wardrobe Change", earned: |d, _| d.avatars.values().filter(|a| a.has_system()).count() >= 5 },
     Achievement {
         id: "shape_shifter",
@@ -153,15 +158,15 @@ pub const ALL: &[Achievement] = &[
     Achievement { id: "first_try", title: "First Try", earned: |d, _| with_results(d).first().is_some_and(|f| f.took == Some(true)) },
     Achievement { id: "never_give_up", title: "Never Give Up", earned: |d, _| pregnant_after_misses(d, 5) },
     Achievement { id: "cant_stop", title: "Can't Stop", earned: |d, _| most_in_a_wait(d) >= 5 },
-    Achievement { id: "whos_your_daddy", title: "Who's Your Daddy?", earned: |d, _| d.pregnancies.iter().any(|p| p.partner.status == PartnerStatus::Random) },
+    Achievement { id: "whos_your_daddy", title: "Who's Your Daddy?", earned: |d, _| counted(d).any(|p| p.partner.status == PartnerStatus::Random) },
     Achievement { id: "century_club", title: "Century Club", earned: |d, _| d.fun_log.len() >= 100 },
     Achievement { id: "four_leaf_clover", title: "Four Leaf Clover", earned: |d, now| known_babies(d, now, 4) },
     Achievement { id: "one_of_each", title: "One Of Each", earned: one_of_each },
     Achievement { id: "baby_boom", title: "Baby Boom", earned: |d, _| babies_born(d) >= 10 },
-    Achievement { id: "little_athlete", title: "Little Athlete", earned: |d, _| d.pregnancies.iter().map(|p| p.kicks.len()).sum::<usize>() >= 500 },
+    Achievement { id: "little_athlete", title: "Little Athlete", earned: |d, _| counted(d).map(|p| p.kicks.len()).sum::<usize>() >= 500 },
     Achievement { id: "globetrotter", title: "Globetrotter", earned: |d, _| worlds(d).len() >= 10 },
     Achievement { id: "favorite_spot", title: "Favorite Spot", earned: |d, _| worlds(d).values().any(|&n| n >= 10) },
-    Achievement { id: "taking_a_break", title: "Taking A Break", earned: |d, _| d.pregnancies.iter().any(|p| p.born && p.timeline.paused_total_ms > 0) },
+    Achievement { id: "taking_a_break", title: "Taking A Break", earned: |d, _| counted(d).any(|p| p.born && p.timeline.paused_total_ms > 0) },
 ];
 
 /// Is this achievement earned with the data as it is now?
@@ -332,6 +337,7 @@ mod tests {
         d.pregnancies[0].timeline.paused_total_ms = 1;
         assert!(earned(&d, "taking_a_break", 0));
         d.pregnancies[0].born = false;
+        d.pregnancies[0].ended_ms = None;
         d.pregnancies[1].timeline.paused_total_ms = 0;
         assert!(!earned(&d, "taking_a_break", 0), "paused, but no birth yet");
 
@@ -345,6 +351,22 @@ mod tests {
         assert!(!earned(&d, "whos_your_daddy", 0));
         d.pregnancies[0].partner.status = PartnerStatus::Random;
         assert!(earned(&d, "whos_your_daddy", 0));
+    }
+
+    #[test]
+    fn stopped_pregnancies_dont_count() {
+        let mut d = AppData::new();
+        // Triplets, overdue, stopped at day 2 with kicks and a random partner.
+        let mut p = preg(0, 3, None);
+        p.ended_ms = Some(DAY_MS * 2);
+        p.genders = vec!["girl".into(), "boy".into(), "boy".into()];
+        p.kicks = vec![Default::default(); 600];
+        p.partner.status = PartnerStatus::Random;
+        d.pregnancies = vec![p.clone(), p.clone(), p];
+        assert!(check(&mut d, DAY_MS * 3).is_empty(), "{:?}", d.achievements);
+        // The same one still running counts.
+        d.pregnancies[0].ended_ms = None;
+        assert!(earned(&d, "little_bean", DAY_MS) && earned(&d, "triple_treat", DAY_MS));
     }
 
     #[test]

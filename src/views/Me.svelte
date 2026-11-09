@@ -4,7 +4,7 @@
   import AvatarPic from "../components/AvatarPic.svelte";
   import ShareCard from "../components/ShareCard.svelte";
   import { app } from "../lib/app.svelte";
-  import { avatarName, partnerStats } from "../lib/scope";
+  import { avatarName, isStopped, partnerStats } from "../lib/scope";
   import { hasSystem } from "../lib/avatars";
   import { humanDuration } from "../lib/timeline";
   import { ACHIEVEMENTS, TIERS } from "../lib/achievements";
@@ -20,7 +20,7 @@
     const fav = partnerStats(d).filter((s) => s.fun || s.pregnancies).sort((a, b) => b.pregnancies - a.pregnancies || b.fun - a.fun)[0];
     return {
       woohoos: d.funLog.length,
-      pregnancies: d.pregnancies.length,
+      pregnancies: d.pregnancies.filter((p) => !isStopped(p)).length,
       babies: born.reduce((n, p) => n + p.babyCount, 0),
       pregnantMs: lengths.reduce((n, ms) => n + Math.max(0, ms), 0),
       longestMs: Math.max(0, ...born.map((p) => (p.endedMs ?? now) - p.timeline.startMs)),
