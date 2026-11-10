@@ -1,18 +1,39 @@
 <script lang="ts">
-  // Me tab: a month calendar of your story (WooHoos, fertile days, waits,
-  // pregnancies, due dates, births, achievements). Reads only what's saved.
+  // Me tab: a month calendar of your story, laid out like a normal calendar
+  // app: labelled bars that run across the days they cover (pregnant,
+  // fertile, waiting) and labelled chips for one-day things. Tap a day for
+  // the full story of that day. Reads only what's saved.
   import { app } from "../lib/app.svelte";
   import { shownName } from "../lib/privacy";
-  import { isStopped } from "../lib/scope";
+  import { avatarName, isStopped, pregnancyAvatar } from "../lib/scope";
   import { ACHIEVEMENTS } from "../lib/achievements";
   import { BABY_REVEAL_WEEK, GENDER_REVEAL_WEEK, chance, cycleDay, cycleMs, level } from "../lib/fertility";
   import { TERM_WEEKS, dueMs, timeAtProgress } from "../lib/timeline";
 
-  type Item = { emoji: string; text: string };
+  type Kind = "pregnant" | "fertile" | "waiting" | "woohoo" | "milestone" | "due" | "born" | "achievement";
+  /** A bar or chip: from day `a` to day `b` (both included, as day numbers since 1970 in local time). */
+  type Ev = { kind: Kind; a: number; b: number; label: string; seg?: (from: number, to: number) => string };
+  /** One line in a day's details. */
+  type Line = { kind: Kind; text: string };
+
+  const MAX_LANES = 3;
+  const DAY = 86_400_000;
 
   const d = $derived(app.data!);
   const today = new Date(app.now);
   let shown = $state({ y: today.getFullYear(), m: today.getMonth() });
+  let picked = $state<number | null>(null);
+
+  // Local day numbers (so a bar covers whole days, whatever the time zone).
+  const dayOf = (t: number) => {
+    const x = new Date(t);
+    return Math.round(Date.UTC(x.getFullYear(), x.getMonth(), x.getDate()) / DAY);
+  };
+  const dateOf = (n: number) => {
+    const u = new Date(n * DAY);
+    return new Date(u.getUTCFullYear(), u.getUTCMonth(), u.getUTCDate());
+  };
+  const noonOf = (n: number) => dateOf(n).getTime() + DAY / 2;
 
   // The week starts on the day your region uses (Monday if it can't tell).
   const firstDay = (() => {
@@ -23,89 +44,155 @@
       return 1;
     }
   })() % 7;
-  const weekdays = Array.from({ length: 7 }, (_, i) => new Intl.DateTimeFormat(undefined, { weekday: "narrow" }).format(new Date(2024, 0, 7 + ((firstDay + i) % 7))));
+  const weekdays = Array.from({ length: 7 }, (_, i) => new Intl.DateTimeFormat(undefined, { weekday: "short" }).format(new Date(2024, 0, 7 + ((firstDay + i) % 7))));
   const monthFmt = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" });
   const dayFmt = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" });
+  const shortFmt = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
   const timeFmt = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
 
-  const key = (t: number) => {
-    const x = new Date(t);
-    return `${x.getFullYear()}-${x.getMonth()}-${x.getDate()}`;
-  };
-
-  /** Everything that happened (or will) on each day, by `key`. */
-  const items = $derived.by(() => {
-    const map = new Map<string, Item[]>();
-    const add = (t: number, emoji: string, text: string) => {
-      if (!t) return;
-      const k = key(t);
-      (map.get(k) ?? map.set(k, []).get(k)!).push({ emoji, text });
-    };
-    for (const f of d.funLog) {
-      const who = shownName(d, f.partnerName, f.partnerUserId);
-      add(f.timeMs, "💕", `${timeFmt.format(f.timeMs)} WooHoo${who ? ` with ${who}` : ""}${f.worldName ? ` in ${f.worldName}` : ""}`);
-    }
-    for (const w of d.waiting) add(w.revealMs, "⏳", `${timeFmt.format(w.revealMs)} Find out if it took`);
-    const now = app.now;
-    for (const p of d.pregnancies) {
-      if (isStopped(p)) continue;
-      if (p.endedMs == null) {
-        add(dueMs(p.timeline, now), "📅", `Due date${p.name ? ` for ${p.name}` : ""}`);
-        add(timeAtProgress(p.timeline, now, BABY_REVEAL_WEEK / TERM_WEEKS), "✨", `Week ${BABY_REVEAL_WEEK}: how many babies`);
-        add(timeAtProgress(p.timeline, now, GENDER_REVEAL_WEEK / TERM_WEEKS), "🎀", `Week ${GENDER_REVEAL_WEEK}: girl or boy`);
-      }
-      if (p.born && p.endedMs != null) {
-        const name = p.name || (p.babyCount > 1 ? "Your babies" : "Your baby");
-        add(p.endedMs, "👶", `${name} ${p.babyCount > 1 ? "were" : "was"} born`);
-      }
-    }
-    for (const a of ACHIEVEMENTS) {
-      const at = d.achievements?.[a.id];
-      if (at != null && !d.testAchievements?.includes(a.id)) add(at, "🏆", `${a.emoji} ${a.title}`);
-    }
-    return map;
-  });
-
-  /** Pregnancies as [start, end] (end: the birth, or the due date). */
-  const spans = $derived(d.pregnancies.filter((p) => !isStopped(p)).map((p) => [p.timeline.startMs, p.endedMs ?? dueMs(p.timeline, app.now)] as const));
+  const pregnancies = $derived(d.pregnancies.filter((p) => !isStopped(p)));
+  // Several pregnancies (per-avatar mode): each bar says which avatar.
+  const whose = (p: (typeof pregnancies)[number]) => (pregnancies.length > 1 ? ` (${avatarName(d, pregnancyAvatar(d, p))})` : "");
+  /** Who the other parent is (as shown: privacy mode applies), or null. */
+  const partnerOf = (p: (typeof pregnancies)[number]) => shownName(d, p.partner?.name ?? null, p.partner?.userId ?? null);
+  /** The pregnancy week on a day (1 to 40). */
+  const weekOn = (p: (typeof pregnancies)[number], n: number) => Math.min(TERM_WEEKS, Math.max(1, Math.floor(((noonOf(n) - p.timeline.startMs) / p.timeline.durationMs) * TERM_WEEKS) + 1));
 
   // Fertile days only make sense when a cycle lasts at least two weeks (fast
   // pregnancies have cycles of hours, too short to show by the day).
-  const cycle = $derived(d.settings.fertility && d.settings.cycleAnchorMs != null && cycleMs(d.settings) >= 14 * 86_400_000 ? cycleMs(d.settings) : null);
-  function fertility(noon: number): "peak" | "high" | null {
+  const cycle = $derived(d.settings.fertility && d.settings.cycleAnchorMs != null && cycleMs(d.settings) >= 14 * DAY ? cycleMs(d.settings) : null);
+  function fertility(n: number): "peak" | "high" | null {
     if (cycle == null) return null;
-    const l = level(chance(cycleDay(noon, d.settings.cycleAnchorMs!, cycle), d.settings.fertilityPeak), d.settings.fertilityPeak);
+    const peak = d.settings.fertilityPeak;
+    const l = level(chance(cycleDay(noonOf(n), d.settings.cycleAnchorMs!, cycle), peak), peak);
     return l === "peak" || l === "high" ? l : null;
   }
+  const pregnantOn = (n: number) => pregnancies.some((p) => dayOf(p.timeline.startMs) <= n && n <= dayOf(p.endedMs ?? dueMs(p.timeline, app.now)));
 
-  const cells = $derived.by(() => {
-    const first = new Date(shown.y, shown.m, 1);
-    const lead = (first.getDay() - firstDay + 7) % 7;
-    const days = new Date(shown.y, shown.m + 1, 0).getDate();
-    const todayKey = key(app.now);
-    const out: ({ day: number; key: string; items: Item[]; pregnant: boolean; fertile: "peak" | "high" | null; today: boolean } | null)[] = Array(lead).fill(null);
-    for (let day = 1; day <= days; day++) {
-      const start = new Date(shown.y, shown.m, day).getTime();
-      const end = new Date(shown.y, shown.m, day + 1).getTime();
-      const k = key(start);
-      const pregnant = spans.some(([a, b]) => a < end && b >= start);
-      out.push({ day, key: k, items: items.get(k) ?? [], pregnant, fertile: pregnant ? null : fertility(start + 43_200_000), today: k === todayKey });
+  /** The days on screen: whole weeks around the shown month. */
+  const range = $derived.by(() => {
+    const first = dayOf(new Date(shown.y, shown.m, 1).getTime());
+    const last = dayOf(new Date(shown.y, shown.m + 1, 0).getTime());
+    const lead = (dateOf(first).getDay() - firstDay + 7) % 7;
+    const start = first - lead;
+    const weeks = Math.ceil((last - start + 1) / 7);
+    return { start, end: start + weeks * 7 - 1, weeks };
+  });
+
+  const events = $derived.by(() => {
+    const out: Ev[] = [];
+    const now = app.now;
+    for (const p of pregnancies) {
+      const a = dayOf(p.timeline.startMs);
+      const who = partnerOf(p);
+      // Each week's piece of the bar says which week it is, and with whom.
+      out.push({ kind: "pregnant", a, b: dayOf(p.endedMs ?? dueMs(p.timeline, now)), label: `Pregnant${who ? ` with ${who}` : ""}`, seg: (from, to) => {
+          const [w1, w2] = [weekOn(p, from), weekOn(p, to)];
+          return `🤰 Week ${w1 === w2 ? w1 : `${w1}–${w2}`}${who ? ` · ${who}` : ""}`;
+        } });
+      if (p.endedMs == null) {
+        out.push({ kind: "milestone", a: dayOf(timeAtProgress(p.timeline, now, BABY_REVEAL_WEEK / TERM_WEEKS)), b: 0, label: `✨ Wk ${BABY_REVEAL_WEEK}` });
+        out.push({ kind: "milestone", a: dayOf(timeAtProgress(p.timeline, now, GENDER_REVEAL_WEEK / TERM_WEEKS)), b: 0, label: `🎀 Wk ${GENDER_REVEAL_WEEK}` });
+        out.push({ kind: "due", a: dayOf(dueMs(p.timeline, now)), b: 0, label: "📅 Due" });
+      } else if (p.born) {
+        out.push({ kind: "born", a: dayOf(p.endedMs), b: 0, label: "👶 Born" });
+      }
+    }
+    for (const w of d.waiting) {
+      out.push({ kind: "waiting", a: dayOf(Math.min(w.timeMs, ...(w.funTimes ?? []))), b: dayOf(w.revealMs), label: "⏳ Waiting" });
+    }
+    // One chip a day for WooHoos and for achievements.
+    const perDay = (times: number[]) => {
+      const m = new Map<number, number>();
+      for (const t of times) m.set(dayOf(t), (m.get(dayOf(t)) ?? 0) + 1);
+      return m;
+    };
+    for (const [n, c] of perDay(d.funLog.map((f) => f.timeMs))) out.push({ kind: "woohoo", a: n, b: 0, label: c > 1 ? `💕 ×${c}` : "💕 WooHoo" });
+    const got = ACHIEVEMENTS.filter((a) => d.achievements?.[a.id] != null && !d.testAchievements?.includes(a.id)).map((a) => d.achievements[a.id]);
+    for (const [n, c] of perDay(got)) out.push({ kind: "achievement", a: n, b: 0, label: c > 1 ? `🏆 ×${c}` : "🏆 Trophy" });
+    // Fertile days in a row make one bar (not while pregnant).
+    let run: number | null = null;
+    for (let n = range.start; n <= range.end + 1; n++) {
+      const f = n <= range.end && !pregnantOn(n) && fertility(n) != null;
+      if (f && run == null) run = n;
+      if (!f && run != null) {
+        out.push({ kind: "fertile", a: run, b: n - 1, label: "🌸 Fertile" });
+        run = null;
+      }
+    }
+    for (const e of out) if (e.b < e.a) e.b = e.a;
+    return out;
+  });
+
+  /** Each week: its days, and its bars in lanes (like a calendar app). */
+  const weeks = $derived.by(() => {
+    const order: Kind[] = ["pregnant", "waiting", "fertile", "due", "born", "milestone", "woohoo", "achievement"];
+    return Array.from({ length: range.weeks }, (_, w) => {
+      const ws = range.start + w * 7;
+      const we = ws + 6;
+      const here = events
+        .filter((e) => e.a <= we && e.b >= ws)
+        .sort((x, y) => Math.max(x.a, ws) - Math.max(y.a, ws) || y.b - y.a - (x.b - x.a) || order.indexOf(x.kind) - order.indexOf(y.kind));
+      const lanes: boolean[][] = [];
+      const bars: { e: Ev; label: string; col: number; span: number; lane: number; cutStart: boolean; cutEnd: boolean }[] = [];
+      const hidden = Array(7).fill(0);
+      for (const e of here) {
+        const a = Math.max(e.a, ws) - ws;
+        const b = Math.min(e.b, we) - ws;
+        let lane = lanes.findIndex((l) => l.slice(a, b + 1).every((x) => !x));
+        if (lane < 0) lane = lanes.push(Array(7).fill(false)) - 1;
+        if (lane >= MAX_LANES) {
+          for (let i = a; i <= b; i++) hidden[i]++;
+          continue;
+        }
+        for (let i = a; i <= b; i++) lanes[lane][i] = true;
+        bars.push({ e, label: e.seg ? e.seg(ws + a, ws + b) : e.label, col: a + 1, span: b - a + 1, lane, cutStart: e.a < ws, cutEnd: e.b > we });
+      }
+      const days = Array.from({ length: 7 }, (_, i) => {
+        const n = ws + i;
+        const date = dateOf(n);
+        return { n, date: date.getDate(), inMonth: date.getMonth() === shown.m, today: n === dayOf(app.now), more: hidden[i] };
+      });
+      return { days, bars };
+    });
+  });
+
+  /** Everything about one day, in words. */
+  function linesFor(n: number): Line[] {
+    const out: Line[] = [];
+    const now = app.now;
+    for (const p of pregnancies) {
+      const a = dayOf(p.timeline.startMs);
+      const b = dayOf(p.endedMs ?? dueMs(p.timeline, now));
+      if (n < a || n > b) continue;
+      const who = partnerOf(p);
+      out.push({ kind: "pregnant", text: `Pregnant, week ${weekOn(p, n)}, ${who ? `with ${who}` : "the other parent isn't known"}${whose(p)}${n === a ? ". The first day!" : ""}` });
+      if (p.endedMs == null) {
+        if (n === dayOf(timeAtProgress(p.timeline, now, BABY_REVEAL_WEEK / TERM_WEEKS))) out.push({ kind: "milestone", text: `Week ${BABY_REVEAL_WEEK}: find out how many babies` });
+        if (n === dayOf(timeAtProgress(p.timeline, now, GENDER_REVEAL_WEEK / TERM_WEEKS))) out.push({ kind: "milestone", text: `Week ${GENDER_REVEAL_WEEK}: find out girl or boy` });
+        if (n === b) out.push({ kind: "due", text: "Due date" });
+      } else if (p.born && n === b) {
+        out.push({ kind: "born", text: p.babyCount > 1 ? `${p.babyCount} babies were born` : "Your baby was born" });
+      }
+    }
+    for (const w of d.waiting) {
+      const a = dayOf(Math.min(w.timeMs, ...(w.funTimes ?? [])));
+      const r = dayOf(w.revealMs);
+      if (n < a || n > r) continue;
+      out.push({ kind: "waiting", text: n === r ? `Find out if it took, at ${timeFmt.format(w.revealMs)}` : `Waiting to find out if it took (on ${shortFmt.format(w.revealMs)})` });
+    }
+    const f = pregnantOn(n) ? null : fertility(n);
+    if (f) out.push({ kind: "fertile", text: f === "peak" ? "Fertile: the best chance" : "Fertile: a good chance" });
+    for (const e of d.funLog.filter((x) => dayOf(x.timeMs) === n).sort((x, y) => x.timeMs - y.timeMs)) {
+      const who = shownName(d, e.partnerName, e.partnerUserId);
+      out.push({ kind: "woohoo", text: `WooHoo at ${timeFmt.format(e.timeMs)}${who ? ` with ${who}` : ""}${e.worldName ? ` in ${e.worldName}` : ""}` });
+    }
+    for (const a of ACHIEVEMENTS) {
+      const at = d.achievements?.[a.id];
+      if (at != null && !d.testAchievements?.includes(a.id) && dayOf(at) === n) out.push({ kind: "achievement", text: `Achievement: ${a.emoji} ${a.title}` });
     }
     return out;
-  });
-
-  let picked = $state<string | null>(null);
-  const pickedCell = $derived(cells.find((c) => c?.key === picked) ?? null);
-  const legend = $derived.by(() => {
-    const seen = new Set(cells.flatMap((c) => c?.items.map((i) => i.emoji) ?? []));
-    const out: [string, string][] = [];
-    if (cells.some((c) => c?.pregnant)) out.push(["pregnant", "Pregnant"]);
-    if (cells.some((c) => c?.fertile === "high")) out.push(["fertile", "Fertile"]);
-    if (cells.some((c) => c?.fertile === "peak")) out.push(["peak", "Peak fertility"]);
-    const names: Record<string, string> = { "💕": "WooHoo", "⏳": "Find out", "✨": "Baby count", "🎀": "Girl or boy", "📅": "Due date", "👶": "Born","🏆": "Achievement" };
-    for (const [e, n] of Object.entries(names)) if (seen.has(e)) out.push([e, n]);
-    return out;
-  });
+  }
 
   function move(by: number) {
     const x = new Date(shown.y, shown.m + by, 1);
@@ -113,6 +200,7 @@
     picked = null;
   }
   const isThisMonth = $derived(shown.y === today.getFullYear() && shown.m === today.getMonth());
+  const pick = (n: number) => (picked = picked === n ? null : n);
 </script>
 
 <section class="card">
@@ -123,46 +211,54 @@
     <button class="small ghost" onclick={() => move(1)} aria-label="Next month">›</button>
   </div>
 
-  <div class="grid">
-    {#each weekdays as w, i (i)}<span class="wd">{w}</span>{/each}
-    {#each cells as c, i (c?.key ?? `x${i}`)}
-      {#if c}
-        {@const icons = [...new Set(c.items.map((x) => x.emoji))]}
-        <button
-          class="day"
-          class:pregnant={c.pregnant}
-          class:fertile={c.fertile === "high"}
-          class:peak={c.fertile === "peak"}
-          class:today={c.today}
-          class:picked={picked === c.key}
-          onclick={() => (picked = picked === c.key ? null : c.key)}
-          aria-label="{dayFmt.format(new Date(shown.y, shown.m, c.day))}{c.items.length ? `, ${c.items.length} thing${c.items.length > 1 ? "s" : ""}` : ""}"
-        >
-          <span class="n">{c.day}</span>
-          {#if icons.length}<span class="icons">{icons.slice(0, 3).join("")}</span>{/if}
-        </button>
-      {:else}
-        <span></span>
-      {/if}
+  <div class="cal">
+    <div class="weekdays">
+      {#each weekdays as w, i (i)}<span>{w}</span>{/each}
+    </div>
+    {#each weeks as wk, wi (wi)}
+      <div class="week" style="--lanes:{MAX_LANES}">
+        {#each wk.days as day, i (day.n)}
+          <button
+            class="cell"
+            class:out={!day.inMonth}
+            class:picked={picked === day.n}
+            style="grid-column:{i + 1}"
+            onclick={() => pick(day.n)}
+            aria-label={dayFmt.format(dateOf(day.n))}
+          >
+            <span class="num" class:today={day.today}>{day.date}</span>
+            {#if day.more}<span class="more">+{day.more}</span>{/if}
+          </button>
+        {/each}
+        {#each wk.bars as bar, bi (bi)}
+          <button
+            class="bar {bar.e.kind}"
+            class:cut-start={bar.cutStart}
+            class:cut-end={bar.cutEnd}
+            style="grid-column:{bar.col} / span {bar.span};grid-row:{bar.lane + 2}"
+            onclick={() => pick(Math.max(bar.e.a, wk.days[0].n))}
+            title={bar.e.label}
+          >{bar.label}</button>
+        {/each}
+      </div>
     {/each}
   </div>
 
-  {#if pickedCell}
+  {#if picked != null}
+    {@const lines = linesFor(picked)}
     <div class="details">
-      <strong class="small">{dayFmt.format(new Date(shown.y, shown.m, pickedCell.day))}</strong>
-      {#if pickedCell.pregnant}<span class="small muted">🤰 Pregnant</span>{/if}
-      {#if pickedCell.fertile}<span class="small muted">🌸 {pickedCell.fertile === "peak" ? "Peak fertility" : "Fertile"}</span>{/if}
-      {#each pickedCell.items as it, i (i)}<span class="small">{it.emoji} {it.text}</span>{/each}
-      {#if !pickedCell.items.length && !pickedCell.pregnant && !pickedCell.fertile}<span class="small muted">Nothing this day.</span>{/if}
-    </div>
-  {/if}
-
-  {#if legend.length}
-    <div class="legend muted small">
-      {#each legend as [e, n] (n)}
-        {#if e === "pregnant" || e === "fertile" || e === "peak"}<span><i class="swatch {e}"></i> {n}</span>{:else}<span>{e} {n}</span>{/if}
+      <div class="row">
+        <strong class="grow">{dayFmt.format(dateOf(picked))}</strong>
+        <button class="small ghost" onclick={() => (picked = null)} aria-label="Close">✕</button>
+      </div>
+      {#each lines as l, i (i)}
+        <span class="line"><i class="dot {l.kind}"></i>{l.text}</span>
+      {:else}
+        <span class="muted small">Nothing on this day.</span>
       {/each}
     </div>
+  {:else}
+    <p class="muted small tip">Tap a day to see what happened.</p>
   {/if}
 </section>
 
@@ -181,98 +277,154 @@
     opacity: 1;
     cursor: default;
   }
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap: 4px;
+  .cal {
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--bg);
   }
-  .wd {
+  .weekdays,
+  .week {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+  .weekdays span {
     text-align: center;
     font-size: 0.72rem;
     font-weight: 700;
     color: var(--muted);
+    padding: 4px 0;
   }
-  .day {
+  .week {
+    /* Row 1: the date; then one row per lane of bars; then room for "+N". */
+    grid-template-rows: 22px repeat(var(--lanes), 18px) 14px;
+    row-gap: 2px;
+    border-top: 1px solid color-mix(in srgb, var(--muted) 18%, transparent);
+  }
+  .cell {
     all: unset;
     box-sizing: border-box;
     cursor: pointer;
-    height: 46px;
-    min-width: 0;
-    border-radius: 10px;
-    background: var(--bg);
+    grid-row: 1 / -1;
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    gap: 1px;
-    border: 2px solid transparent;
+    justify-content: space-between;
+    padding: 2px 0 1px;
+    border-left: 1px solid color-mix(in srgb, var(--muted) 12%, transparent);
   }
-  .day:hover,
-  .day:focus-visible {
-    border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  .cell:first-child {
+    border-left: none;
   }
-  .day.pregnant {
-    background: color-mix(in srgb, var(--accent) 22%, var(--bg));
+  .cell:hover,
+  .cell:focus-visible {
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
   }
-  .day.fertile {
-    border-style: dashed;
-    border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  .cell.picked {
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
   }
-  .day.peak {
-    border-color: var(--accent);
+  .cell.out .num {
+    opacity: 0.4;
   }
-  .day.today .n {
-    background: var(--accent);
-    color: var(--on-accent, #fff);
-    border-radius: 999px;
-    padding: 0 6px;
-  }
-  .day.picked {
-    border-color: var(--accent);
-    border-style: solid;
-  }
-  .n {
-    font-size: 0.8rem;
+  .num {
+    font-size: 0.76rem;
     font-weight: 700;
+    min-width: 20px;
+    text-align: center;
+    line-height: 20px;
+    border-radius: 999px;
   }
-  .icons {
-    font-size: 0.7rem;
+  .num.today {
+    background: var(--accent);
+    color: #fff;
+  }
+  .more {
+    font-size: 0.66rem;
+    font-weight: 700;
+    color: var(--muted);
     line-height: 1;
+  }
+  .bar {
+    all: unset;
+    box-sizing: border-box;
+    cursor: pointer;
+    z-index: 1;
+    margin: 0 2px;
+    padding: 0 5px;
+    border-radius: 6px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    line-height: 18px;
     white-space: nowrap;
     overflow: hidden;
-    max-width: 100%;
+    text-overflow: ellipsis;
+    color: var(--text);
+    background: color-mix(in srgb, var(--c) 35%, var(--bg-2));
+    border-left: 3px solid var(--c);
+  }
+  .bar.cut-start {
+    margin-left: 0;
+    border-left: none;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+  }
+  .bar.cut-end {
+    margin-right: 0;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+  .bar:hover,
+  .bar:focus-visible {
+    background: color-mix(in srgb, var(--c) 55%, var(--bg-2));
+  }
+  /* One colour per kind of thing. */
+  .pregnant {
+    --c: var(--accent);
+  }
+  .fertile {
+    --c: var(--tri3);
+  }
+  .waiting {
+    --c: var(--warn);
+  }
+  .woohoo {
+    --c: var(--danger);
+  }
+  .milestone {
+    --c: var(--tri2);
+  }
+  .due {
+    --c: var(--tier-rare);
+  }
+  .born {
+    --c: var(--ok);
+  }
+  .achievement {
+    --c: var(--tier-legendary);
   }
   .details {
     display: flex;
     flex-direction: column;
-    gap: 3px;
+    gap: 4px;
     margin-top: 10px;
     padding: 8px 10px;
     border-radius: 12px;
     background: var(--bg);
   }
-  .swatch {
-    display: inline-block;
-    width: 12px;
-    height: 12px;
-    border-radius: 4px;
-    vertical-align: -2px;
-    background: var(--bg);
-    border: 2px solid transparent;
-  }
-  .swatch.pregnant {
-    background: color-mix(in srgb, var(--accent) 22%, var(--bg));
-  }
-  .swatch.fertile {
-    border: 2px dashed color-mix(in srgb, var(--accent) 55%, transparent);
-  }
-  .swatch.peak {
-    border-color: var(--accent);
-  }
-  .legend {
+  .line {
     display: flex;
-    flex-wrap: wrap;
-    gap: 4px 12px;
-    margin-top: 10px;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 0.85rem;
+  }
+  .dot {
+    flex: none;
+    width: 9px;
+    height: 9px;
+    border-radius: 3px;
+    background: var(--c);
+  }
+  .tip {
+    margin: 8px 0 0;
+    text-align: center;
   }
 </style>
