@@ -119,7 +119,7 @@
 
   async function endEarly() {
     if (!p) return;
-    if (await confirmAsk({ title: "End this pregnancy?", text: isDue ? "The belly goes back to flat and it doesn't count as a birth. For a birth, use “Welcome your baby” instead." : "The belly goes back to flat and it doesn't count as a birth.", ok: "End pregnancy", danger: true })) {
+    if (await confirmAsk({ title: "End this pregnancy?", text: isDue ? "It's removed as if it never happened: its journal, keepsakes and achievements go, and the belly goes back to flat. The WooHoo stays. For a birth, use “Welcome your baby” instead." : "It's removed as if it never happened: its journal, keepsakes and achievements go, and the belly goes back to flat. The WooHoo stays.", ok: "End pregnancy", danger: true })) {
       await api.endPregnancy(p.id);
     }
   }

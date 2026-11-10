@@ -52,7 +52,7 @@ pub struct InstanceTracker {
     pub history: Vec<Person>,
     /// Everyone (except the local user) seen in the current instance visit.
     pub session: Vec<Person>,
-    /// Times other players joined or left (for the "settled" check).
+    /// Times other players left (for the "settled" check).
     #[serde(skip)]
     changes: VecDeque<i64>,
     /// Waiting for the first OnPlayerJoined after entering (usually the local user).
@@ -104,8 +104,8 @@ impl InstanceTracker {
                 if !self.present.iter().any(|x| x.same(name, user_id.as_deref())) {
                     self.present.push(p.clone());
                 }
+                // A join doesn't unsettle the room: whoever is here could be it.
                 if !self.is_local(name, user_id.as_deref()) {
-                    self.changes.push_back(now_ms);
                     self.touch_session(p.clone());
                     self.touch_history(p);
                 }
@@ -181,13 +181,14 @@ impl InstanceTracker {
         self.present.iter().filter(|p| !self.is_local(&p.name, p.user_id.as_deref())).collect()
     }
 
-    /// No other player joined or left within `settle_ms`.
+    /// No other player left within `settle_ms` (they could have been the one).
+    /// Joins don't count: with one other person here, it was them.
     pub fn settled(&self, now_ms: i64, settle_ms: i64) -> bool {
         self.changes.back().is_none_or(|t| now_ms - t >= settle_ms)
             && self.joined_ms.is_some_and(|j| now_ms - j >= settle_ms.min(60_000))
     }
 
-    /// Exactly one other person and nobody came or went recently = guessed.
+    /// Exactly one other person and nobody left recently = guessed.
     pub fn guess_partner(&self, now_ms: i64, settle_ms: i64) -> PartnerGuess {
         let others = self.others();
         if others.len() == 1 && self.settled(now_ms, settle_ms) {
@@ -272,9 +273,9 @@ mod tests {
     fn one_other_settled_is_guessed() {
         let mut t = InstanceTracker::default();
         room(&mut t, 0);
-        t.apply(&join("Fox"), M);
-        assert_eq!(t.guess_partner(5 * M, DEFAULT_SETTLE_MS), PartnerGuess::Unknown, "not settled yet");
-        match t.guess_partner(20 * M, DEFAULT_SETTLE_MS) {
+        t.apply(&join("Fox"), 4 * M);
+        // Fox only just joined, but nobody left: it was Fox.
+        match t.guess_partner(5 * M, DEFAULT_SETTLE_MS) {
             PartnerGuess::Guessed { person } => assert_eq!(person.name, "Fox"),
             g => panic!("expected guess, got {g:?}"),
         }

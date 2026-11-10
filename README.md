@@ -104,7 +104,7 @@ The manifest grants: network (OSC/OSCQuery), read-only access to the VRChat fold
 | Public instance (Settings > Safety) | By default the belly is hidden and labor waits in Public and Group Public instances (pick any instance types). Your own Hide Belly isn't changed, so it's back as you left it in the next instance. Home's **Show here** shows it anyway until you leave. |
 | A WooHoo (SPS sockets, see Settings) | Starts the grace period (or a pregnancy right away with Fertility off) and guesses who it was from the log. With 2+ others around you pick who it was (or 🎲 Random); once you've WooHoo'd as many times in one instance as there are other people in it, it picks at random for you. With **Only my partners** on, only your 💞 partners count: someone else named doesn't count, and with nobody named it's your partners still in the instance (none: it doesn't count; one: them; more: you pick, and 🎲 Random picks among them). |
 | Waiting to find out | The waiting card on Home has **Find out now** (after a confirm), and **We used protection**, which calls the wait off. Those WooHoos stay in the history as "Protected", not tries. |
-| Exactly one other person in the instance, nobody came or went for 10 min | Other parent shown as **Guessed**, with confirm or change. |
+| Exactly one other person in the instance, nobody left for 10 min | Other parent shown as **Guessed**, with confirm or change. |
 | More people, or joins/leaves | Other parent **Unknown**, with a list of who was in that instance to pick from. |
 | App closes | Sends the final belly value and releases the app-active flag. |
 
@@ -184,7 +184,7 @@ cargo run -p belly-cli -- --listen 10               # print what VRChat sends
 - [ ] Close the app for a while and reopen: progress has moved on correctly.
 
 **Partner**
-- [ ] Alone with one person for 10 minutes, then conception in-game: a pregnancy starts and they show as "Guessed". "That's right" confirms.
+- [ ] Alone with one person (nobody left in the last 10 minutes), then conception in-game: a pregnancy starts and they show as "Guessed". "That's right" confirms.
 - [ ] With 2+ people: the list shows only people from that instance.
 - [ ] "Someone else" with a typed name works. "Set to unknown" clears it.
 

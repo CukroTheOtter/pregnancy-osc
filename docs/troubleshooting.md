@@ -71,7 +71,7 @@ Home's **Welcome your baby** always skips straight to the birth.
 
 This is normal. VRChat's log says who's in the instance, but not who you WooHoo'd with. The app only fills in a name by itself when:
 
-- There's exactly one other person, and nobody has joined or left for 10 minutes.
+- There's exactly one other person, and nobody has left for 10 minutes (someone joining doesn't matter).
 - You've WooHoo'd in that instance as many times as there are other people (2 or more). It then picks someone at random.
 
 Otherwise you can pick who it was on the "You WooHoo'd" card. **Read VRChat logs** (**Settings > Logs and pictures**) has to be on for the app to see who's there.

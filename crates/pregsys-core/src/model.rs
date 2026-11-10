@@ -727,7 +727,22 @@ pub struct AppData {
     pub vr_standing_m: Option<f32>,
     /// Your partners, added by hand (see `Settings::partners_only`).
     pub my_partners: Vec<MyPartner>,
+    /// Pregnancies stopped or deleted (they're gone without a trace): only
+    /// what's needed to flatten a belly VRChat kept (`belly_left_behind`) and
+    /// for the chatbox's "stopped". The latest `STOPS_KEPT`.
+    pub stops: Vec<Stop>,
 }
+
+/// A pregnancy that's gone (`AppData::stops`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Stop {
+    pub id: String,
+    pub avatar_id: Option<String>,
+    pub ended_ms: i64,
+}
+
+pub const STOPS_KEPT: usize = 50;
 
 impl AppData {
     pub fn new() -> Self {

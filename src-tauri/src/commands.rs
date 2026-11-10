@@ -129,7 +129,7 @@ pub fn start_labor(app: AppHandle, s: S, id: String) {
 
 #[tauri::command]
 pub fn delete_pregnancy(app: AppHandle, s: S, id: String) {
-    actions::delete_pregnancy(&mut s.data.lock().unwrap(), &id);
+    actions::delete_pregnancy(&mut s.data.lock().unwrap(), &id, now_ms());
     changed(&app, &s, true);
 }
 

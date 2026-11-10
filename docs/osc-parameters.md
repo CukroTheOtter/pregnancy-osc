@@ -39,7 +39,7 @@ Found in the avatar's Settings > App Controls menu. These names can't be changed
 |---|---|---|---|
 | `Pregnancy/Control/Start` | bool, local | Avatar | **Start** a pregnancy with the length saved in the app. From week 37, **hold 2 s** to start labor. |
 | `Pregnancy/Control/Pause` | bool, local | Avatar | **Pause**, or resume if paused. |
-| `Pregnancy/Control/Stop` | bool, local | Avatar | **Stop** the pregnancy. Hold for 2 s. Ends it without a birth. |
+| `Pregnancy/Control/Stop` | bool, local | Avatar | **Stop** the pregnancy. Hold for 2 s. Removes it as if it never happened (journal, keepsakes and the achievements only it earned go; its WooHoo stays as a try that didn't take). |
 
 ### Fertility, babies and kicks (all optional)
 
@@ -92,7 +92,7 @@ What the app drives or reads. Rename them in **Settings > Advanced** (or per ava
 | `Pregnancy/AppHeartbeat` | bool | **no** | 0 | Flips every second while the app runs. **Required.** |
 | `Pregnancy/Control/Start` | bool | **no** | 0 | Optional, name fixed (Start, Pause and Stop are made for this app, so they can't be renamed or given per-avatar names). Read. Button in the avatar's Settings > App Controls menu: starts a pregnancy with the saved length. Held for 2 seconds from week 37: starts labor. |
 | `Pregnancy/Control/Pause` | bool | **no** | 0 | Read. Button: pauses, or resumes if paused. |
-| `Pregnancy/Control/Stop` | bool | **no** | 0 | Read. Button: held for 2 seconds, ends the pregnancy (not a birth). |
+| `Pregnancy/Control/Stop` | bool | **no** | 0 | Read. Button: held for 2 seconds, stops the pregnancy (removed as if it never happened). |
 | `Pregnancy/FertileLevel` | int | yes | 8 | Optional. 0 low, 1 medium, 2 high, 3 peak. 0 while pregnant or waiting. |
 | `Pregnancy/Waiting` | bool | yes | 1 | Optional. True during the grace period after a WooHoo. |
 | `Pregnancy/BabyCount` | int | yes | 8 | Optional. 0 until the babies can be seen (week 12), then 1 to 4. |
@@ -170,7 +170,7 @@ These are local parameters on the avatar, so they cost no synced bits.
 | Running, not pregnant | Does not write `stage` (so the in-game menu still works). Still holds Active and the heartbeat. |
 | App starts or VRChat connects | **Snaps** `stage` to the app's timeline, ignoring whatever the avatar did while the app was closed. A visible jump is expected. |
 | Avatar change | Loads that avatar's pregnancy (or its linked group's), snaps the belly, then re-sends the Sync parameters once the avatar has loaded. A birth's belly going down stops at the switch (it was the old avatar's). |
-| An avatar whose pregnancy ended while you weren't wearing it | VRChat saves `stage` on each avatar, so it would come back with its old belly. If a pregnancy it showed (its own or its group's) ended since you last wore it, `stage` is set to 0 with each full send until it has loaded, then left alone (the menu works again). Avatars that never showed a pregnancy keep their own belly. |
+| An avatar whose pregnancy ended while you weren't wearing it | VRChat saves `stage` on each avatar, so it would come back with its old belly. If a pregnancy it showed (its own or its group's) ended or was stopped since you last wore it (stopped ones are remembered in `stops`), `stage` is set to 0 with each full send until it has loaded, then left alone (the menu works again). Avatars that never showed a pregnancy keep their own belly. |
 | A WooHoo (SPS sockets) | With Fertility on, the app starts a **grace period** (holds the belly at 0, sets `waiting`) and reveals the outcome later; with Fertility off, a pregnancy starts right away. The wait is real time: 1/20 of the pregnancy length picked last, or a fixed *Find out after* (Settings > Fertility: 10 min to 1 day, at most 1/4 of that length). A new choice applies from the next WooHoo, and shortens a wait already running then (it never lengthens one). The waiting card stays on the first WooHoo in a wait, so it can't give the result away. The avatar's own fertility trigger is not used. |
 | Chatbox (Settings > Chatbox, off by default) | Shows a message per event (started, paused, resumed, stopped, born, WooHoo, not pregnant, achievement) with `/chatbox/input`, at most one every 2 s, then clears it after "Show each message for" (default 8 s). Optional status line ("Always show pregnancy status", with or without the partner) is re-sent every 4 s while pregnant, and comes back after each event message. |
 | Exit (or VRChat closes, or tracking paused) | Sends the final belly value, then Active false. The avatar's clock carries on from there. |

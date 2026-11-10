@@ -45,7 +45,27 @@ pub fn migrate(mut v: Value) -> Result<Value, StorageError> {
 
 /// Parses a backup or data file of any supported version.
 pub fn parse(json: &str) -> Result<AppData, StorageError> {
+    parse_value(serde_json::from_str(json)?)
+}
+
+/// Like `parse`, but when only the settings can't be read, keeps everything
+/// else with default settings (`true` = the settings were reset).
+pub fn parse_keeping_data(json: &str) -> Result<(AppData, bool), StorageError> {
     let raw: Value = serde_json::from_str(json)?;
+    match parse_value(raw.clone()) {
+        Ok(d) => Ok((d, false)),
+        Err(StorageError::TooNew(v)) => Err(StorageError::TooNew(v)),
+        Err(e) => {
+            let mut without = raw;
+            match without.as_object_mut().and_then(|o| o.remove("settings")) {
+                Some(_) => parse_value(without).map(|d| (d, true)).map_err(|_| e),
+                None => Err(e),
+            }
+        }
+    }
+}
+
+fn parse_value(raw: Value) -> Result<AppData, StorageError> {
     let migrated = migrate(raw)?;
     let mut data: AppData = serde_json::from_value(migrated)?;
     data.upgrade_links();
@@ -84,8 +104,15 @@ impl Store {
             return Ok((AppData::new(), None));
         }
         let text = fs::read_to_string(&self.path)?;
-        match parse(&text) {
-            Ok(d) => Ok((d, None)),
+        match parse_keeping_data(&text) {
+            Ok((d, false)) => Ok((d, None)),
+            Ok((d, true)) => {
+                // The old file stays as it was, just in case.
+                if !self.read_only {
+                    fs::copy(&self.path, self.path.with_file_name(format!("data.broken-{}.json", crate::now_ms())))?;
+                }
+                Ok((d, Some("Your settings couldn't be read, so they were reset to the defaults. Everything else (pregnancies, WooHoos, partners, achievements) is fine. A copy of the old file was kept.".into())))
+            }
             Err(StorageError::TooNew(v)) => Err(StorageError::TooNew(v)),
             Err(e) if self.read_only => Ok((AppData::new(), Some(format!("Saved data could not be read ({e}). Using empty data for this run.")))),
             Err(e) => {
@@ -166,6 +193,27 @@ mod tests {
         assert!(warn.is_some());
         assert!(d.pregnancies.is_empty());
         assert!(fs::read_dir(dir.path()).unwrap().any(|e| e.unwrap().file_name().to_string_lossy().starts_with("data.broken-")));
+    }
+
+    #[test]
+    fn broken_settings_keep_everything_else() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = Store::new(dir.path());
+        let mut d = AppData::new();
+        d.pregnancies.push(Pregnancy { id: "p1".into(), name: "Bean".into(), ..Default::default() });
+        let mut v = serde_json::to_value(&d).unwrap();
+        v["settings"]["kicks"] = Value::from("not a bool");
+        fs::write(&s.path, v.to_string()).unwrap();
+        let (back, warn) = s.load().unwrap();
+        assert!(warn.unwrap().contains("settings"));
+        assert_eq!(back.pregnancies.len(), 1, "pregnancies kept");
+        assert_eq!(back.settings, crate::model::Settings::default());
+        assert!(fs::read_dir(dir.path()).unwrap().any(|e| e.unwrap().file_name().to_string_lossy().starts_with("data.broken-")));
+        assert!(s.path.exists(), "the file stays until the next save");
+        // Broken beyond the settings: still set aside, empty data.
+        fs::write(&s.path, r#"{"pregnancies": 5}"#).unwrap();
+        let (back, warn) = s.load().unwrap();
+        assert!(back.pregnancies.is_empty() && warn.unwrap().contains("could not be read"));
     }
 
     #[test]

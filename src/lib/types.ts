@@ -325,6 +325,13 @@ export interface FunEvent {
 }
 
 /** Someone you added to your partners (💞 on the Partners tab). */
+/** A pregnancy that's gone (stopped or deleted): only what flattens a belly VRChat kept. */
+export interface Stop {
+  id: string;
+  avatarId: string | null;
+  endedMs: number;
+}
+
 export interface MyPartner {
   name: string;
   userId: string | null;
@@ -355,6 +362,7 @@ export interface AppData {
   funLog: FunEvent[];
   /** Your partners, added by hand (see `Settings.partnersOnly`). */
   myPartners?: MyPartner[];
+  stops?: Stop[];
   syncValues: Record<string, number>;
   achievements: Record<string, number>;
   /** Debug: unlocked while debug mode was on. Marked on Me, left out of the count and Share. */

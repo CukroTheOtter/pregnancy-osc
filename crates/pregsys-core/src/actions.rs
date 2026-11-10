@@ -1,5 +1,6 @@
 //! Data changes that both the engine and the UI use.
 
+use crate::achievements;
 use crate::fertility;
 use crate::instance::{PartnerGuess, Person};
 use crate::model::*;
@@ -492,7 +493,68 @@ fn put_waiting_partner(data: &mut AppData, time_ms: i64, partner: Partner) {
     }
 }
 
+/// Stopping (or deleting) a pregnancy: it's gone as if it never happened.
+/// Its journal and keepsakes go. The WooHoo that started it stays, as a try
+/// that didn't take. "Already pregnant" WooHoos during it become plain ones,
+/// and achievements only it earned are locked again.
 pub fn end_pregnancy(data: &mut AppData, preg_id: &str, now_ms: i64) {
+    let Some(p) = data.pregnancy(preg_id).cloned() else { return };
+    // A stopped one already doesn't count, so "before" sees it running (when it earned things).
+    let earned_before: Vec<&str> = {
+        let mut was = data.clone();
+        if let Some(q) = was.pregnancy_mut(preg_id).filter(|q| q.stopped()) {
+            q.ended_ms = None;
+        }
+        achievements::ALL.iter().map(|a| a.id).filter(|id| achievements::earned(&was, id, now_ms)).collect()
+    };
+    // WooHoos that were "Already pregnant" because of it.
+    let during: Vec<i64> = data.fun_log.iter().filter(|f| f.already_pregnant && fun_during(data, &p, f, now_ms)).map(|f| f.time_ms).collect();
+
+    close(data, preg_id, now_ms);
+    if data.last_reveal.as_ref().is_some_and(|r| r.positive && p.source == PregnancySource::Conception && p.timeline.start_ms == r.event_ms) {
+        data.last_reveal = None;
+    }
+    data.pregnancies.retain(|x| x.id != preg_id);
+    data.journal.retain(|j| j.pregnancy_id.as_deref() != Some(preg_id));
+    data.keepsakes.retain(|k| k.pregnancy_id != preg_id);
+
+    if let Some(t) = p.conceived_ms {
+        let wait = data.fun_log.iter().find(|f| f.time_ms == t).map(|f| f.wait_ms.unwrap_or(t));
+        for f in data.fun_log.iter_mut().filter(|f| f.time_ms == t || (wait.is_some() && f.wait_ms == wait)) {
+            f.took = Some(false);
+        }
+    }
+    let plain: Vec<i64> = during
+        .into_iter()
+        .filter(|&t| data.fun_log.iter().find(|f| f.time_ms == t).is_some_and(|f| !data.pregnancies.iter().any(|q| fun_during(data, q, f, now_ms))))
+        .collect();
+    for f in data.fun_log.iter_mut().filter(|f| plain.contains(&f.time_ms)) {
+        f.already_pregnant = false;
+    }
+
+    for id in earned_before {
+        if data.achievements.get(id).is_some_and(|&t| t >= p.created_ms.min(p.timeline.start_ms)) && !achievements::earned(data, id, now_ms) {
+            data.achievements.remove(id);
+            data.test_achievements.retain(|x| x != id);
+        }
+    }
+
+    data.stops.push(Stop { id: p.id.clone(), avatar_id: p.avatar_id.clone(), ended_ms: p.ended_ms.unwrap_or(now_ms) });
+    let extra = data.stops.len().saturating_sub(STOPS_KEPT);
+    data.stops.drain(..extra);
+}
+
+/// A WooHoo happened during this pregnancy, on its avatar (or group).
+fn fun_during(data: &AppData, p: &Pregnancy, f: &FunEvent, now_ms: i64) -> bool {
+    let same = match (data.owner(p.avatar_id.as_deref()), data.owner(f.avatar_id.as_deref())) {
+        (Some(a), Some(b)) => a == b,
+        _ => true,
+    };
+    same && f.time_ms >= p.timeline.start_ms && f.time_ms <= p.ended_ms.unwrap_or(now_ms)
+}
+
+/// Takes a pregnancy off every avatar, as it ends.
+fn close(data: &mut AppData, preg_id: &str, now_ms: i64) {
     if let Some(p) = data.pregnancy_mut(preg_id) {
         p.ended_ms = Some(now_ms);
         let name = p.name.clone();
@@ -529,17 +591,15 @@ pub fn end_pregnancy(data: &mut AppData, preg_id: &str, now_ms: i64) {
 
 /// The happy ending: ends the pregnancy as a birth.
 pub fn give_birth(data: &mut AppData, preg_id: &str, now_ms: i64) {
-    end_pregnancy(data, preg_id, now_ms);
+    close(data, preg_id, now_ms);
     if let Some(p) = data.pregnancy_mut(preg_id) {
         p.born = true;
     }
 }
 
-pub fn delete_pregnancy(data: &mut AppData, preg_id: &str) {
-    end_pregnancy(data, preg_id, 0);
-    data.pregnancies.retain(|p| p.id != preg_id);
-    data.journal.retain(|j| j.pregnancy_id.as_deref() != Some(preg_id));
-    data.keepsakes.retain(|k| k.pregnancy_id != preg_id);
+/// Deleting a pregnancy is the same as stopping it: gone without a trace.
+pub fn delete_pregnancy(data: &mut AppData, preg_id: &str, now_ms: i64) {
+    end_pregnancy(data, preg_id, now_ms);
 }
 
 /// Forgets a person everywhere ("forget this partner"): history, the WooHoo
@@ -599,6 +659,7 @@ pub fn reset_data(data: &mut AppData, kind: ResetKind) {
             data.last_reveal = None;
             data.journal.clear();
             data.keepsakes.clear();
+            data.stops.clear();
             for a in data.avatars.values_mut() {
                 a.pregnancy_id = None;
             }
@@ -637,7 +698,10 @@ pub fn belly_left_behind(data: &AppData, avatar_id: &str, last_seen_ms: i64) -> 
     }
     let owner = data.owner(Some(avatar_id));
     // Saved on a group or on one of its avatars: either way the group showed it.
-    data.pregnancies.iter().any(|p| p.ended_ms.is_some_and(|e| e >= last_seen_ms) && (owner.is_none() || data.owner(p.avatar_id.as_deref()) == owner))
+    let mine = |a: Option<&str>| owner.is_none() || data.owner(a) == owner;
+    data.pregnancies.iter().any(|p| p.ended_ms.is_some_and(|e| e >= last_seen_ms) && mine(p.avatar_id.as_deref()))
+        // Stopped ones are gone, but VRChat still kept their belly.
+        || data.stops.iter().any(|s| s.ended_ms >= last_seen_ms && mine(s.avatar_id.as_deref()))
 }
 
 /// Records an avatar switch from OSC.
@@ -940,14 +1004,43 @@ mod tests {
     }
 
     #[test]
-    fn end_and_delete() {
+    fn stopping_leaves_no_trace_but_the_woohoo() {
+        let mut d = with_instance(&["Fox"]);
+        touch_avatar(&mut d, "avtr_x", 0);
+        record_fun(&mut d, LATER, 0.0);
+        let reveal = d.waiting[0].reveal_ms;
+        assert_eq!(resolve_due(&mut d, reveal), Some(true));
+        let id = d.pregnancies[0].id.clone();
+        d.keepsakes.push(Keepsake { pregnancy_id: id.clone(), ..Default::default() });
+        record_fun(&mut d, reveal + 5, 0.0);
+        assert!(d.fun_log[1].already_pregnant);
+        achievements::check(&mut d, reveal + 6);
+        assert!(d.achievements.contains_key("little_bean") && d.achievements.contains_key("first_try"));
+
+        end_pregnancy(&mut d, &id, reveal + 10);
+        assert!(d.pregnancies.is_empty() && d.current_pregnancy(None).is_none());
+        assert!(d.journal.is_empty() && d.keepsakes.is_empty() && d.last_reveal.is_none());
+        assert_eq!(d.fun_log.len(), 2, "WooHoos stay");
+        assert_eq!(d.fun_log[0].took, Some(false), "the try didn't take after all");
+        assert!(!d.fun_log[1].already_pregnant, "a plain WooHoo now");
+        assert!(d.achievements.contains_key("first_woohoo"));
+        assert!(!d.achievements.contains_key("little_bean") && !d.achievements.contains_key("first_try"));
+        assert_eq!(d.stops.len(), 1);
+        assert!(belly_left_behind(&d, "avtr_x", reveal), "VRChat kept the belly, so it's flattened");
+        assert!(!belly_left_behind(&d, "avtr_x", reveal + 11));
+    }
+
+    #[test]
+    fn stopping_keeps_achievements_earned_before_or_by_others() {
         let mut d = AppData::new();
-        let id = start_pregnancy(&mut d, NewPregnancy::default(), 0);
-        end_pregnancy(&mut d, &id, 10);
-        assert!(d.current_pregnancy(None).is_none());
-        delete_pregnancy(&mut d, &id);
-        assert!(d.pregnancies.is_empty());
-        assert!(d.journal.is_empty());
+        let born = start_pregnancy(&mut d, NewPregnancy::default(), 0);
+        give_birth(&mut d, &born, 10);
+        achievements::check(&mut d, 10);
+        let id = start_pregnancy(&mut d, NewPregnancy::default(), 20);
+        achievements::check(&mut d, 30);
+        delete_pregnancy(&mut d, &id, 40);
+        assert!(d.achievements.contains_key("little_bean") && d.achievements.contains_key("welcome_home"));
+        assert_eq!(d.pregnancies.len(), 1);
     }
 
     #[test]

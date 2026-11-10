@@ -110,7 +110,7 @@ pub fn remove(data: &mut AppData, index: usize, now_ms: i64) {
         .map(|p| p.id.clone())
         .collect();
     for id in ids {
-        actions::delete_pregnancy(data, &id);
+        actions::delete_pregnancy(data, &id, now_ms);
     }
     let gone: Vec<i64> = data
         .fun_log

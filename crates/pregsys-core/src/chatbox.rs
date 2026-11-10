@@ -205,7 +205,9 @@ impl Watch {
             (Some(a), None) => match data.pregnancies.iter().find(|p| p.id == *a) {
                 Some(p) if p.born => vec![("born", vars(a))],
                 Some(p) if p.ended_ms.is_some() => vec![("stopped", vars(a))],
-                _ => vec![], // deleted
+                // Stopped (it's gone now, see `AppData::stops`).
+                None if data.stops.iter().any(|s| s.id == *a) => vec![("stopped", Vars::default())],
+                _ => vec![],
             },
             (None, None) => vec![],
         }

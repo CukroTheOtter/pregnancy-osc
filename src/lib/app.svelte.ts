@@ -18,7 +18,8 @@ export interface Ask {
   title: string;
   text?: string;
   ok: string;
-  cancel?: string;
+  /** null = no Cancel button (just letting you know). */
+  cancel?: string | null;
   danger?: boolean;
   resolve: (yes: boolean) => void;
 }
@@ -164,7 +165,8 @@ export async function init() {
   try {
     app.status = await api.getStatus();
     const warning = await api.takeLoadWarning();
-    if (warning) toast("Your saved data had a problem", warning, "error", 15000);
+    // A popup that stays until you've seen it (settings reset, a save that couldn't be read).
+    if (warning) void confirmAsk({ title: "Heads up", text: warning, ok: "OK", cancel: null });
   } catch (e) {
     errorToast(e);
   }

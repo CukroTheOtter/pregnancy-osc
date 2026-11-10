@@ -39,6 +39,9 @@ const prof = (id: string, name: string): AvatarProfile => ({
   sps: { custom: false, sockets: [], types: {} },
 });
 
+/** Like storage.rs load: what was wrong with the save, once. */
+let loadWarning: string | null = null;
+
 function load(): AppData {
   try {
     const raw = localStorage.getItem(KEY);
@@ -48,6 +51,11 @@ function load(): AppData {
       const def = defaultSettings();
       // Saves from when there was one Test Buddy.
       if (saved.testBuddySince && !saved.testBuddies?.length) saved.testBuddies = [TEST_BUDDIES[0].id];
+      // Settings that can't be read are reset; everything else stays (storage.rs parse_keeping_data).
+      if (saved.settings != null && (typeof saved.settings !== "object" || Array.isArray(saved.settings))) {
+        delete saved.settings;
+        loadWarning = "Your settings couldn't be read, so they were reset to the defaults. Everything else (pregnancies, WooHoos, partners, achievements) is fine. A copy of the old file was kept.";
+      }
       return { ...emptyData(), ...saved, groups: saved.groups ?? {}, settings: { ...def, ...saved.settings, sps: { ...def.sps, ...saved.settings?.sps } } };
     }
   } catch {
@@ -317,7 +325,7 @@ setInterval(() => {
   emit("status", status());
 }, 1000);
 
-function endPregnancy(id: string) {
+function closePregnancy(id: string) {
   const p = data.pregnancies.find((x) => x.id === id);
   if (p) p.endedMs = Date.now();
   // "You're pregnant!" was about this one: same rule as end_pregnancy in actions.rs.
@@ -326,6 +334,28 @@ function endPregnancy(id: string) {
   if (data.activePregnancyId === id) data.activePregnancyId = null;
   Object.values(data.avatars).forEach((a) => a.pregnancyId === id && (a.pregnancyId = null));
   Object.values(data.groups).forEach((g) => g.pregnancyId === id && (g.pregnancyId = null));
+}
+
+/** Stopping or deleting: gone as if it never happened (end_pregnancy in actions.rs; the mock has no achievement rules to lock again). */
+function removePregnancy(id: string) {
+  const p = data.pregnancies.find((x) => x.id === id);
+  if (!p) return;
+  const now = Date.now();
+  const during = (f: { timeMs: number }, q: Pregnancy) => f.timeMs >= q.timeline.startMs && f.timeMs <= (q.endedMs ?? now);
+  const was = data.funLog.filter((f) => f.alreadyPregnant && during(f, p)).map((f) => f.timeMs);
+  closePregnancy(id);
+  const r = data.lastReveal;
+  if (r?.positive && p.source === "conception" && p.timeline.startMs === r.eventMs) data.lastReveal = null;
+  data.pregnancies = data.pregnancies.filter((x) => x.id !== id);
+  data.journal = data.journal.filter((j) => j.pregnancyId !== id);
+  data.keepsakes = data.keepsakes.filter((k) => k.pregnancyId !== id);
+  const t = p.conceivedMs;
+  if (t != null) {
+    const wait = data.funLog.find((f) => f.timeMs === t)?.waitMs ?? t;
+    for (const f of data.funLog) if (f.timeMs === t || f.waitMs === wait) f.took = false;
+  }
+  for (const f of data.funLog) if (was.includes(f.timeMs) && !data.pregnancies.some((q) => during(f, q))) f.alreadyPregnant = false;
+  data.stops = [...(data.stops ?? []), { id, avatarId: p.avatarId, endedMs: p.endedMs ?? now }].slice(-50);
 }
 
 // Groups: same rules as pregsys-core/src/actions.rs.
@@ -368,12 +398,12 @@ function setAvatarGroup(avatarId: string, groupId: string | null) {
 
 let mapping: Mapping | null = null;
 
+
 /** Debug: a test buddy (or all of them) and everything they touched go away. */
 function removeTestBuddy(id?: string) {
   const mine = (userId: string | null | undefined) => (id ? userId === id : isTestBuddy(userId));
   const theirs = (p: Pregnancy) => mine(p.partner.userId) || (p.partner.name == null && p.partner.candidates.some((c) => mine(c.userId)));
-  for (const p of data.pregnancies.filter(theirs)) endPregnancy(p.id);
-  data.pregnancies = data.pregnancies.filter((x) => !theirs(x));
+  for (const p of data.pregnancies.filter(theirs)) removePregnancy(p.id);
   const gone = data.funLog.filter((f) => mine(f.partnerUserId) || (f.partnerName == null && f.testBuddiesHere?.some(mine))).map((f) => f.timeMs);
   data.funLog = data.funLog.filter((f) => !gone.includes(f.timeMs));
   data.waiting = data.waiting.filter((w) => !mine(w.partner.userId));
@@ -397,7 +427,9 @@ export const mock = {
     return status();
   },
   async take_load_warning() {
-    return null;
+    const w = loadWarning;
+    loadWarning = null;
+    return w;
   },
   async save_settings({ settings }: { settings: Settings }) {
     // Turning debug mode off removes Test Buddy.
@@ -421,11 +453,11 @@ export const mock = {
     changed();
   },
   async end_pregnancy({ id }: { id: string }) {
-    endPregnancy(id);
+    removePregnancy(id);
     changed();
   },
   async give_birth({ id }: { id: string }) {
-    endPregnancy(id);
+    closePregnancy(id);
     const p = data.pregnancies.find((x) => x.id === id);
     if (p) p.born = true;
     changed();
@@ -438,8 +470,7 @@ export const mock = {
     }
   },
   async delete_pregnancy({ id }: { id: string }) {
-    endPregnancy(id);
-    data.pregnancies = data.pregnancies.filter((p) => p.id !== id);
+    removePregnancy(id);
     changed();
   },
   async set_current_pregnancy({ avatarId, id }: { avatarId: string | null; id: string | null }) {
@@ -764,7 +795,7 @@ export const mock = {
       const now2 = Math.min(total, to);
       p.labor.phase = now2 < ends[0] ? "early" : now2 < ends[1] ? "active" : "pushing";
       if (now2 >= total) {
-        endPregnancy(p.id);
+        closePregnancy(p.id);
         p.born = true;
       }
     }

@@ -407,6 +407,24 @@ fn pregnancy_problems(d: &AppData, out: &mut Vec<Found>) {
             Some(_) => {}
         }
     }
+    // Stopped before stopping removed them (actions::end_pregnancy).
+    let stopped: Vec<(String, i64)> = d.pregnancies.iter().filter(|p| p.stopped()).map(|p| (p.id.clone(), p.ended_ms.unwrap_or(0))).collect();
+    if !stopped.is_empty() {
+        let n = stopped.len();
+        out.push(found(
+            "stopped".into(),
+            if n > 1 { format!("{n} stopped pregnancies are still saved.") } else { "A stopped pregnancy is still saved.".into() },
+            None,
+            vec![(
+                if n > 1 { "Remove them, as if they never happened" } else { "Remove it, as if it never happened" },
+                Box::new(move |d: &mut AppData| {
+                    for (id, ended) in &stopped {
+                        crate::actions::end_pregnancy(d, id, *ended);
+                    }
+                }),
+            )],
+        ));
+    }
     for p in d.pregnancies.iter().filter(|p| p.born && p.ended_ms.is_none()) {
         let id = p.id.clone();
         out.push(found(
@@ -504,6 +522,19 @@ mod tests {
         record_fun(&mut d, i64::MAX / 2 + 1, 0.0);
         start_pregnancy(&mut d, NewPregnancy::default(), 5);
         assert!(ids(&d).is_empty(), "{:?}", problems(&d, Env::default()));
+    }
+
+    #[test]
+    fn stopped_pregnancies_from_before_can_go() {
+        let mut d = AppData::new();
+        let id = start_pregnancy(&mut d, NewPregnancy::default(), 0);
+        crate::achievements::check(&mut d, 5);
+        d.pregnancy_mut(&id).unwrap().ended_ms = Some(10);
+        assert_eq!(ids(&d), ["stopped"]);
+        assert!(fix(&mut d, Env::default(), "stopped", 0));
+        assert!(d.pregnancies.is_empty() && d.journal.is_empty());
+        assert!(!d.achievements.contains_key("little_bean"), "what it earned is locked again");
+        assert!(ids(&d).is_empty());
     }
 
     #[test]
