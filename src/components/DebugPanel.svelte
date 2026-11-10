@@ -137,7 +137,7 @@
 
   <div class="group">
     <strong>🏆 Test achievements</strong>
-    <span class="muted small">Debug tools count as if it all really happened, so anything unlocked while debug mode is on gets a 🛠 and stays out of your count and Share picture. Clearing them leaves your test data, so what it still qualifies for can unlock again.</span>
+    <span class="muted small">Having debug mode on is fine: real play still counts. Anything you'd only have with what these tools made (debug WooHoos, kicks, labor, babies, people, a jumped cycle, test buddies) gets a 🛠 and stays out of your count and Share picture. Clearing them checks again: what your real play earned unlocks for real.</span>
     <button class="small soft" style="align-self:flex-start" disabled={!d.testAchievements?.length} onclick={() => run("Test achievements cleared", () => api.debugClearTestAchievements())}>🧹 Clear {d.testAchievements?.length ?? 0} test {d.testAchievements?.length === 1 ? "achievement" : "achievements"}</button>
   </div>
 

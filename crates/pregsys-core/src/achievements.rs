@@ -13,7 +13,7 @@ pub struct Achievement {
 }
 
 /// Same person: user ID when there is one, else the name.
-fn person_key(name: &str, user_id: Option<&str>) -> String {
+pub fn person_key(name: &str, user_id: Option<&str>) -> String {
     user_id.map(str::to_string).unwrap_or_else(|| format!("name:{}", name.to_lowercase()))
 }
 
@@ -178,21 +178,49 @@ pub fn title(id: &str) -> Option<&'static str> {
     ALL.iter().find(|a| a.id == id).map(|a| a.title)
 }
 
-/// Unlocks anything newly earned and returns it (in list order).
+/// Your data without anything the debug tools made: debug WooHoos, waits,
+/// pregnancies and kicks, and everything with the test buddies (as
+/// `testbuddy::remove` would take away).
+pub fn real(d: &AppData) -> AppData {
+    use crate::testbuddy::is_test;
+    let fake_fun = |f: &FunEvent| f.debug || is_test(f.partner_user_id.as_deref()) || (f.partner_name.is_none() && !f.test_buddies_here.is_empty());
+    let fake: BTreeSet<i64> = d.fun_log.iter().filter(|f| fake_fun(f)).map(|f| f.time_ms).collect();
+    let mut r = d.clone();
+    r.fun_log.retain(|f| !fake_fun(f));
+    r.pregnancies.retain(|p| {
+        !p.debug && !is_test(p.partner.user_id.as_deref()) && !(p.partner.name.is_none() && p.partner.candidates.iter().any(|c| is_test(c.user_id.as_deref())))
+    });
+    for p in &mut r.pregnancies {
+        p.kicks.retain(|k| !k.debug);
+    }
+    r.waiting.retain(|w| !w.debug && !is_test(w.partner.user_id.as_deref()));
+    for w in &mut r.waiting {
+        w.fun_times.retain(|t| !fake.contains(t));
+    }
+    r
+}
+
+/// Unlocks anything newly earned and returns it (in list order). One you'd
+/// only have with what the debug tools made is a test (🛠): it doesn't count.
+/// Just having debug mode on changes nothing.
 pub fn check(d: &mut AppData, now_ms: i64) -> Vec<&'static str> {
     let new: Vec<&'static str> = ALL.iter().filter(|a| !d.achievements.contains_key(a.id) && (a.earned)(d, now_ms)).map(|a| a.id).collect();
+    if new.is_empty() {
+        return new;
+    }
+    let real = real(d);
     for id in &new {
         d.achievements.insert(id.to_string(), now_ms);
-        // The debug tools count as if it all really happened, so it's only a test.
-        if d.settings.debug {
+        if !earned(&real, id, now_ms) {
             d.test_achievements.push(id.to_string());
         }
     }
     new
 }
 
-/// Debug: takes back everything unlocked while debug mode was on. Your test
-/// data stays, so what it still qualifies for can unlock again.
+/// Debug: takes back the test achievements. Your test data stays, so the
+/// next check unlocks them again: for real if your real data earns them
+/// (anything faked before debug data was marked counts as real then).
 pub fn clear_test(d: &mut AppData) {
     for id in std::mem::take(&mut d.test_achievements) {
         d.achievements.remove(&id);
@@ -370,27 +398,79 @@ mod tests {
     }
 
     #[test]
-    fn unlocked_in_debug_mode_is_only_a_test() {
+    fn only_what_the_debug_tools_made_is_a_test() {
         let mut d = AppData::new();
+        // Debug mode on by itself changes nothing.
+        d.settings.debug = true;
         d.fun_log.push(FunEvent::default());
         assert_eq!(check(&mut d, 1), ["first_woohoo"]);
         assert!(d.test_achievements.is_empty(), "the real thing");
 
-        d.settings.debug = true;
-        d.pregnancies.push(preg(0, 1, None));
+        // A pregnancy the debug tools made is a test, and stays one with debug mode off.
+        d.pregnancies.push(Pregnancy { debug: true, ..preg(0, 1, None) });
         assert_eq!(check(&mut d, 2), ["little_bean"]);
         assert_eq!(d.test_achievements, ["little_bean"]);
-
-        // Turning debug mode off doesn't make it real.
         d.settings.debug = false;
         assert!(check(&mut d, 3).is_empty());
-        assert_eq!(d.test_achievements, ["little_bean"]);
 
-        // Clearing leaves the real ones; what the data still earns comes back for real.
+        // Clearing leaves the real ones; with a real pregnancy it comes back for real.
         clear_test(&mut d);
         assert!(d.test_achievements.is_empty() && d.achievements.contains_key("first_woohoo") && !d.achievements.contains_key("little_bean"));
         assert_eq!(check(&mut d, 4), ["little_bean"]);
+        assert_eq!(d.test_achievements, ["little_bean"], "still only the debug one");
+        clear_test(&mut d);
+        d.pregnancies.push(preg(0, 1, None));
+        assert_eq!(check(&mut d, 5), ["little_bean"]);
         assert!(d.test_achievements.is_empty());
+    }
+
+    #[test]
+    fn debug_woohoos_and_kicks_dont_count() {
+        // Never Give Up from real waits counts, even if a debug miss is mixed in.
+        let mut d = AppData::new();
+        let misses = |n: i64| (0..n).map(|i| fun(i * 10, Some(false), Some(i * 10)));
+        d.fun_log = misses(5).chain([fun(100, Some(true), Some(100))]).collect();
+        d.fun_log.push(FunEvent { debug: true, ..fun(55, Some(false), Some(55)) });
+        check(&mut d, 1);
+        assert!(d.achievements.contains_key("never_give_up") && !d.test_achievements.contains(&"never_give_up".to_string()));
+
+        // Made with debug misses: a test.
+        let mut d = AppData::new();
+        d.fun_log = misses(4).chain([FunEvent { debug: true, ..fun(45, Some(false), Some(45)) }, fun(100, Some(true), Some(100))]).collect();
+        check(&mut d, 1);
+        assert!(d.test_achievements.contains(&"never_give_up".to_string()));
+
+        // 100 kicks, one from the debug button.
+        let mut d = AppData::new();
+        let mut p = preg(0, 1, None);
+        p.kicks = vec![Default::default(); 99];
+        p.kicks.push(crate::model::KickEvent { debug: true, ..Default::default() });
+        d.pregnancies.push(p);
+        check(&mut d, 1);
+        assert!(d.test_achievements.contains(&"kick_counter".to_string()));
+        assert!(!d.test_achievements.contains(&"little_bean".to_string()));
+    }
+
+    #[test]
+    fn debug_marks_carry_on() {
+        use crate::actions::{record_fun, record_fun_with, resolve_due};
+        // A debug WooHoo that took: its pregnancy is debug too.
+        let mut d = AppData::new();
+        record_fun_with(&mut d, 1000, 0.0, true);
+        resolve_due(&mut d, i64::MAX / 2);
+        assert!(d.fun_log[0].debug && d.pregnancies[0].debug);
+        // A real one that took, after a debug miss in the same wait: real.
+        let mut d = AppData::new();
+        record_fun_with(&mut d, 1000, 0.999, true);
+        record_fun(&mut d, 2000, 0.0);
+        resolve_due(&mut d, i64::MAX / 2);
+        assert!(!d.pregnancies[0].debug);
+        // A jumped cycle or a debug person marks real WooHoos.
+        let mut d = AppData::new();
+        d.debug_cycle_until = Some(5000);
+        record_fun(&mut d, 1000, 0.999);
+        record_fun(&mut d, 6000, 0.999);
+        assert!(d.fun_log[0].debug && !d.fun_log[1].debug);
     }
 
     #[test]

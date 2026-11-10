@@ -482,6 +482,9 @@ pub struct Pregnancy {
     pub osc_hints: OscHints,
     /// Labor, once it has started (kept after the birth).
     pub labor: Option<crate::labor::Labor>,
+    /// Debug: made or changed by the debug tools, so it doesn't count toward
+    /// achievements (see `achievements::real`).
+    pub debug: bool,
 }
 
 impl Default for Pregnancy {
@@ -508,6 +511,7 @@ impl Default for Pregnancy {
             milestones: Vec::new(),
             osc_hints: OscHints::default(),
             labor: None,
+            debug: false,
         }
     }
 }
@@ -630,6 +634,9 @@ pub struct PendingConception {
     /// A later WooHoo took, when the first didn't. Hidden until the reveal:
     /// the card stays on the first one, so it never gives the result away.
     pub later: Option<LaterTake>,
+    /// Debug: a debug tool changed this wait (passed on to the pregnancy, as is
+    /// a debug WooHoo that took).
+    pub debug: bool,
 }
 
 /// The WooHoo that took, when it wasn't the first in the wait.
@@ -651,6 +658,8 @@ pub struct KickEvent {
     pub partner_here: bool,
     /// The world you were in.
     pub world: Option<String>,
+    /// Debug: sent with the debug kick button.
+    pub debug: bool,
 }
 
 /// Kicks kept per pregnancy (enough for "today" and "last kick").
@@ -679,6 +688,9 @@ pub struct FunEvent {
     /// "We used protection" while waiting to find out: the wait was called
     /// off, so not a try either.
     pub protected: bool,
+    /// Debug: a debug WooHoo, or helped by a debug tool (a debug person, a
+    /// jumped cycle, a forced new session). Left out of achievements.
+    pub debug: bool,
 }
 
 /// Someone you added to your partners (💞 on the Partners tab).
@@ -727,14 +739,21 @@ pub struct AppData {
     pub sync_values: BTreeMap<String, f64>,
     /// Unlocked achievements: id -> when (see `achievements`).
     pub achievements: BTreeMap<String, i64>,
-    /// Debug: achievements unlocked while debug mode was on. Marked on the Me
-    /// tab and left out of the count and the Share picture.
+    /// Debug: achievements you'd only have with what the debug tools made
+    /// (see `achievements::check`). Marked on the Me tab and left out of the
+    /// count and the Share picture.
     pub test_achievements: Vec<String>,
     /// Debug: when the first test buddy was added (see `testbuddy`), until
     /// the last is removed.
     pub test_buddy_since: Option<i64>,
     /// Debug: the test buddies that are on, by user ID.
     pub test_buddies: Vec<String>,
+    /// Debug: people added with the debug tools (`person_key`), so WooHoos
+    /// with them don't count toward achievements. Cleared with debug mode.
+    pub debug_people: Vec<String>,
+    /// Debug: the cycle was jumped with the debug tools; WooHoos until then
+    /// (one whole cycle later) don't count toward achievements.
+    pub debug_cycle_until: Option<i64>,
     /// Your headset's height above the floor when standing, learned from
     /// SteamVR (see `posture`), so starting seated still counts as resting.
     pub vr_standing_m: Option<f32>,

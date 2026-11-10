@@ -738,7 +738,10 @@ export const mock = {
     changed();
   },
   async debug_woohoo({ outcome }: { outcome: boolean | null }) {
+    const before = data.funLog.length;
     await woohoo(outcome);
+    // Left out of achievements (pregsys-core marks its pregnancy too).
+    if (data.funLog.length > before) data.funLog[data.funLog.length - 1].debug = true;
   },
   async debug_add_person({ name, userId }: { name: string; userId: string | null }) {
     if (!name.trim()) throw new Error("Give the test partner a name.");
@@ -778,6 +781,7 @@ export const mock = {
     if (skip === null) {
       if (p.labor) throw new Error("Already in labor.");
       p.labor = { phase: "early", startedMs: now, elapsedMs: 0, waterFirst: false, waterBrokeMs: null, paused: false, partnerAtBirth: false, cause: "you" };
+      p.debug = true;
     } else {
       if (!p.labor) throw new Error("Not in labor yet.");
       // Same split as pregsys-core/src/labor.rs: early half, water 30%, pushing 20%.
@@ -789,6 +793,7 @@ export const mock = {
         const i = ["early", "active", "pushing"].indexOf(p.labor.phase);
         const back = [0, ends[0], ends[1]][Math.max(0, i - 1)];
         p.labor.elapsedMs -= at - back;
+        p.debug = true;
         p.labor.phase = back < ends[0] ? "early" : "active";
         if (p.labor.phase === "early") p.labor.waterBrokeMs = null;
         changed();
@@ -798,6 +803,7 @@ export const mock = {
       p.labor.elapsedMs += Math.min(total, to) - at;
       const now2 = Math.min(total, to);
       p.labor.phase = now2 < ends[0] ? "early" : now2 < ends[1] ? "active" : "pushing";
+      p.debug = true;
       if (now2 >= total) {
         closePregnancy(p.id);
         p.born = true;
@@ -812,10 +818,12 @@ export const mock = {
       p.babyCount = n;
       p.babies = Array.from({ length: n }, (_, i) => p.babies[i] ?? baby(i));
       p.genders = Array.from({ length: n }, (_, i) => p.genders[i] ?? (Math.random() < 0.5 ? "girl" : "boy"));
+      p.debug = true;
     } else {
       const w = pendingFor(data, data.currentAvatarId);
       if (!w) throw new Error("Not pregnant or waiting on this avatar.");
       w.babyCount = n;
+      w.debug = true;
     }
     changed();
   },
@@ -835,7 +843,7 @@ export const mock = {
   async debug_kick({ strength }: { strength: "weak" | "strong" | "extreme" }) {
     const p = pregnancyFor(data, data.currentAvatarId);
     if (p) {
-      (p.kicks ??= []).push({ timeMs: Date.now(), strength });
+      (p.kicks ??= []).push({ timeMs: Date.now(), strength, debug: true });
       changed();
     }
     emit("kick", strength);

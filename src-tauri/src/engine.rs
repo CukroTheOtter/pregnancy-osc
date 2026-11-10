@@ -89,6 +89,9 @@ struct Engine {
     labor_announced: Option<String>,
     /// A WooHoo late in a pregnancy that didn't start labor: why, and when (shown on Home).
     woohoo_note: Option<(String, i64)>,
+    /// Debug: a new WooHoo session was forced; a WooHoo before this time only
+    /// counted because of it, so it's marked debug (left out of achievements).
+    debug_session_until: Option<i64>,
     /// VRChat's built-in AFK parameter (labor waits while it's on).
     afk: bool,
     /// VRChat's built-in posture values: Upright (None until heard), Seated,
@@ -196,6 +199,7 @@ impl Engine {
             labor: Default::default(),
             labor_announced: None,
             woohoo_note: None,
+            debug_session_until: None,
             afk: false,
             posture: Posture::default(),
             last_params_fill: past,
@@ -227,12 +231,14 @@ impl Engine {
                 }
                 Ok(EngineCmd::DebugWoohoo(roll)) => {
                     self.trace.note("command", &format!("Debug WooHoo (roll {roll:?})"));
-                    self.woohoo(now_ms(), roll);
+                    self.woohoo(now_ms(), roll, true);
                 }
                 Ok(EngineCmd::DebugNewSession) => {
                     self.trace.note("command", "Debug: new WooHoo session");
                     self.sps.end_session();
                     self.woohoo_note = None;
+                    let gap_ms = self.shared.data.lock().unwrap().settings.sps.gap_seconds as i64 * 1000;
+                    self.debug_session_until = Some(now_ms() + gap_ms);
                 }
                 Ok(EngineCmd::DebugKick(s)) => {
                     self.trace.note("command", &format!("Debug kick: {s:?}"));
@@ -337,7 +343,8 @@ impl Engine {
             (d.settings.sps.clone(), a)
         };
         if self.sps.tick(now, &sps_settings, avatar_sps.as_ref()) {
-            self.woohoo(now, None);
+            let debug = self.debug_session_until.take().is_some_and(|until| now < until);
+            self.woohoo(now, None, debug);
         }
 
         if self.last_log.elapsed() >= Duration::from_secs(1) {
@@ -798,7 +805,7 @@ impl Engine {
         if kicks.is_empty() {
             return;
         }
-        for k in &kicks {
+        for (k, _) in &kicks {
             self.debug_chat("kicks", format!("Kick: {k:?}"));
         }
         {
@@ -807,8 +814,8 @@ impl Engine {
             let partner_here = d.pregnancy(&id).and_then(|p| pregsys_core::labor::partner_here(&d, p, now)) == Some(true);
             let world = d.instance.world_name.clone();
             if let Some(p) = d.pregnancy_mut(&id) {
-                for s in &kicks {
-                    p.kicks.push(pregsys_core::model::KickEvent { time_ms: now, strength: *s, partner_here, world: world.clone() });
+                for (s, debug) in &kicks {
+                    p.kicks.push(pregsys_core::model::KickEvent { time_ms: now, strength: *s, partner_here, world: world.clone(), debug: *debug });
                 }
                 let extra = p.kicks.len().saturating_sub(pregsys_core::model::KICKS_KEPT);
                 p.kicks.drain(..extra);
@@ -818,7 +825,7 @@ impl Engine {
             }
         }
         self.shared.mark_dirty();
-        let _ = self.app.emit("kick", kicks.last().copied());
+        let _ = self.app.emit("kick", kicks.last().map(|k| k.0));
         let _ = self.app.emit("data-changed", ());
     }
 
@@ -932,7 +939,8 @@ impl Engine {
     }
 
     /// A WooHoo (from SPS sockets or debug). `roll` forces the outcome.
-    fn woohoo(&mut self, now: i64, roll: Option<f64>) {
+    /// `debug`: made with the debug tools (left out of achievements).
+    fn woohoo(&mut self, now: i64, roll: Option<f64>, debug: bool) {
         // Late in a pregnancy it can start labor (if that's on), on an avatar that can show it.
         use pregsys_core::labor::WooHooLabor;
         let ctx = self.labor_ctx();
@@ -958,7 +966,17 @@ impl Engine {
                     Some(why) => id
                         .filter(|id| d.settings.labor.woohoo_starts && d.pregnancy(id).is_some_and(|p| p.is_active() && p.labor.is_none()))
                         .map(|_| Err(why)),
-                    None => id.and_then(|id| pregsys_core::labor::woohoo(&mut d, &id, now, roll.unwrap_or_else(pregsys_core::fertility::roll))).map(Ok),
+                    None => id.and_then(|id| {
+                        let r = pregsys_core::labor::woohoo(&mut d, &id, now, roll.unwrap_or_else(pregsys_core::fertility::roll));
+                        // Labor a debug WooHoo started makes the birth a debug one.
+                        if debug && matches!(r, Some(WooHooLabor::Started { .. })) {
+                            if let Some(p) = d.pregnancy_mut(&id) {
+                                p.debug = true;
+                            }
+                        }
+                        r
+                    })
+                    .map(Ok),
                 }
             };
             self.trace.note("woohoo labor", &format!("{result:?}"));
@@ -980,7 +998,7 @@ impl Engine {
         // Every WooHoo goes in the history (while pregnant too, marked "Already pregnant").
         let outcome = {
             let mut d = self.shared.data.lock().unwrap();
-            actions::record_fun(&mut d, now, roll.unwrap_or_else(pregsys_core::fertility::roll))
+            actions::record_fun_with(&mut d, now, roll.unwrap_or_else(pregsys_core::fertility::roll), debug)
         };
         self.trace.note("woohoo", &format!("{outcome:?}"));
         self.shared.mark_dirty();

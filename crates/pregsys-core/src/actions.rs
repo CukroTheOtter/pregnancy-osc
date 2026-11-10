@@ -188,7 +188,17 @@ fn only_partners(data: &AppData, partner: Partner, roll: f64) -> Option<Partner>
 
 /// In-game fun was detected. `roll` is a random number in [0, 1).
 pub fn record_fun(data: &mut AppData, now_ms: i64, roll: f64) -> FunOutcome {
+    record_fun_with(data, now_ms, roll, false)
+}
+
+/// `record_fun`, marked as debug (`debug`: a debug WooHoo) so it doesn't count
+/// toward achievements. Also marked when a debug tool helped: a person added
+/// with them, or a cycle they jumped.
+pub fn record_fun_with(data: &mut AppData, now_ms: i64, roll: f64, debug: bool) -> FunOutcome {
     let partner = fun_partner(data, now_ms, fertility::roll());
+    let debug = debug
+        || data.debug_cycle_until.is_some_and(|until| now_ms < until)
+        || partner.name.as_deref().is_some_and(|n| data.debug_people.contains(&crate::achievements::person_key(n, partner.user_id.as_deref())));
     let already = data.current_pregnancy(data.current_avatar_id.as_deref()).is_some();
     let partner = match (already, data.settings.partners_only) {
         (false, true) => only_partners(data, partner.clone(), fertility::roll()).ok_or(partner),
@@ -207,6 +217,7 @@ pub fn record_fun(data: &mut AppData, now_ms: i64, roll: f64) -> FunOutcome {
                 already_pregnant: already,
                 not_partner: !already,
                 test_buddies_here: crate::testbuddy::here(data),
+                debug,
                 ..Default::default()
             });
             return if already { FunOutcome::AlreadyPregnant } else { FunOutcome::NotPartner };
@@ -224,9 +235,13 @@ pub fn record_fun(data: &mut AppData, now_ms: i64, roll: f64) -> FunOutcome {
         already_pregnant: false,
         not_partner: false,
         protected: false,
+        debug,
     });
     if !data.settings.fertility {
-        start_pregnancy(data, NewPregnancy { source: PregnancySource::Conception, partner: Some(partner), ..Default::default() }, now_ms);
+        let id = start_pregnancy(data, NewPregnancy { source: PregnancySource::Conception, partner: Some(partner), ..Default::default() }, now_ms);
+        if let Some(p) = data.pregnancy_mut(&id) {
+            p.debug = debug;
+        }
         return FunOutcome::Started;
     }
     ensure_cycle(data, now_ms);
@@ -269,6 +284,7 @@ pub fn record_fun(data: &mut AppData, now_ms: i64, roll: f64) -> FunOutcome {
             world_name,
             fun_times: vec![now_ms],
             later: None,
+            debug: false,
         }),
     }
     FunOutcome::Pending
@@ -343,8 +359,11 @@ pub fn resolve_due(data: &mut AppData, now_ms: i64) -> Option<bool> {
             },
             now_ms,
         );
-        if let Some(world) = world_name {
-            if let Some(last) = data.pregnancies.last_mut() {
+        // A debug WooHoo took, or a debug tool changed the wait.
+        let debug = p.debug || data.fun_log.iter().any(|f| f.time_ms == took_ms && f.debug);
+        if let Some(last) = data.pregnancies.last_mut() {
+            last.debug = debug;
+            if let Some(world) = world_name {
                 last.world_name = Some(world);
             }
         }

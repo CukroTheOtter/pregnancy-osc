@@ -170,8 +170,9 @@ pub struct Driver {
     /// Belly movement: when the next kick is due, when FetalMovement goes back to 0.
     next_kick_ms: Option<i64>,
     kick_reset_ms: Option<i64>,
-    /// Kicks sent since the engine last asked (for the kick log).
-    kicks_sent: Vec<KickStrength>,
+    /// Kicks sent since the engine last asked (for the kick log), and
+    /// whether each came from the debug button.
+    kicks_sent: Vec<(KickStrength, bool)>,
     /// Debug: a kick to send on the next tick.
     forced_kick: Option<KickStrength>,
     /// Labor: when the next contraction is due.
@@ -505,8 +506,8 @@ impl Driver {
         self.forced_kick = Some(s);
     }
 
-    /// Kicks sent since the last call (newest last).
-    pub fn take_kicks(&mut self) -> Vec<KickStrength> {
+    /// Kicks sent since the last call (newest last), true = the debug button.
+    pub fn take_kicks(&mut self) -> Vec<(KickStrength, bool)> {
         std::mem::take(&mut self.kicks_sent)
     }
 
@@ -762,7 +763,7 @@ impl Driver {
         let name = self.name_for("fetalMovement")?;
         let value = ParamValue::Int(self.mapping.kicks.value(s));
         self.kick_reset_ms = Some(out_now_ms + self.mapping.kicks.hold_ms.max(100));
-        self.kicks_sent.push(s);
+        self.kicks_sent.push((s, false));
         Some(Send { key: "fetalMovement".into(), name, value })
     }
 
@@ -792,6 +793,9 @@ impl Driver {
         if let Some(s) = self.forced_kick.take() {
             if let Some(k) = self.send_kick(now_ms, s) {
                 self.extra.push(k);
+                if let Some(last) = self.kicks_sent.last_mut() {
+                    last.1 = true;
+                }
             }
             return Some(());
         }

@@ -59,6 +59,7 @@ pub fn save_settings(app: AppHandle, s: S, settings: Settings) -> R<Option<Strin
         // Turning debug mode off removes Test Buddy and everything they touched.
         if old.debug && !settings.debug {
             pregsys_core::testbuddy::remove_all(&mut d, now_ms());
+            d.debug_people.clear();
         }
         // A wait to find out follows a new pregnancy length (or wait setting).
         actions::retime_waits(&mut d, &old);
@@ -550,7 +551,12 @@ pub fn debug_add_person(app: AppHandle, s: S, name: String, user_id: Option<Stri
         if inst.world_name.is_none() {
             inst.world_name = Some("Debug world".into());
         }
+        let key = pregsys_core::achievements::person_key(&name, uid.as_deref());
         inst.apply(&pregsys_core::logparse::LogEvent::PlayerJoined { name, user_id: uid }, at);
+        // WooHoos with them don't count toward achievements.
+        if !d.debug_people.contains(&key) {
+            d.debug_people.push(key);
+        }
     }
     changed(&app, &s, false);
     let _ = app.emit("instance-changed", ());
@@ -580,10 +586,17 @@ pub fn debug_labor(app: AppHandle, s: S, skip: Option<pregsys_core::labor::Skip>
         let mut d = s.data.lock().unwrap();
         let aid = d.current_avatar_id.clone();
         let id = d.current_pregnancy_id(aid.as_deref()).ok_or("Not pregnant on this avatar.")?;
-        match skip {
+        let ok = match skip {
             None => pregsys_core::labor::start(&mut d, &id, now_ms()),
             Some(how) => pregsys_core::labor::skip(&mut d, &id, how),
+        };
+        if ok {
+            // A birth the debug tools brought on doesn't count toward achievements.
+            if let Some(p) = d.pregnancy_mut(&id) {
+                p.debug = true;
+            }
         }
+        ok
     };
     if !ok {
         return Err(if skip.is_none() { "Already in labor." } else { "Not in labor yet." }.into());
@@ -627,11 +640,13 @@ pub fn debug_set_babies(app: AppHandle, s: S, count: u32) -> R<()> {
             p.baby_count = count;
             p.sync_babies();
             actions::ensure_genders(p);
+            p.debug = true;
         } else {
             let global = d.settings.sync_scope == pregsys_core::model::SyncScope::Global;
             let owner = d.owner(aid.as_deref());
             let w = d.waiting.iter_mut().find(|w| global || w.avatar_id == owner).ok_or("Not pregnant or waiting on this avatar.")?;
             w.baby_count = count;
+            w.debug = true;
         }
     }
     changed(&app, &s, true);
@@ -707,6 +722,8 @@ pub fn debug_set_cycle_day(app: AppHandle, s: S, day: f64) {
         let cycle = pregsys_core::fertility::cycle_ms(&d.settings);
         let day = day.clamp(1.0, 28.99);
         d.settings.cycle_anchor_ms = Some(now_ms() - ((day - 1.0) / 28.0 * cycle as f64) as i64);
+        // WooHoos on the jumped cycle don't count toward achievements.
+        d.debug_cycle_until = Some(now_ms() + cycle);
     }
     changed(&app, &s, true);
 }

@@ -31,7 +31,7 @@
   });
 
   const isTest = (id: string) => !!d.testAchievements?.includes(id);
-  // Ones unlocked in debug mode don't count.
+  // Ones you'd only have with what the debug tools made don't count.
   const unlocked = $derived(ACHIEVEMENTS.filter((a) => d.achievements?.[a.id] != null && !isTest(a.id)).length);
   let sharing = $state(false);
   const got = (id: string) => d.achievements?.[id] != null && !isTest(id);
@@ -96,7 +96,7 @@
           <span class="text">
             <strong>{a.title}</strong>
             <span class="tier tier-{a.tier}" title={TIERS[a.tier]}>{"⭐".repeat(a.tier)} {TIERS[a.tier]}</span>
-            {#if isTest(a.id)}<span class="tier" title="Unlocked in debug mode, so it doesn't count">🛠 Test</span>{/if}
+            {#if isTest(a.id)}<span class="tier" title="Unlocked with the debug tools, so it doesn't count">🛠 Test, doesn't count</span>{/if}
             <span class="muted small">{at == null ? (a.secret ?? a.hint) : `${a.hint} · ${dateFmt.format(at)}`}</span>
           </span>
         </div>

@@ -233,10 +233,12 @@ export interface Pregnancy {
   conceivedMs: number | null;
   genders: string[];
   /** partnerHere and world: for journal moments (pregsys-core/src/moments.rs). */
-  kicks: { timeMs: number; strength: KickStrength; partnerHere?: boolean; world?: string | null }[];
+  kicks: { timeMs: number; strength: KickStrength; partnerHere?: boolean; world?: string | null; debug?: boolean }[];
   milestones: string[];
   oscHints: { speciesIndex: number | null };
   labor?: Labor | null;
+  /** Debug: made or changed by the debug tools (left out of achievements). */
+  debug?: boolean;
 }
 
 export interface AvatarProfile {
@@ -303,6 +305,8 @@ export interface PendingConception {
   funTimes?: number[];
   /** Secret until the reveal: a later WooHoo took, when the first didn't. */
   later?: { timeMs: number; partner: Partner; worldName: string | null } | null;
+  /** Debug: a debug tool changed this wait. */
+  debug?: boolean;
 }
 
 export interface RevealResult {
@@ -330,6 +334,8 @@ export interface FunEvent {
   notPartner?: boolean;
   /** "We used protection" while waiting: the wait was called off, so not a try either. */
   protected?: boolean;
+  /** Debug: a debug WooHoo, or helped by a debug tool (left out of achievements). */
+  debug?: boolean;
 }
 
 /** Someone you added to your partners (💞 on the Partners tab). */
@@ -373,7 +379,7 @@ export interface AppData {
   stops?: Stop[];
   syncValues: Record<string, number>;
   achievements: Record<string, number>;
-  /** Debug: unlocked while debug mode was on. Marked on Me, left out of the count and Share. */
+  /** Debug: only earned with what the debug tools made. Marked on Me, left out of the count and Share. */
   testAchievements?: string[];
   /** Debug: when Test Buddy was added (null = not there). */
   testBuddySince?: number | null;
