@@ -19,6 +19,7 @@
   import { pregnancyFor } from "../lib/scope";
   import type { InstanceKind, LaborStart, MappingInfo, Multiples, ResetKind, SafetySettings, Settings, VrNotices, VrTarget } from "../lib/types";
   import { INSTANCE_KINDS, OPEN_KINDS } from "../lib/safety";
+  import { autoPrivacyReason, syncAutoPrivacy } from "../lib/autoPrivacy.svelte";
 
   // Chatbox events, in order, with their default text (keys and texts match pregsys-core/src/chatbox.rs).
   const CHAT_EVENTS = [
@@ -414,6 +415,9 @@
     return out.trim();
   });
 
+
+  // Privacy mode on by itself (a recording app is running).
+  const autoNow = $derived(autoPrivacyReason());
 </script>
 
 {#snippet param(k: string, feature: string | null)}
@@ -877,7 +881,8 @@
       {/if}
     </div>
     <Toggle bind:checked={s.privacyMode} label="🙈 Privacy mode" hint="For streaming and screenshots: everyone gets a made-up name (like “Sleepy Otter”, always the same for the same person) and their pictures are blurred. Nothing changes in VRChat. While it's on, a 🙈 Private pill at the top turns it off." onchange={() => commit(true)} />
-    {#if s.privacyMode}
+    <Toggle bind:checked={s.privacyWhenRecording} label="Turn on while streaming or recording" hint={autoNow ? `On right now: ${autoNow} is running. It turns off again when it closes.` : "While OBS, Streamlabs, XSplit, Twitch Studio, Bandicam, PRISM, Meld or LIV runs, privacy mode turns on by itself. Hover the 🙈 pill to see why."} onchange={() => { commit(true); syncAutoPrivacy(app.status?.recordingApp, s.privacyWhenRecording); }} />
+    {#if s.privacyMode || autoNow}
       <Toggle bind:checked={s.privacyShowMe} label="Still show me" hint={s.privacyShowMe ? "Your own name and picture stay; only other people are hidden" : "You show as “You”, with your picture blurred too"} onchange={() => commit(true)} />
     {/if}
   </Section>

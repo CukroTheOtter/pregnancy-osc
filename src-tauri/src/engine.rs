@@ -390,6 +390,7 @@ impl Engine {
             let mut st = self.shared.status.lock().unwrap();
             st.xsoverlay_running = r.xsoverlay;
             st.ovr_toolkit_running = r.ovr_toolkit;
+            st.recording_app = r.recording.map(str::to_string);
         }
         if r.steamvr {
             self.steamvr_seen = true;

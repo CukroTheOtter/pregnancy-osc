@@ -4,10 +4,12 @@
 // becomes "You". Avatar and world names stay.
 
 import type { AppData } from "./types";
+import { autoPrivacyReason } from "./autoPrivacy.svelte";
 
 type Data = Pick<AppData, "settings"> | null | undefined;
 
-export const isPrivate = (d: Data): boolean => !!d?.settings.privacyMode;
+/** On in Settings, or on by itself while a recording app runs (`autoPrivacy`). */
+export const isPrivate = (d: Data): boolean => !!d?.settings.privacyMode || autoPrivacyReason() != null;
 
 /** Privacy mode hides you too (unless "Still show me" is on). */
 export const hidesMe = (d: Data): boolean => isPrivate(d) && !d?.settings.privacyShowMe;

@@ -55,3 +55,6 @@ Everything uses the `Pregnancy/` prefix (old names still work as backups). Full 
 3. Partners tab + stats.
 4. Settings: parameters section, fertility, multiples.
 5. SPS socket detection (needs testing on a real avatar).
+
+## Ideas (not built)
+- **Anonymous partners**: a setting (apart from privacy mode, which is only on screen) so other people's names, user IDs and pictures are never saved. Each person is kept as a code made from their user ID with a secret key on this PC, shown as a made-up name ("Sleepy Otter", always the same). Partners, "Only my partners", the partner guess, stats and achievements keep working. A "Make everyone anonymous" button converts what's saved (can't be undone; offer a backup first). Open questions: keep the key out of backups (safer, but a restored backup sees everyone as new)? Picking "who was it?" after leaving: keep real names in memory only while the app runs, ask right after a WooHoo with several people there, hints after a restart ("left together"), and recognise them when they're in the instance again.

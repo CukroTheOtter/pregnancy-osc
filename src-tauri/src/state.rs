@@ -41,6 +41,9 @@ pub struct Status {
     /// XSOverlay is running, and OVR Toolkit's notification API answers.
     pub xsoverlay_running: bool,
     pub ovr_toolkit_running: bool,
+    /// A streaming or recording app that's running (its name): privacy mode
+    /// turns on by itself while it runs (Settings > Look).
+    pub recording_app: Option<String>,
     pub osc_active: bool,
     pub oscquery: bool,
     pub vrchat_found: bool,

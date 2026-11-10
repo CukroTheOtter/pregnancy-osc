@@ -58,6 +58,7 @@ export function defaultSettings(): Settings {
     showPictures: false,
     privacyMode: false,
     privacyShowMe: false,
+    privacyWhenRecording: true,
     fertility: true,
     fertilityPeak: 0.6,
     graceMinutes: null,
@@ -79,6 +80,9 @@ export function defaultSettings(): Settings {
     pinnedPartners: [],
     partnersOnly: false,
     onboarded: false,
+    firstUsedMs: null,
+    feedbackAskedMs: null,
+    feedbackNever: false,
   };
 }
 

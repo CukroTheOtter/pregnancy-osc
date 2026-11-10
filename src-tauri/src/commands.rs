@@ -495,6 +495,16 @@ pub fn copy_details(app: AppHandle, s: S) -> String {
     })
 }
 
+/// GitHub's forms: a suggestion (the one-time feedback popup) or a bug report (Settings > Troubleshooting).
+const SUGGESTION_PAGE: &str = "https://github.com/CukroTheOtter/pregnancy-osc/issues/new?template=feature_request.yml";
+const BUG_PAGE: &str = "https://github.com/CukroTheOtter/pregnancy-osc/issues/new?template=bug_report.yml";
+
+#[tauri::command]
+pub fn open_feedback_page(app: AppHandle, bug: bool) -> R<()> {
+    use tauri_plugin_opener::OpenerExt;
+    app.opener().open_url(if bug { BUG_PAGE } else { SUGGESTION_PAGE }, None::<&str>).map_err(|e| e.to_string())
+}
+
 /// Opens the troubleshooting guide on GitHub.
 #[tauri::command]
 pub fn open_troubleshooting(app: AppHandle) -> R<()> {

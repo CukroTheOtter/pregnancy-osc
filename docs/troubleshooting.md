@@ -90,7 +90,7 @@ By default the status is off while your belly is hidden, including when it's hid
 
 ## Asking for help
 
-Tap **Copy details** in **Settings > 🩹 Troubleshooting** and paste it with your question. You'll see the text before you copy it. It has the name and ID of the avatar you're wearing, but nothing about other people, your worlds or your WooHoos.
+Tap **📋 Details to share** in **Settings > 🩹 Troubleshooting**, then **Copy**, and paste it with your question. **🐛 Report a bug** next to it opens the bug report form on GitHub. You'll see the text before you copy it. It has the name and ID of the avatar you're wearing, but nothing about other people, your worlds or your WooHoos.
 
 Screenshots of these help too:
 

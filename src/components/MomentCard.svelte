@@ -1,6 +1,7 @@
 <script lang="ts">
   import { personPicture } from "./PersonPic.svelte";
   import { app } from "../lib/app.svelte";
+  import { isPrivate } from "../lib/privacy";
   import type { Card } from "../lib/journal";
   import { rng } from "../lib/scanstats";
   import { testBuddyPicture } from "../lib/testbuddy";
@@ -32,7 +33,7 @@
       return;
     }
     // Privacy mode: no face at all (a saved polaroid can't be un-blurred if it was never there).
-    if (!id || !app.data?.settings.showPictures || app.data.settings.privacyMode) return;
+    if (!id || !app.data?.settings.showPictures || isPrivate(app.data)) return;
     let alive = true;
     personPicture(id).then((url) => alive && (face = url));
     return () => (alive = false);
@@ -71,7 +72,7 @@
       {#if face}
         <image href={face} x="126" y="66" width="148" height="148" preserveAspectRatio="xMidYMid slice" clip-path="url(#mc-face-{card.seed})" />
       {:else}
-        <text x="200" y="166" text-anchor="middle" font-family="'Segoe UI', system-ui, sans-serif" font-size="78" font-weight="900" fill="#fff">{app.data?.settings.privacyMode ? "?" : card.person.name.charAt(0).toUpperCase()}</text>
+        <text x="200" y="166" text-anchor="middle" font-family="'Segoe UI', system-ui, sans-serif" font-size="78" font-weight="900" fill="#fff">{isPrivate(app.data) ? "?" : card.person.name.charAt(0).toUpperCase()}</text>
       {/if}
       <text x="286" y="226" text-anchor="middle" font-family={EMOJI} font-size="34">{card.emoji}</text>
     {:else}

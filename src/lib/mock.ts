@@ -124,6 +124,7 @@ function status(): Status {
     steamvrRunning: false,
     xsoverlayRunning: false,
     ovrToolkitRunning: false,
+    recordingApp: null,
     oscActive: true,
     oscquery: true,
     vrchatFound: true,
@@ -694,6 +695,9 @@ export const mock = {
   },
   async open_troubleshooting() {
     window.open("https://github.com/CukroTheOtter/pregnancy-osc/blob/main/docs/troubleshooting.md", "_blank");
+  },
+  async open_feedback_page({ bug }: { bug: boolean }) {
+    window.open(`https://github.com/CukroTheOtter/pregnancy-osc/issues/new?template=${bug ? "bug_report" : "feature_request"}.yml`, "_blank");
   },
   async open_system_page() {
     window.open("https://jinxxy.com/CukroTheOtt/VRChatPregnancySystem", "_blank");

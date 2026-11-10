@@ -121,6 +121,7 @@
   <div class="row actions">
     <button class="small soft" onclick={() => api.openTroubleshooting().catch(errorToast)}>📖 Full guide</button>
     <button class="small soft" onclick={showDetails}>📋 Details to share</button>
+    <button class="small soft" onclick={() => api.openFeedbackPage(true).catch(errorToast)}>🐛 Report a bug</button>
   </div>
   {#if details != null}
     <pre class="details small">{details}</pre>

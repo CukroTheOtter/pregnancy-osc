@@ -114,6 +114,7 @@ The manifest grants: network (OSC/OSCQuery), read-only access to the VRChat fold
 
 - VRChat logs are read **on this computer only** and never uploaded. Only display names, user IDs and avatar names are kept.
 - No VRChat login, no accounts, no analytics. Normally the only network traffic is OSC/OSCQuery to VRChat on your own machine, plus an update check against this project's GitHub releases at start-up.
+- **Privacy mode** (Settings > Look) shows everyone with made-up names and blurred pictures, for streaming and screenshots. It only changes what's on screen, and turns on by itself while OBS, Streamlabs, XSplit, Twitch Studio, Bandicam, PRISM, Meld or LIV runs (hover the 🙈 pill to see why).
 - **Optional:** "Show VRChat profile pictures" (off by default) loads each partner's public profile page on vrchat.com once, to get the same picture Discord shows in link previews. Pictures are shrunk and cached on your PC for a week.
 - Data lives in your user data folder , with a daily backup kept for a week.
 

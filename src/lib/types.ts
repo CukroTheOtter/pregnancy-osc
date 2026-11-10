@@ -151,6 +151,8 @@ export interface Settings {
   privacyMode: boolean;
   /** Privacy mode still shows your own name and picture. */
   privacyShowMe: boolean;
+  /** Privacy mode turns on by itself while a streaming or recording app runs. */
+  privacyWhenRecording: boolean;
   fertility: boolean;
   fertilityPeak: number;
   /** Minutes from a WooHoo until you find out (null = match the pregnancy length). */
@@ -173,6 +175,12 @@ export interface Settings {
   /** Only WooHoos with one of your partners (`AppData.myPartners`) count. */
   partnersOnly?: boolean;
   onboarded: boolean;
+  /** When you started using the app (the feedback popup waits a week). */
+  firstUsedMs: number | null;
+  /** When the feedback popup was last shown (it comes back every 3 months). */
+  feedbackAskedMs: number | null;
+  /** "Never ask again" in the feedback popup. */
+  feedbackNever: boolean;
 }
 
 export interface Person {
@@ -387,6 +395,8 @@ export interface Status {
   /** XSOverlay is running, and OVR Toolkit's notification API answers. */
   xsoverlayRunning?: boolean;
   ovrToolkitRunning?: boolean;
+  /** A streaming or recording app that's running (its name). */
+  recordingApp?: string | null;
   oscActive: boolean;
   oscquery: boolean;
   vrchatFound: boolean;

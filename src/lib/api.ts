@@ -70,6 +70,8 @@ export const api = {
   reloadMapping: () => call<void>("reload_mapping"),
   openPath: (path: string) => call<void>("open_path", { path }),
   openSystemPage: () => call<void>("open_system_page"),
+  /** GitHub's suggestion form, or its bug report form. */
+  openFeedbackPage: (bug = false) => call<void>("open_feedback_page", { bug }),
   openTroubleshooting: () => call<void>("open_troubleshooting"),
   /** A short report to paste when asking for help (see pregsys-core/src/report.rs). */
   copyDetails: () => call<string>("copy_details"),

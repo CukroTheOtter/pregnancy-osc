@@ -31,7 +31,7 @@ body:
     id: details
     attributes:
       label: Copy details
-      description: In the app, go to Settings > 🩹 Troubleshooting > 📋 Copy details, then paste it here. It has your app version and the name and ID of the avatar you're wearing, but nothing about other people, your worlds or your WooHoos. Remove anything you'd rather not share.
+      description: In the app, go to Settings > 🩹 Troubleshooting > 📋 Details to share > Copy, then paste it here. It has your app version and the name and ID of the avatar you're wearing, but nothing about other people, your worlds or your WooHoos. Remove anything you'd rather not share.
       render: text
     validations:
       required: false

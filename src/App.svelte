@@ -5,6 +5,8 @@
   import { api, inTauri } from "./lib/api";
   import type { Settings as SettingsData } from "./lib/types";
   import { avatarName } from "./lib/scope";
+  import { isPrivate } from "./lib/privacy";
+  import { autoPrivacy, autoPrivacyReason } from "./lib/autoPrivacy.svelte";
   import Toasts from "./components/Toasts.svelte";
   import ConfirmDialog from "./components/ConfirmDialog.svelte";
   import AvatarPic from "./components/AvatarPic.svelte";
@@ -71,9 +73,22 @@
   }
 
   // Privacy mode: hides names and blurs pictures (streaming, screenshots).
-  const privacy = $derived(!!app.data?.settings.privacyMode);
+  const privacy = $derived(isPrivate(app.data));
+  const autoReason = $derived(autoPrivacyReason());
+  const privacyTitle = $derived(
+    app.data?.settings.privacyMode
+      ? "Privacy mode is on: made-up names, blurred pictures. Click to turn it off."
+      : `Privacy mode turned on by itself because ${autoReason} is running: made-up names, blurred pictures. Click to turn it off until ${autoReason} closes.`,
+  );
   async function togglePrivacy() {
     if (!app.data) return;
+    // On by itself: off until that app closes (the setting isn't touched).
+    if (!app.data.settings.privacyMode) {
+      autoPrivacy.off = true;
+      toast("Privacy mode off", `It comes back the next time a recording app starts. Change this in Settings → Look.`, "info", 4000);
+      return;
+    }
+    autoPrivacy.off = true;
     const on = !app.data.settings.privacyMode;
     const s = { ...($state.snapshot(app.data.settings) as SettingsData), privacyMode: on };
     try {
@@ -121,7 +136,7 @@
     <span class="grow"></span>
     <!-- Only while privacy mode is on (turned on in Settings > Look): a reminder, click to turn it off. -->
     {#if privacy}
-      <button class="privacy" onclick={togglePrivacy} title="Privacy mode is on: made-up names, blurred pictures. Click to turn it off.">
+      <button class="privacy" onclick={togglePrivacy} title={privacyTitle}>
         <span class="pill">🙈 Private</span>
       </button>
     {/if}

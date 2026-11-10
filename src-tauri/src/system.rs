@@ -17,6 +17,25 @@ pub struct Running {
     /// XSOverlay and OVR Toolkit, for notifications in VR (see `vr_notify`).
     pub xsoverlay: bool,
     pub ovr_toolkit: bool,
+    /// A streaming or recording app (its name), for automatic privacy mode.
+    pub recording: Option<&'static str>,
+}
+
+/// Streaming and recording apps (lowercased process name, exact or prefix)
+/// that turn privacy mode on while they run.
+fn recording_app(n: &str) -> Option<&'static str> {
+    let n = n.strip_suffix(".exe").unwrap_or(n);
+    Some(match n {
+        "obs64" | "obs32" | "obs" => "OBS Studio",
+        _ if n.starts_with("streamlabs") => "Streamlabs",
+        _ if n.starts_with("xsplit.core") => "XSplit",
+        "twitchstudio" | "twitch studio" => "Twitch Studio",
+        _ if n.starts_with("bdcam") => "Bandicam",
+        "prismlivestudio" => "PRISM Live Studio",
+        "meld studio" | "meldstudio" => "Meld Studio",
+        "liv.app" => "LIV",
+        _ => return None,
+    })
 }
 
 impl Procs {
@@ -38,6 +57,9 @@ impl Procs {
             }
             if n.starts_with("xsoverlay") {
                 r.xsoverlay = true;
+            }
+            if r.recording.is_none() {
+                r.recording = recording_app(&n);
             }
         }
         // OVR Toolkit counts when its notification API answers (its process
@@ -151,4 +173,17 @@ pub fn set_steamvr_autostart(data_dir: &Path, enable: bool, steamvr_running: boo
         note.push_str(" SteamVR is running now, so restart it for this to take effect.");
     }
     Ok(note)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::recording_app;
+
+    #[test]
+    fn recording_apps_are_found() {
+        assert_eq!(recording_app("obs64.exe"), Some("OBS Studio"));
+        assert_eq!(recording_app("streamlabs obs.exe"), Some("Streamlabs"));
+        assert_eq!(recording_app("obsidian.exe"), None);
+        assert_eq!(recording_app("vrchat.exe"), None);
+    }
 }

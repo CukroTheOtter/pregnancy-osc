@@ -242,6 +242,9 @@ pub struct Settings {
     pub privacy_mode: bool,
     /// Privacy mode still shows your own name and picture (only others are hidden).
     pub privacy_show_me: bool,
+    /// Privacy mode turns on by itself while a streaming or recording app
+    /// runs (not saved: it goes off again when the app closes).
+    pub privacy_when_recording: bool,
     /// Fertility cycle + grace period: in-game fun doesn't start a pregnancy
     /// right away; the outcome is rolled and revealed later.
     pub fertility: bool,
@@ -279,6 +282,12 @@ pub struct Settings {
     /// Hidden debug tools (tap the title 5 times).
     pub debug: bool,
     pub onboarded: bool,
+    /// When you started using the app (the feedback popup waits a week).
+    pub first_used_ms: Option<i64>,
+    /// When the feedback popup was last shown (it comes back every 3 months).
+    pub feedback_asked_ms: Option<i64>,
+    /// "Never ask again" in the feedback popup.
+    pub feedback_never: bool,
 }
 
 impl Default for Settings {
@@ -318,6 +327,7 @@ impl Default for Settings {
             show_pictures: false,
             privacy_mode: false,
             privacy_show_me: false,
+            privacy_when_recording: true,
             fertility: true,
             fertility_peak: 0.6,
             grace_minutes: None,
@@ -337,6 +347,9 @@ impl Default for Settings {
             partners_only: false,
             debug: false,
             onboarded: false,
+            first_used_ms: None,
+            feedback_asked_ms: None,
+            feedback_never: false,
         }
     }
 }

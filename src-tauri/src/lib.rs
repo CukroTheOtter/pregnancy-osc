@@ -244,6 +244,7 @@ pub fn run() {
             commands::set_sync_value,
             commands::show_belly_here,
             commands::open_system_page,
+            commands::open_feedback_page,
             commands::open_troubleshooting,
             commands::copy_details,
             commands::default_log_dirs,

@@ -1,9 +1,10 @@
 // Global UI state (Svelte 5 runes).
 
 import { api, listen } from "./api";
-import type { AppData, Pregnancy, PendingConception, Problem, Status, UpdateInfo } from "./types";
+import type { AppData, Pregnancy, PendingConception, Problem, Settings, Status, UpdateInfo } from "./types";
 import { ownerAvatar, pendingFor, pregnancyAvatar, pregnancyFor } from "./scope";
 import { ACHIEVEMENTS } from "./achievements";
+import { syncAutoPrivacy } from "./autoPrivacy.svelte";
 
 export type View = "home" | "me" | "partners" | "avatars" | "settings";
 
@@ -21,7 +22,9 @@ export interface Ask {
   /** null = no Cancel button (just letting you know). */
   cancel?: string | null;
   danger?: boolean;
-  resolve: (yes: boolean) => void;
+  /** A checkbox under the text (its label); see `confirmAskCheck`. */
+  check?: string;
+  resolve: (yes: boolean, checked?: boolean) => void;
 }
 
 export const app = $state({
@@ -73,6 +76,19 @@ export function confirmAsk(opts: Omit<Ask, "resolve">): Promise<boolean> {
       resolve: (yes) => {
         app.ask = null;
         resolve(yes);
+      },
+    };
+  });
+}
+
+/** confirmAsk with a checkbox (`check` is its label): the answer and whether it was ticked. */
+export function confirmAskCheck(opts: Omit<Ask, "resolve"> & { check: string }): Promise<{ yes: boolean; checked: boolean }> {
+  return new Promise((resolve) => {
+    app.ask = {
+      ...opts,
+      resolve: (yes, checked) => {
+        app.ask = null;
+        resolve({ yes, checked: !!checked });
       },
     };
   });
@@ -164,13 +180,17 @@ export async function init() {
   await refresh();
   try {
     app.status = await api.getStatus();
+    syncAutoPrivacy(app.status.recordingApp, !!app.data?.settings.privacyWhenRecording);
     const warning = await api.takeLoadWarning();
     // A popup that stays until you've seen it (settings reset, a save that couldn't be read).
     if (warning) void confirmAsk({ title: "Heads up", text: warning, ok: "OK", cancel: null });
   } catch (e) {
     errorToast(e);
   }
-  await listen<Status>("status", (s) => (app.status = s));
+  await listen<Status>("status", (s) => {
+    app.status = s;
+    syncAutoPrivacy(s.recordingApp, !!app.data?.settings.privacyWhenRecording);
+  });
   await listen("data-changed", () => refresh());
   await listen("instance-changed", () => refresh());
   await listen("conception", () => {
@@ -193,9 +213,71 @@ export async function init() {
   });
   setInterval(() => (app.now = Date.now()), 1000);
   app.ready = true;
+  startFeedbackTimer();
   app.version = await api.appVersion().catch(() => "");
   // Quietly: being offline at start-up isn't worth a toast.
   checkForUpdate().then((u) => u && toast("An update is ready ✨", `Version ${u.version} is out. Get it in Settings → Updates.`, "info", 10000)).catch(() => {});
+}
+
+// Feedback popup: first a week after you started using the app, then every 3 months
+// (until "Never ask again"), once the app has been open a while this time.
+const FEEDBACK_AFTER_MS = 7 * 24 * 3600_000;
+const FEEDBACK_AGAIN_MS = 90 * 24 * 3600_000;
+const FEEDBACK_SESSION_MS = 10 * 60_000;
+
+async function saveSetting(change: Partial<Settings>) {
+  if (!app.data) return;
+  const s = { ...($state.snapshot(app.data.settings) as Settings), ...change };
+  await api.saveSettings(s);
+  Object.assign(app.data.settings, change);
+}
+
+/** When you started using the app: the oldest thing saved (saves from before
+ * `firstUsedMs` existed), or now for a new install. */
+function firstUse(d: AppData, now: number): number {
+  const times = [
+    ...d.funLog.map((f) => f.timeMs),
+    ...d.pregnancies.map((p) => p.createdMs),
+    ...d.journal.map((j) => j.timeMs),
+    ...Object.values(d.achievements),
+    ...(d.myPartners ?? []).map((p) => p.addedMs),
+  ].filter((t) => t > 0);
+  return Math.min(now, ...times);
+}
+
+function startFeedbackTimer() {
+  const opened = Date.now();
+  const st = app.data?.settings;
+  if (!st || st.feedbackNever) return;
+  if (st.firstUsedMs == null && app.data) saveSetting({ firstUsedMs: firstUse(app.data, opened) }).catch(() => {});
+  const timer = setInterval(() => {
+    const s = app.data?.settings;
+    if (!s || s.feedbackNever) return clearInterval(timer);
+    const now = Date.now();
+    const due = s.feedbackAskedMs != null ? now - s.feedbackAskedMs >= FEEDBACK_AGAIN_MS : now - (s.firstUsedMs ?? now) >= FEEDBACK_AFTER_MS;
+    // Not over another popup, and not while you're testing in debug mode.
+    if (!due || app.ask || s.debug || now - opened < FEEDBACK_SESSION_MS) return;
+    clearInterval(timer);
+    void askFeedback();
+  }, 60_000);
+}
+
+/** The feedback popup (every 3 months, until "Never ask again"). */
+export async function askFeedback() {
+  try {
+    await saveSetting({ feedbackAskedMs: Date.now() });
+  } catch {
+    return; // Not saved: it would come back next time, so try again another day.
+  }
+  const { yes, checked } = await confirmAskCheck({
+    title: "Enjoying Pregnancy OSC? 💕",
+    text: "If there's anything you'd like changed or added, I'd love to hear it.",
+    ok: "💡 Make a suggestion",
+    cancel: "No thanks",
+    check: "Never ask again",
+  });
+  if (checked) saveSetting({ feedbackNever: true }).catch(errorToast);
+  if (yes) api.openFeedbackPage().catch(errorToast);
 }
 
 /** Asks GitHub for a newer version. Throws if it can't check. */
