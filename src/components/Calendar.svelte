@@ -72,6 +72,16 @@
     }
   }
   const on = (k: Kind) => !hidden.includes(k);
+  function showAll() {
+    hidden = [];
+    try {
+      localStorage.removeItem(HIDDEN_KEY);
+    } catch {
+      // Nothing to forget.
+    }
+  }
+  /** The "Show" panel is open. */
+  let filtering = $state(false);
 
   // Local day numbers (so a bar covers whole days, whatever the time zone).
   const dayOf = (t: number) => {
@@ -316,16 +326,30 @@
 
 <Section id="me-calendar" title="📅 Calendar" open>
   <div class="row nav">
-    <button class="small ghost" onclick={() => move(-1)} aria-label="Previous month">‹</button>
-    <button class="small ghost month" onclick={() => { shown = { y: today.getFullYear(), m: today.getMonth() }; picked = null; }} disabled={isThisMonth} title="Back to this month">{monthFmt.format(new Date(shown.y, shown.m, 1))}</button>
-    <button class="small ghost" onclick={() => move(1)} aria-label="Next month">›</button>
+    <div class="row months">
+      <button class="small ghost" onclick={() => move(-1)} aria-label="Previous month">‹</button>
+      <button class="small ghost month" onclick={() => { shown = { y: today.getFullYear(), m: today.getMonth() }; picked = null; }} disabled={isThisMonth} title="Back to this month">{monthFmt.format(new Date(shown.y, shown.m, 1))}</button>
+      <button class="small ghost" onclick={() => move(1)} aria-label="Next month">›</button>
+    </div>
+    <button class="small soft show" class:open={filtering} aria-expanded={filtering} onclick={() => (filtering = !filtering)}>
+      Show{#if hidden.length}<span class="count">{KINDS.length - hidden.length}/{KINDS.length}</span>{/if}
+      <span class="caret" aria-hidden="true">▾</span>
+    </button>
   </div>
 
-  <div class="kinds" role="group" aria-label="What the calendar shows">
-    {#each KINDS as k (k.kind)}
-      <button class="kind {k.kind}" class:off={!on(k.kind)} aria-pressed={on(k.kind)} onclick={() => toggleKind(k.kind)} title={on(k.kind) ? "Shown: tap to hide" : "Hidden: tap to show"}>{k.name}</button>
-    {/each}
-  </div>
+  {#if filtering}
+    <div class="kinds" role="group" aria-label="What the calendar shows">
+      {#each KINDS as k (k.kind)}
+        <button class="kind {k.kind}" class:off={!on(k.kind)} role="checkbox" aria-checked={on(k.kind)} onclick={() => toggleKind(k.kind)}>
+          <span class="check" aria-hidden="true">{on(k.kind) ? "✓" : ""}</span>
+          <span class="name">{k.name}</span>
+        </button>
+      {/each}
+      {#if hidden.length}
+        <button class="link small all" onclick={showAll}>Show everything</button>
+      {/if}
+    </div>
+  {/if}
 
   <div class="cal">
     <div class="weekdays">
@@ -394,8 +418,31 @@
 
 <style>
   .nav {
-    justify-content: center;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+  }
+  .months {
     gap: 2px;
+  }
+  .show {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .count {
+    font-size: 0.7rem;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #fff;
+  }
+  .caret {
+    font-size: 0.7rem;
+    transition: transform 0.15s;
+  }
+  .show.open .caret {
+    transform: rotate(180deg);
   }
   .month {
     min-width: 9.5em;
@@ -405,29 +452,58 @@
     cursor: default;
   }
   .kinds {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
     gap: 4px;
+    padding: 8px;
+    border-radius: 12px;
+    background: var(--bg);
   }
   .kind {
     all: unset;
+    box-sizing: border-box;
     cursor: pointer;
-    font-size: 0.72rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 10px;
+    font-size: 0.82rem;
     font-weight: 700;
-    padding: 2px 8px;
-    border-radius: 999px;
     color: var(--text);
-    background: color-mix(in srgb, var(--c) 30%, var(--bg-2));
-    border: 1.5px solid var(--c);
+    transition: background 0.12s, opacity 0.12s;
   }
-  .kind.off {
-    background: transparent;
-    border-style: dashed;
-    color: var(--muted);
-    text-decoration: line-through;
+  .kind:hover,
+  .kind:focus-visible {
+    background: color-mix(in srgb, var(--c) 14%, transparent);
   }
   .kind:focus-visible {
     outline: 2px solid var(--accent);
+  }
+  .check {
+    flex: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 6px;
+    display: grid;
+    place-items: center;
+    font-size: 0.72rem;
+    font-weight: 900;
+    color: color-mix(in srgb, var(--c), #000 60%);
+    background: var(--c);
+    border: 2px solid var(--c);
+    box-sizing: border-box;
+  }
+  .kind.off .check {
+    background: transparent;
+  }
+  .kind.off .name {
+    opacity: 0.55;
+  }
+  .all {
+    grid-column: 1 / -1;
+    justify-self: start;
+    margin: 2px 8px 0;
   }
   .cal {
     border-radius: 12px;
