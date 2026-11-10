@@ -2,27 +2,76 @@
   // Me tab: a month calendar of your story, laid out like a normal calendar
   // app: labelled bars that run across the days they cover (pregnant,
   // fertile, waiting) and labelled chips for one-day things. Tap a day for
-  // the full story of that day. Reads only what's saved.
-  import { app } from "../lib/app.svelte";
+  // the full story of that day. Kinds can be hidden (remembered on this
+  // computer), and the calendar can be exported for other calendar apps
+  // (names left out). Reads only what's saved.
+  import Section from "./Section.svelte";
+  import Modal from "./Modal.svelte";
+  import JournalList from "./JournalList.svelte";
+  import { app, errorToast, toast } from "../lib/app.svelte";
+  import { saveTextFile } from "../lib/api";
   import { shownName } from "../lib/privacy";
   import { avatarName, isStopped, pregnancyAvatar } from "../lib/scope";
   import { ACHIEVEMENTS } from "../lib/achievements";
+  import { journalFor } from "../lib/journal";
+  import { toIcs, type IcsEvent } from "../lib/ics";
   import { BABY_REVEAL_WEEK, GENDER_REVEAL_WEEK, chance, cycleDay, cycleMs, level } from "../lib/fertility";
   import { TERM_WEEKS, dueMs, timeAtProgress } from "../lib/timeline";
+  import type { Pregnancy } from "../lib/types";
 
-  type Kind = "pregnant" | "fertile" | "waiting" | "woohoo" | "milestone" | "due" | "born" | "achievement";
-  /** A bar or chip: from day `a` to day `b` (both included, as day numbers since 1970 in local time). */
-  type Ev = { kind: Kind; a: number; b: number; label: string; seg?: (from: number, to: number) => string };
-  /** One line in a day's details. */
-  type Line = { kind: Kind; text: string };
+  type Kind = "pregnant" | "fertile" | "waiting" | "woohoo" | "journal" | "milestone" | "due" | "born" | "achievement";
+  /**
+   * A bar or chip from day `a` to day `b` (both included, as day numbers since
+   * 1970 in local time). `label` is for the screen, `title` for the export
+   * (never a name).
+   */
+  type Ev = { kind: Kind; a: number; b: number; label: string; title: string; seg?: (from: number, to: number) => string; where?: string };
+  /** One line in a day's details; `open` links to a journal entry. */
+  type Line = { kind: Kind; text: string; open?: { p: Pregnancy; key: string } };
 
+  const KINDS: { kind: Kind; name: string }[] = [
+    { kind: "pregnant", name: "🤰 Pregnant" },
+    { kind: "fertile", name: "🌸 Fertile" },
+    { kind: "waiting", name: "⏳ Waiting" },
+    { kind: "woohoo", name: "💕 WooHoos" },
+    { kind: "journal", name: "📔 Journal" },
+    { kind: "milestone", name: "✨ Weeks 12 & 20" },
+    { kind: "due", name: "📅 Due date" },
+    { kind: "born", name: "👶 Born" },
+    { kind: "achievement", name: "🏆 Achievements" },
+  ];
   const MAX_LANES = 3;
   const DAY = 86_400_000;
+  /** Fertile days are a guess about the future: shown this far ahead in the export. */
+  const EXPORT_AHEAD_DAYS = 90;
 
   const d = $derived(app.data!);
   const today = new Date(app.now);
   let shown = $state({ y: today.getFullYear(), m: today.getMonth() });
   let picked = $state<number | null>(null);
+  /** The journal open from the calendar (scrolled to that entry). */
+  let reading = $state<{ p: Pregnancy; key: string } | null>(null);
+
+  // Hidden kinds, remembered on this computer.
+  const HIDDEN_KEY = "pregsys-calendar-hidden";
+  let hidden = $state<Kind[]>(
+    (() => {
+      try {
+        return JSON.parse(localStorage.getItem(HIDDEN_KEY) ?? "[]");
+      } catch {
+        return [];
+      }
+    })(),
+  );
+  function toggleKind(k: Kind) {
+    hidden = hidden.includes(k) ? hidden.filter((x) => x !== k) : [...hidden, k];
+    try {
+      localStorage.setItem(HIDDEN_KEY, JSON.stringify(hidden));
+    } catch {
+      // Not remembered this time.
+    }
+  }
+  const on = (k: Kind) => !hidden.includes(k);
 
   // Local day numbers (so a bar covers whole days, whatever the time zone).
   const dayOf = (t: number) => {
@@ -51,12 +100,16 @@
   const timeFmt = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
 
   const pregnancies = $derived(d.pregnancies.filter((p) => !isStopped(p)));
-  // Several pregnancies (per-avatar mode): each bar says which avatar.
-  const whose = (p: (typeof pregnancies)[number]) => (pregnancies.length > 1 ? ` (${avatarName(d, pregnancyAvatar(d, p))})` : "");
+  // Several pregnancies (per-avatar mode): the day's details say which avatar.
+  const whose = (p: Pregnancy) => (pregnancies.length > 1 ? ` (${avatarName(d, pregnancyAvatar(d, p))})` : "");
   /** Who the other parent is (as shown: privacy mode applies), or null. */
-  const partnerOf = (p: (typeof pregnancies)[number]) => shownName(d, p.partner?.name ?? null, p.partner?.userId ?? null);
-  /** The pregnancy week on a day (1 to 40). */
-  const weekOn = (p: (typeof pregnancies)[number], n: number) => Math.min(TERM_WEEKS, Math.max(1, Math.floor(((noonOf(n) - p.timeline.startMs) / p.timeline.durationMs) * TERM_WEEKS) + 1));
+  const partnerOf = (p: Pregnancy) => shownName(d, p.partner?.name ?? null, p.partner?.userId ?? null);
+  /** The pregnancy week on a day, counted like Home and the journal (0 to 40). */
+  const weekOn = (p: Pregnancy, n: number) => Math.min(TERM_WEEKS, Math.max(0, Math.floor(((noonOf(n) - p.timeline.startMs) / p.timeline.durationMs) * TERM_WEEKS)));
+  const lastDay = (p: Pregnancy) => dayOf(p.endedMs ?? dueMs(p.timeline, app.now));
+
+  // Journal entries by pregnancy (the birth and due date have their own chips).
+  const journals = $derived(pregnancies.map((p) => ({ p, items: journalFor(d, p, app.now).filter((j) => j.key !== "born" && j.key !== "due") })));
 
   // Fertile days only make sense when a cycle lasts at least two weeks (fast
   // pregnancies have cycles of hours, too short to show by the day).
@@ -67,7 +120,76 @@
     const l = level(chance(cycleDay(noonOf(n), d.settings.cycleAnchorMs!, cycle), peak), peak);
     return l === "peak" || l === "high" ? l : null;
   }
-  const pregnantOn = (n: number) => pregnancies.some((p) => dayOf(p.timeline.startMs) <= n && n <= dayOf(p.endedMs ?? dueMs(p.timeline, app.now)));
+  const pregnantOn = (n: number) => pregnancies.some((p) => dayOf(p.timeline.startMs) <= n && n <= lastDay(p));
+
+  /** Everything between two days (fertile days only from `fertileFrom`). */
+  function eventsBetween(from: number, to: number, fertileFrom = from): Ev[] {
+    const out: Ev[] = [];
+    const now = app.now;
+    const todayN = dayOf(now);
+    for (const p of pregnancies) {
+      const a = dayOf(p.timeline.startMs);
+      const who = partnerOf(p);
+      // Each week's piece of the bar says which weeks those are, and with whom.
+      out.push({
+        kind: "pregnant",
+        a,
+        b: lastDay(p),
+        label: `Pregnant${who ? ` with ${who}` : ""}`,
+        title: "🤰 Pregnant",
+        seg: (s, e) => {
+          const [w1, w2] = [weekOn(p, s), weekOn(p, e)];
+          return `🤰 Week ${w1 === w2 ? w1 : `${w1}–${w2}`}${who ? ` · ${who}` : ""}`;
+        },
+      });
+      if (p.endedMs == null) {
+        // Weeks 12 and 20 until they come (then the journal's scan covers them).
+        for (const [w, e, what] of [[BABY_REVEAL_WEEK, "✨", "how many babies"], [GENDER_REVEAL_WEEK, "🎀", "girl or boy"]] as const) {
+          const n = dayOf(timeAtProgress(p.timeline, now, w / TERM_WEEKS));
+          if (n >= todayN) out.push({ kind: "milestone", a: n, b: n, label: `${e} Wk ${w}`, title: `${e} Week ${w}: ${what}` });
+        }
+        const due = lastDay(p);
+        out.push({ kind: "due", a: due, b: due, label: "📅 Due", title: "📅 Due date" });
+      } else if (p.born) {
+        out.push({ kind: "born", a: lastDay(p), b: lastDay(p), label: "👶 Born", title: p.babyCount > 1 ? "👶 Babies born" : "👶 Baby born" });
+      }
+    }
+    for (const w of d.waiting) {
+      const a = dayOf(Math.min(w.timeMs, ...(w.funTimes ?? [])));
+      out.push({ kind: "waiting", a, b: dayOf(w.revealMs), label: "⏳ Waiting", title: "⏳ Waiting to find out" });
+    }
+    // One chip a day for WooHoos, journal entries and achievements.
+    const perDay = <T,>(xs: T[], time: (x: T) => number) => {
+      const m = new Map<number, T[]>();
+      for (const x of xs) {
+        const n = dayOf(time(x));
+        m.set(n, [...(m.get(n) ?? []), x]);
+      }
+      return m;
+    };
+    for (const [n, fs] of perDay(d.funLog, (f) => f.timeMs)) {
+      const worlds = [...new Set(fs.map((f) => f.worldName).filter(Boolean))].join(", ");
+      out.push({ kind: "woohoo", a: n, b: n, label: fs.length > 1 ? `💕 ×${fs.length}` : "💕 WooHoo", title: fs.length > 1 ? `💕 ${fs.length} WooHoos` : "💕 WooHoo", where: worlds || undefined });
+    }
+    for (const [n, js] of perDay(journals.flatMap((j) => j.items), (j) => j.timeMs)) {
+      out.push({ kind: "journal", a: n, b: n, label: js.length > 1 ? `📔 ×${js.length}` : "📔 Journal", title: `📔 ${js.map((j) => j.title || "Note").join(", ")}` });
+    }
+    const got = ACHIEVEMENTS.filter((a) => d.achievements?.[a.id] != null && !d.testAchievements?.includes(a.id));
+    for (const [n, as] of perDay(got, (a) => d.achievements[a.id])) {
+      out.push({ kind: "achievement", a: n, b: n, label: as.length > 1 ? `🏆 ×${as.length}` : "🏆 Trophy", title: `🏆 ${as.map((a) => a.title).join(", ")}` });
+    }
+    // Fertile days in a row make one bar (not while pregnant).
+    let run: number | null = null;
+    for (let n = Math.max(from, fertileFrom); n <= to + 1; n++) {
+      const f = n <= to && !pregnantOn(n) && fertility(n) != null;
+      if (f && run == null) run = n;
+      if (!f && run != null) {
+        out.push({ kind: "fertile", a: run, b: n - 1, label: "🌸 Fertile", title: "🌸 Fertile days" });
+        run = null;
+      }
+    }
+    return out.filter((e) => on(e.kind) && e.a <= to && Math.max(e.a, e.b) >= from).map((e) => ({ ...e, b: Math.max(e.a, e.b) }));
+  }
 
   /** The days on screen: whole weeks around the shown month. */
   const range = $derived.by(() => {
@@ -79,54 +201,10 @@
     return { start, end: start + weeks * 7 - 1, weeks };
   });
 
-  const events = $derived.by(() => {
-    const out: Ev[] = [];
-    const now = app.now;
-    for (const p of pregnancies) {
-      const a = dayOf(p.timeline.startMs);
-      const who = partnerOf(p);
-      // Each week's piece of the bar says which week it is, and with whom.
-      out.push({ kind: "pregnant", a, b: dayOf(p.endedMs ?? dueMs(p.timeline, now)), label: `Pregnant${who ? ` with ${who}` : ""}`, seg: (from, to) => {
-          const [w1, w2] = [weekOn(p, from), weekOn(p, to)];
-          return `🤰 Week ${w1 === w2 ? w1 : `${w1}–${w2}`}${who ? ` · ${who}` : ""}`;
-        } });
-      if (p.endedMs == null) {
-        out.push({ kind: "milestone", a: dayOf(timeAtProgress(p.timeline, now, BABY_REVEAL_WEEK / TERM_WEEKS)), b: 0, label: `✨ Wk ${BABY_REVEAL_WEEK}` });
-        out.push({ kind: "milestone", a: dayOf(timeAtProgress(p.timeline, now, GENDER_REVEAL_WEEK / TERM_WEEKS)), b: 0, label: `🎀 Wk ${GENDER_REVEAL_WEEK}` });
-        out.push({ kind: "due", a: dayOf(dueMs(p.timeline, now)), b: 0, label: "📅 Due" });
-      } else if (p.born) {
-        out.push({ kind: "born", a: dayOf(p.endedMs), b: 0, label: "👶 Born" });
-      }
-    }
-    for (const w of d.waiting) {
-      out.push({ kind: "waiting", a: dayOf(Math.min(w.timeMs, ...(w.funTimes ?? []))), b: dayOf(w.revealMs), label: "⏳ Waiting" });
-    }
-    // One chip a day for WooHoos and for achievements.
-    const perDay = (times: number[]) => {
-      const m = new Map<number, number>();
-      for (const t of times) m.set(dayOf(t), (m.get(dayOf(t)) ?? 0) + 1);
-      return m;
-    };
-    for (const [n, c] of perDay(d.funLog.map((f) => f.timeMs))) out.push({ kind: "woohoo", a: n, b: 0, label: c > 1 ? `💕 ×${c}` : "💕 WooHoo" });
-    const got = ACHIEVEMENTS.filter((a) => d.achievements?.[a.id] != null && !d.testAchievements?.includes(a.id)).map((a) => d.achievements[a.id]);
-    for (const [n, c] of perDay(got)) out.push({ kind: "achievement", a: n, b: 0, label: c > 1 ? `🏆 ×${c}` : "🏆 Trophy" });
-    // Fertile days in a row make one bar (not while pregnant).
-    let run: number | null = null;
-    for (let n = range.start; n <= range.end + 1; n++) {
-      const f = n <= range.end && !pregnantOn(n) && fertility(n) != null;
-      if (f && run == null) run = n;
-      if (!f && run != null) {
-        out.push({ kind: "fertile", a: run, b: n - 1, label: "🌸 Fertile" });
-        run = null;
-      }
-    }
-    for (const e of out) if (e.b < e.a) e.b = e.a;
-    return out;
-  });
-
   /** Each week: its days, and its bars in lanes (like a calendar app). */
   const weeks = $derived.by(() => {
-    const order: Kind[] = ["pregnant", "waiting", "fertile", "due", "born", "milestone", "woohoo", "achievement"];
+    const events = eventsBetween(range.start, range.end);
+    const order = KINDS.map((k) => k.kind);
     return Array.from({ length: range.weeks }, (_, w) => {
       const ws = range.start + w * 7;
       const we = ws + 6;
@@ -135,14 +213,14 @@
         .sort((x, y) => Math.max(x.a, ws) - Math.max(y.a, ws) || y.b - y.a - (x.b - x.a) || order.indexOf(x.kind) - order.indexOf(y.kind));
       const lanes: boolean[][] = [];
       const bars: { e: Ev; label: string; col: number; span: number; lane: number; cutStart: boolean; cutEnd: boolean }[] = [];
-      const hidden = Array(7).fill(0);
+      const more = Array(7).fill(0);
       for (const e of here) {
         const a = Math.max(e.a, ws) - ws;
         const b = Math.min(e.b, we) - ws;
         let lane = lanes.findIndex((l) => l.slice(a, b + 1).every((x) => !x));
         if (lane < 0) lane = lanes.push(Array(7).fill(false)) - 1;
         if (lane >= MAX_LANES) {
-          for (let i = a; i <= b; i++) hidden[i]++;
+          for (let i = a; i <= b; i++) more[i]++;
           continue;
         }
         for (let i = a; i <= b; i++) lanes[lane][i] = true;
@@ -151,7 +229,7 @@
       const days = Array.from({ length: 7 }, (_, i) => {
         const n = ws + i;
         const date = dateOf(n);
-        return { n, date: date.getDate(), inMonth: date.getMonth() === shown.m, today: n === dayOf(app.now), more: hidden[i] };
+        return { n, date: date.getDate(), inMonth: date.getMonth() === shown.m, today: n === dayOf(app.now), more: more[i] };
       });
       return { days, bars };
     });
@@ -161,37 +239,70 @@
   function linesFor(n: number): Line[] {
     const out: Line[] = [];
     const now = app.now;
+    const todayN = dayOf(now);
     for (const p of pregnancies) {
       const a = dayOf(p.timeline.startMs);
-      const b = dayOf(p.endedMs ?? dueMs(p.timeline, now));
+      const b = lastDay(p);
       if (n < a || n > b) continue;
       const who = partnerOf(p);
-      out.push({ kind: "pregnant", text: `Pregnant, week ${weekOn(p, n)}, ${who ? `with ${who}` : "the other parent isn't known"}${whose(p)}${n === a ? ". The first day!" : ""}` });
+      if (on("pregnant")) out.push({ kind: "pregnant", text: `Pregnant, week ${weekOn(p, n)}, ${who ? `with ${who}` : "the other parent isn't known"}${whose(p)}${n === a ? ". The first day!" : ""}` });
       if (p.endedMs == null) {
-        if (n === dayOf(timeAtProgress(p.timeline, now, BABY_REVEAL_WEEK / TERM_WEEKS))) out.push({ kind: "milestone", text: `Week ${BABY_REVEAL_WEEK}: find out how many babies` });
-        if (n === dayOf(timeAtProgress(p.timeline, now, GENDER_REVEAL_WEEK / TERM_WEEKS))) out.push({ kind: "milestone", text: `Week ${GENDER_REVEAL_WEEK}: find out girl or boy` });
-        if (n === b) out.push({ kind: "due", text: "Due date" });
-      } else if (p.born && n === b) {
+        if (on("milestone") && n >= todayN && n === dayOf(timeAtProgress(p.timeline, now, BABY_REVEAL_WEEK / TERM_WEEKS))) out.push({ kind: "milestone", text: `Week ${BABY_REVEAL_WEEK}: find out how many babies` });
+        if (on("milestone") && n >= todayN && n === dayOf(timeAtProgress(p.timeline, now, GENDER_REVEAL_WEEK / TERM_WEEKS))) out.push({ kind: "milestone", text: `Week ${GENDER_REVEAL_WEEK}: find out girl or boy` });
+        if (on("due") && n === b) out.push({ kind: "due", text: "Due date" });
+      } else if (on("born") && p.born && n === b) {
         out.push({ kind: "born", text: p.babyCount > 1 ? `${p.babyCount} babies were born` : "Your baby was born" });
       }
     }
-    for (const w of d.waiting) {
-      const a = dayOf(Math.min(w.timeMs, ...(w.funTimes ?? [])));
-      const r = dayOf(w.revealMs);
-      if (n < a || n > r) continue;
-      out.push({ kind: "waiting", text: n === r ? `Find out if it took, at ${timeFmt.format(w.revealMs)}` : `Waiting to find out if it took (on ${shortFmt.format(w.revealMs)})` });
+    if (on("waiting")) {
+      for (const w of d.waiting) {
+        const a = dayOf(Math.min(w.timeMs, ...(w.funTimes ?? [])));
+        const r = dayOf(w.revealMs);
+        if (n < a || n > r) continue;
+        out.push({ kind: "waiting", text: n === r ? `Find out if it took, at ${timeFmt.format(w.revealMs)}` : `Waiting to find out if it took (on ${shortFmt.format(w.revealMs)})` });
+      }
     }
-    const f = pregnantOn(n) ? null : fertility(n);
+    const f = on("fertile") && !pregnantOn(n) ? fertility(n) : null;
     if (f) out.push({ kind: "fertile", text: f === "peak" ? "Fertile: the best chance" : "Fertile: a good chance" });
-    for (const e of d.funLog.filter((x) => dayOf(x.timeMs) === n).sort((x, y) => x.timeMs - y.timeMs)) {
-      const who = shownName(d, e.partnerName, e.partnerUserId);
-      out.push({ kind: "woohoo", text: `WooHoo at ${timeFmt.format(e.timeMs)}${who ? ` with ${who}` : ""}${e.worldName ? ` in ${e.worldName}` : ""}` });
+    if (on("woohoo")) {
+      for (const e of d.funLog.filter((x) => dayOf(x.timeMs) === n).sort((x, y) => x.timeMs - y.timeMs)) {
+        const who = shownName(d, e.partnerName, e.partnerUserId);
+        out.push({ kind: "woohoo", text: `WooHoo at ${timeFmt.format(e.timeMs)}${who ? ` with ${who}` : ""}${e.worldName ? ` in ${e.worldName}` : ""}` });
+      }
     }
-    for (const a of ACHIEVEMENTS) {
-      const at = d.achievements?.[a.id];
-      if (at != null && !d.testAchievements?.includes(a.id) && dayOf(at) === n) out.push({ kind: "achievement", text: `Achievement: ${a.emoji} ${a.title}` });
+    if (on("journal")) {
+      for (const { p, items } of journals) {
+        for (const j of items.filter((x) => dayOf(x.timeMs) === n).sort((x, y) => x.timeMs - y.timeMs)) {
+          out.push({ kind: "journal", text: `New journal entry: ${j.emoji} ${j.title || "Note"}${whose(p)}`, open: { p, key: j.key } });
+        }
+      }
+    }
+    if (on("achievement")) {
+      for (const a of ACHIEVEMENTS) {
+        const at = d.achievements?.[a.id];
+        if (at != null && !d.testAchievements?.includes(a.id) && dayOf(at) === n) out.push({ kind: "achievement", text: `Achievement: ${a.emoji} ${a.title}` });
+      }
     }
     return out;
+  }
+
+  /** A calendar file of everything shown (the kinds that are on), without anyone's name. */
+  async function exportIcs() {
+    const todayN = dayOf(app.now);
+    const times = [...d.funLog.map((f) => f.timeMs), ...pregnancies.map((p) => p.timeline.startMs), ...Object.values(d.achievements ?? {})];
+    const from = times.length ? dayOf(Math.min(...times)) : todayN;
+    const to = Math.max(todayN + EXPORT_AHEAD_DAYS, ...pregnancies.map(lastDay), ...d.waiting.map((w) => dayOf(w.revealMs)));
+    const events = eventsBetween(from, to, todayN);
+    if (!events.length) {
+      toast("Nothing to export yet", "Things show up once they happen (or turn some back on).", "info");
+      return;
+    }
+    const list: IcsEvent[] = events.map((e, i) => ({ uid: `${e.kind}-${e.a}-${i}`, start: dateOf(e.a), end: dateOf(e.b), title: e.title, location: e.where }));
+    try {
+      if (await saveTextFile("pregnancy-calendar", toIcs(list), "ics")) toast("Calendar saved 📅", "Import it in Google Calendar, Outlook or Apple Calendar.", "success");
+    } catch (e) {
+      errorToast(e);
+    }
   }
 
   function move(by: number) {
@@ -203,12 +314,17 @@
   const pick = (n: number) => (picked = picked === n ? null : n);
 </script>
 
-<section class="card">
-  <div class="row head">
-    <h2 class="grow">📅 Calendar</h2>
+<Section id="me-calendar" title="📅 Calendar" open>
+  <div class="row nav">
     <button class="small ghost" onclick={() => move(-1)} aria-label="Previous month">‹</button>
     <button class="small ghost month" onclick={() => { shown = { y: today.getFullYear(), m: today.getMonth() }; picked = null; }} disabled={isThisMonth} title="Back to this month">{monthFmt.format(new Date(shown.y, shown.m, 1))}</button>
     <button class="small ghost" onclick={() => move(1)} aria-label="Next month">›</button>
+  </div>
+
+  <div class="kinds" role="group" aria-label="What the calendar shows">
+    {#each KINDS as k (k.kind)}
+      <button class="kind {k.kind}" class:off={!on(k.kind)} aria-pressed={on(k.kind)} onclick={() => toggleKind(k.kind)} title={on(k.kind) ? "Shown: tap to hide" : "Hidden: tap to show"}>{k.name}</button>
+    {/each}
   </div>
 
   <div class="cal">
@@ -252,30 +368,66 @@
         <button class="small ghost" onclick={() => (picked = null)} aria-label="Close">✕</button>
       </div>
       {#each lines as l, i (i)}
-        <span class="line"><i class="dot {l.kind}"></i>{l.text}</span>
+        <span class="line">
+          <i class="dot {l.kind}"></i>
+          <span class="grow">{l.text}</span>
+          {#if l.open}{@const o = l.open}<button class="small soft" onclick={() => (reading = o)}>Open</button>{/if}
+        </span>
       {:else}
         <span class="muted small">Nothing on this day.</span>
       {/each}
     </div>
-  {:else}
-    <p class="muted small tip">Tap a day to see what happened.</p>
   {/if}
-</section>
+
+  <div class="row foot">
+    <span class="muted small grow">{picked == null ? "Tap a day to see what happened." : ""}</span>
+    <button class="small ghost" onclick={exportIcs} title="A calendar file for Google Calendar, Outlook or Apple Calendar. Names are left out.">📤 Export</button>
+  </div>
+</Section>
+
+{#if reading}
+  {@const r = reading}
+  <Modal title="📔 Journal" onclose={() => (reading = null)}>
+    <JournalList p={r.p} items={journalFor(d, r.p, app.now)} focus={r.key} />
+  </Modal>
+{/if}
 
 <style>
-  h2 {
-    margin: 0;
-  }
-  .head {
+  .nav {
+    justify-content: center;
     gap: 2px;
-    margin-bottom: 8px;
   }
   .month {
-    min-width: 8.5em;
+    min-width: 9.5em;
   }
   .month:disabled {
     opacity: 1;
     cursor: default;
+  }
+  .kinds {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .kind {
+    all: unset;
+    cursor: pointer;
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+    color: var(--text);
+    background: color-mix(in srgb, var(--c) 30%, var(--bg-2));
+    border: 1.5px solid var(--c);
+  }
+  .kind.off {
+    background: transparent;
+    border-style: dashed;
+    color: var(--muted);
+    text-decoration: line-through;
+  }
+  .kind:focus-visible {
+    outline: 2px solid var(--accent);
   }
   .cal {
     border-radius: 12px;
@@ -389,6 +541,9 @@
   .woohoo {
     --c: var(--danger);
   }
+  .journal {
+    --c: var(--tri1);
+  }
   .milestone {
     --c: var(--tri2);
   }
@@ -405,14 +560,13 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
-    margin-top: 10px;
     padding: 8px 10px;
     border-radius: 12px;
     background: var(--bg);
   }
   .line {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 8px;
     font-size: 0.85rem;
   }
@@ -423,8 +577,7 @@
     border-radius: 3px;
     background: var(--c);
   }
-  .tip {
-    margin: 8px 0 0;
-    text-align: center;
+  .foot {
+    align-items: center;
   }
 </style>

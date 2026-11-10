@@ -36,7 +36,7 @@ Desktop app that drives the avatar's pregnancy over OSC. Tauri 2 + Rust + Svelte
 - `cargo test --workspace` · `npm test` · `npx svelte-check --tsconfig ./tsconfig.json`
 - Release: `powershell -ExecutionPolicy Bypass -File scripts\release.ps1 -Version X.Y.Z -Notes "..."` (bumps, tests, commit, pushes an annotated tag; `.github/workflows/release.yml` builds, signs and publishes with the repo secrets). Run it with `run_in_terminal`: only the user's real shell has `gh`/git signed in to the repo's account (the Bash/PowerShell tools can't push). Never handle the signing key or its password. Never name the user's other accounts in the repo. Updater: `src-tauri/src/updates.rs`, Settings > Updates.
 - `npx tauri build --config src-tauri/tauri.local.json` (local build, no update signing) → `target/release/bundle/nsis/Pregnancy OSC_*_x64-setup.exe` (rebuild after changes; the user reinstalls)
-- Preview: `preview_start` with "app-preview" (root `.claude/launch.json`). Clear `pregsys-mock-data` / `pregsys-open-sections` from localStorage and stop it afterwards.
+- Preview: `preview_start` with "app-preview" (root `.claude/launch.json`). Clear `pregsys-mock-data` / `pregsys-open-sections` / `pregsys-calendar-hidden` from localStorage and stop it afterwards.
 - `target/debug/belly-cli.exe --query` (add `--no-oscquery` for fixed ports) reads the worn avatar; `--listen 10` prints what VRChat sends. Both read-only.
 
 - `--no-save`: real data is read, nothing changes on disk for that run (`Store::read_only`; pictures, debug files and a mapping copy go to `<temp>/pregnancy-osc-no-save`). The user's install launches with VRChat, so start this first: single-instance then stops the install. Debug mode can be turned on with `save_settings` (kept in memory only).

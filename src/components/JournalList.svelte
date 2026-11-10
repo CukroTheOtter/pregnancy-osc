@@ -9,7 +9,13 @@
   import type { Pregnancy } from "../lib/types";
 
   // A pregnancy's journal as a little timeline, newest at the top.
-  let { p, items }: { p: Pregnancy; items: JournalItem[] } = $props();
+  // `focus`: an entry to scroll to and highlight (the calendar's "Open").
+  let { p, items, focus = null }: { p: Pregnancy; items: JournalItem[]; focus?: string | null } = $props();
+  let list = $state<HTMLOListElement>();
+  $effect(() => {
+    if (!focus || !list) return;
+    list.querySelector(`[data-key="${CSS.escape(focus)}"]`)?.scrollIntoView({ block: "center" });
+  });
 
   const dateFmt = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
   let sharing = $state<JournalItem | null>(null);
@@ -25,9 +31,9 @@
   }
 </script>
 
-<ol class="timeline">
+<ol class="timeline" bind:this={list}>
   {#each items as it (it.key)}
-    <li class:note={it.note} class:rare={it.rare}>
+    <li class:note={it.note} class:rare={it.rare} class:focus={focus === it.key} data-key={it.key}>
       <span class="dot" aria-hidden="true">{it.emoji}</span>
       <div class="body">
         <div class="head">
@@ -70,6 +76,10 @@
     top: 10px;
     bottom: 10px;
     border-left: 2px dashed var(--line);
+  }
+  li.focus {
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    border-radius: 12px;
   }
   li {
     display: flex;
