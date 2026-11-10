@@ -3,6 +3,7 @@
   import PersonPic from "../components/PersonPic.svelte";
   import AvatarPic from "../components/AvatarPic.svelte";
   import ShareCard from "../components/ShareCard.svelte";
+  import Calendar from "../components/Calendar.svelte";
   import { app } from "../lib/app.svelte";
   import { avatarName, isStopped, partnerStats } from "../lib/scope";
   import { hasSystem } from "../lib/avatars";
@@ -70,6 +71,8 @@
     </div>
     {#if stats.favourite}<p class="muted small fav">💞 Most pregnancies with: <strong>{stats.favourite}</strong></p>{/if}
   </section>
+
+  <Calendar />
 
   <section class="card">
     <div class="row">
