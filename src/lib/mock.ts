@@ -904,7 +904,7 @@ async function woohoo(forced: boolean | null) {
       changed();
       return;
     }
-    data.funLog.push({ timeMs: now, partnerName: partner.name, partnerUserId: partner.userId, avatarId: data.currentAvatarId, worldName: data.instance.worldName, took: s.fertility ? null : true, testBuddiesHere: data.instance.present.map((x) => x.userId ?? "").filter(isTestBuddy) });
+    data.funLog.push({ timeMs: now, partnerName: partner.name, partnerUserId: partner.userId, avatarId: data.currentAvatarId, worldName: data.instance.worldName, took: s.fertility ? null : true, waitMs: s.fertility ? null : now, testBuddiesHere: data.instance.present.map((x) => x.userId ?? "").filter(isTestBuddy) });
     if (!s.fertility) {
       createPregnancy({ source: "conception", partner });
       changed();

@@ -11,7 +11,7 @@
   import { app, errorToast, toast } from "../lib/app.svelte";
   import { saveTextFile } from "../lib/api";
   import { shownName } from "../lib/privacy";
-  import { avatarName, isStopped, pregnancyAvatar } from "../lib/scope";
+  import { avatarName, isStopped, ownerName, pregnancyAvatarNames, pregnancyGroup } from "../lib/scope";
   import { ACHIEVEMENTS } from "../lib/achievements";
   import { journalFor } from "../lib/journal";
   import { toIcs, type IcsEvent } from "../lib/ics";
@@ -27,7 +27,8 @@
    */
   type Ev = { kind: Kind; a: number; b: number; label: string; title: string; seg?: (from: number, to: number) => string; where?: string };
   /** One line in a day's details; `open` links to a journal entry. */
-  type Line = { kind: Kind; text: string; open?: { p: Pregnancy; key: string } };
+  /** `about`: which pregnancy, avatar or person it is about (a second, quieter line). */
+  type Line = { kind: Kind; text: string; about?: string; open?: { p: Pregnancy; key: string } };
 
   const KINDS: { kind: Kind; name: string }[] = [
     { kind: "pregnant", name: "🤰 Pregnant" },
@@ -110,8 +111,19 @@
   const timeFmt = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
 
   const pregnancies = $derived(d.pregnancies.filter((p) => !isStopped(p)));
-  // Several pregnancies (per-avatar mode): the day's details say which avatar.
-  const whose = (p: Pregnancy) => (pregnancies.length > 1 ? ` (${avatarName(d, pregnancyAvatar(d, p))})` : "");
+  /** Which avatar or group a pregnancy is on (null in global mode: it's on every avatar). */
+  function whereOf(p: Pregnancy): string | null {
+    const g = pregnancyGroup(d, p);
+    if (g) return `💞 ${g.name}`;
+    const names = pregnancyAvatarNames(d, p).filter((x) => x !== "every avatar");
+    if (names.length) return names.join(", ");
+    return p.avatarId ? ownerName(d, p.avatarId) : null;
+  }
+  /** Which pregnancy, in a few words: where, with whom, since when. */
+  const aboutOf = (p: Pregnancy) => {
+    const who = partnerOf(p);
+    return [whereOf(p), who ? `with ${who}` : "other parent unknown", `started ${shortFmt.format(p.timeline.startMs)}`].filter(Boolean).join(" · ");
+  };
   /** Who the other parent is (as shown: privacy mode applies), or null. */
   const partnerOf = (p: Pregnancy) => shownName(d, p.partner?.name ?? null, p.partner?.userId ?? null);
   /** The pregnancy week on a day, counted like Home and the journal (0 to 40). */
@@ -149,7 +161,9 @@
         title: "🤰 Pregnant",
         seg: (s, e) => {
           const [w1, w2] = [weekOn(p, s), weekOn(p, e)];
-          return `🤰 Week ${w1 === w2 ? w1 : `${w1}–${w2}`}${who ? ` · ${who}` : ""}`;
+          // With more than one pregnancy, the bar also says which avatar.
+          const where = pregnancies.length > 1 ? whereOf(p) : null;
+          return [`🤰 Week ${w1 === w2 ? w1 : `${w1}–${w2}`}`, who, where].filter(Boolean).join(" · ");
         },
       });
       if (p.endedMs == null) {
@@ -254,14 +268,14 @@
       const a = dayOf(p.timeline.startMs);
       const b = lastDay(p);
       if (n < a || n > b) continue;
-      const who = partnerOf(p);
-      if (on("pregnant")) out.push({ kind: "pregnant", text: `Pregnant, week ${weekOn(p, n)}, ${who ? `with ${who}` : "the other parent isn't known"}${whose(p)}${n === a ? ". The first day!" : ""}` });
+      const about = aboutOf(p);
+      if (on("pregnant")) out.push({ kind: "pregnant", text: `Pregnant, week ${weekOn(p, n)}${n === a ? ": the first day!" : ""}`, about });
       if (p.endedMs == null) {
-        if (on("milestone") && n >= todayN && n === dayOf(timeAtProgress(p.timeline, now, BABY_REVEAL_WEEK / TERM_WEEKS))) out.push({ kind: "milestone", text: `Week ${BABY_REVEAL_WEEK}: find out how many babies` });
-        if (on("milestone") && n >= todayN && n === dayOf(timeAtProgress(p.timeline, now, GENDER_REVEAL_WEEK / TERM_WEEKS))) out.push({ kind: "milestone", text: `Week ${GENDER_REVEAL_WEEK}: find out girl or boy` });
-        if (on("due") && n === b) out.push({ kind: "due", text: "Due date" });
+        if (on("milestone") && n >= todayN && n === dayOf(timeAtProgress(p.timeline, now, BABY_REVEAL_WEEK / TERM_WEEKS))) out.push({ kind: "milestone", text: `Week ${BABY_REVEAL_WEEK}: find out how many babies`, about });
+        if (on("milestone") && n >= todayN && n === dayOf(timeAtProgress(p.timeline, now, GENDER_REVEAL_WEEK / TERM_WEEKS))) out.push({ kind: "milestone", text: `Week ${GENDER_REVEAL_WEEK}: find out girl or boy`, about });
+        if (on("due") && n === b) out.push({ kind: "due", text: "Due date", about });
       } else if (on("born") && p.born && n === b) {
-        out.push({ kind: "born", text: p.babyCount > 1 ? `${p.babyCount} babies were born` : "Your baby was born" });
+        out.push({ kind: "born", text: p.babyCount > 1 ? `${p.babyCount} babies were born` : "Your baby was born", about });
       }
     }
     if (on("waiting")) {
@@ -269,7 +283,12 @@
         const a = dayOf(Math.min(w.timeMs, ...(w.funTimes ?? [])));
         const r = dayOf(w.revealMs);
         if (n < a || n > r) continue;
-        out.push({ kind: "waiting", text: n === r ? `Find out if it took, at ${timeFmt.format(w.revealMs)}` : `Waiting to find out if it took (on ${shortFmt.format(w.revealMs)})` });
+        const who = shownName(d, w.partner?.name ?? null, w.partner?.userId ?? null);
+        out.push({
+          kind: "waiting",
+          text: n === r ? `Find out if it took, at ${timeFmt.format(w.revealMs)}` : `Waiting to find out if it took (on ${shortFmt.format(w.revealMs)})`,
+          about: [w.avatarId ? ownerName(d, w.avatarId) : null, who ? `with ${who}` : null].filter(Boolean).join(" · ") || undefined,
+        });
       }
     }
     const f = on("fertile") && !pregnantOn(n) ? fertility(n) : null;
@@ -277,13 +296,17 @@
     if (on("woohoo")) {
       for (const e of d.funLog.filter((x) => dayOf(x.timeMs) === n).sort((x, y) => x.timeMs - y.timeMs)) {
         const who = shownName(d, e.partnerName, e.partnerUserId);
-        out.push({ kind: "woohoo", text: `WooHoo at ${timeFmt.format(e.timeMs)}${who ? ` with ${who}` : ""}${e.worldName ? ` in ${e.worldName}` : ""}` });
+        out.push({
+          kind: "woohoo",
+          text: `WooHoo at ${timeFmt.format(e.timeMs)}${who ? ` with ${who}` : ""}`,
+          about: [e.avatarId ? `as ${avatarName(d, e.avatarId)}` : null, e.worldName ? `in ${e.worldName}` : null].filter(Boolean).join(" · ") || undefined,
+        });
       }
     }
     if (on("journal")) {
       for (const { p, items } of journals) {
         for (const j of items.filter((x) => dayOf(x.timeMs) === n).sort((x, y) => x.timeMs - y.timeMs)) {
-          out.push({ kind: "journal", text: `New journal entry: ${j.emoji} ${j.title || "Note"}${whose(p)}`, open: { p, key: j.key } });
+          out.push({ kind: "journal", text: `Journal: ${j.emoji} ${j.title || "Note"}`, about: aboutOf(p), open: { p, key: j.key } });
         }
       }
     }
@@ -394,7 +417,7 @@
       {#each lines as l, i (i)}
         <span class="line">
           <i class="dot {l.kind}"></i>
-          <span class="grow">{l.text}</span>
+          <span class="grow text">{l.text}{#if l.about}<span class="about">{l.about}</span>{/if}</span>
           {#if l.open}{@const o = l.open}<button class="small soft" onclick={() => (reading = o)}>Open</button>{/if}
         </span>
       {:else}
@@ -645,6 +668,19 @@
     align-items: center;
     gap: 8px;
     font-size: 0.85rem;
+  }
+  .text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .about {
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+  .line .dot {
+    align-self: flex-start;
+    margin-top: 5px;
   }
   .dot {
     flex: none;

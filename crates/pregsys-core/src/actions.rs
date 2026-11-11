@@ -229,8 +229,9 @@ pub fn record_fun_with(data: &mut AppData, now_ms: i64, roll: f64, debug: bool) 
         partner_user_id: partner.user_id.clone(),
         avatar_id: data.current_avatar_id.clone(),
         world_name: data.instance.world_name.clone(),
+        // Fertility off: a try of its own that took right away.
         took: (!data.settings.fertility).then_some(true),
-        wait_ms: None,
+        wait_ms: (!data.settings.fertility).then_some(now_ms),
         test_buddies_here: crate::testbuddy::here(data),
         already_pregnant: false,
         not_partner: false,
@@ -1124,6 +1125,9 @@ mod tests {
         d.settings.fertility = false;
         record_fun(&mut d, LATER, 0.0);
         assert_eq!(d.fun_log.len(), 1);
+        assert_eq!(d.fun_log[0].wait_ms, Some(LATER), "fertility off: a try of its own");
+        let p = crate::check::problems(&d, crate::check::Env::default());
+        assert!(p.is_empty(), "and nothing for Troubleshooting: {p:?}");
         assert_eq!(d.fun_log[0].partner_name.as_deref(), Some("Fox"));
         let id = d.current_pregnancy(None).unwrap().id.clone();
         give_birth(&mut d, &id, LATER + 1);
