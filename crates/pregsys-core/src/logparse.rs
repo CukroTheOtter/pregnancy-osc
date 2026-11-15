@@ -24,6 +24,9 @@ pub enum LogEvent {
     AvatarSwitch { player: String, avatar_name: String },
     /// `Trying to change to an inaccessible avatar: avtr_...` (VRChat kept the old one).
     AvatarRefused { avatar_id: String },
+    /// VRChat's safety level: `Safety level set to: PanicMode` (the panic
+    /// button, Safe Mode), or `Safety level: Custom` in the settings it logs at start-up.
+    SafetyLevel { level: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,6 +72,10 @@ fn parse_event(line: &str) -> Option<LogEvent> {
     if let Some(rest) = after(line, "inaccessible avatar: ") {
         let avatar_id = rest.split_whitespace().next()?.to_string();
         return Some(LogEvent::AvatarRefused { avatar_id });
+    }
+    if let Some(rest) = after(line, "Safety level set to: ").or_else(|| after(line, "Safety level: ")) {
+        let level = rest.split_whitespace().next()?.to_string();
+        return Some(LogEvent::SafetyLevel { level });
     }
     // Most lines we care about are tagged [Behaviour]; skip the rest cheaply.
     if !line.contains("[Behaviour]") && !line.contains("User Authenticated") {
@@ -123,6 +130,18 @@ mod tests {
             ev("2025.03.01 21:00:05 Debug      -  [Behaviour] OnPlayerJoined Foxy Paws (usr_1a2b3c4d-0000-1111-2222-333344445555)"),
             Some(LogEvent::PlayerJoined { name: "Foxy Paws".into(), user_id: Some("usr_1a2b3c4d-0000-1111-2222-333344445555".into()) })
         );
+    }
+
+    #[test]
+    fn safety_level() {
+        let panic = Some(LogEvent::SafetyLevel { level: "PanicMode".into() });
+        // Seen live: the panic button, then Safe Mode turned off in the Quick Menu.
+        assert_eq!(ev("2026.11.15 12:32:00 Debug      -  [SettingsManager] Safety level set to: PanicMode"), panic);
+        assert_eq!(ev("2026.11.15 12:35:50 Debug      -  [SettingsManager] Safety level set to: Custom"), Some(LogEvent::SafetyLevel { level: "Custom".into() }));
+        // Its twin line isn't read (one event per change is enough).
+        assert_eq!(ev("2026.11.15 12:32:00 Debug      -  Safety Settings Changed to: PanicMode"), None);
+        // The settings VRChat logs at start-up (no time on these lines).
+        assert_eq!(ev("    Safety level: Custom"), Some(LogEvent::SafetyLevel { level: "Custom".into() }));
     }
 
     #[test]

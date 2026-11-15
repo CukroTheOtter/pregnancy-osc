@@ -819,7 +819,8 @@ impl Driver {
             return Some(());
         }
         self.next_contraction_ms = None;
-        if !s.kicks || p.timeline.is_paused() {
+        // Eggs don't kick (laying still has contractions, above).
+        if !s.kicks || p.timeline.is_paused() || p.eggs() {
             self.next_kick_ms = None;
             return None;
         }
@@ -1433,6 +1434,17 @@ mod tests {
         data.settings.kicks = false;
         let start = T0 + 210 * DAY_MS;
         assert!((0..200).all(|i| d.tick(start + i * 60_000, &data).iter().all(|s| s.key != "fetalMovement")));
+    }
+
+    #[test]
+    fn eggs_never_kick() {
+        let mut d = Driver::new(Mapping::default());
+        d.set_connected(true);
+        let mut data = data_pregnant();
+        data.pregnancies[0].kind = crate::model::BodyKind::Egg;
+        let start = T0 + 210 * DAY_MS;
+        assert!((0..200).all(|i| d.tick(start + i * 60_000, &data).iter().all(|s| s.key != "fetalMovement")));
+        assert!(d.take_kicks().is_empty());
     }
 
     #[test]

@@ -9,11 +9,13 @@
     genders?: string[] | null;
     timeMs: number;
     dueMs: number | null;
+    /** An egg pregnancy: eggs on the screen instead of babies. */
+    eggs?: boolean;
   }
 </script>
 
 <script lang="ts">
-  import { babyWord } from "../lib/fertility";
+  import { babyWord, eggWord } from "../lib/fertility";
   import type { Scan } from "../lib/journal";
   import { rng, scanStats, statLines } from "../lib/scanstats";
 
@@ -75,6 +77,9 @@
     return { n, sac, u, babies, tissue, packed, early: scan.week < 10, turb: Math.floor(r() * 1000), days, lines, heart };
   });
 
+  const eggs = $derived(!!meta?.eggs);
+  const word = (n: number) => (eggs ? eggWord(n) : babyWord(n));
+
   const LETTERS = "ABCDEFGH";
   // The fan: apex at the top, opening 36 degrees each way.
   const FAN = "M200,14 L41,233 A270,270 0 0 0 359,233 Z";
@@ -84,7 +89,7 @@
 </script>
 
 <svg bind:this={svg} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width={W} height={H} class="scan" role="img"
-  aria-label={view.n ? `Ultrasound scan, week ${scan.week}: ${babyWord(view.n)}` : `Ultrasound scan, week ${scan.week}`}>
+  aria-label={view.n ? `Ultrasound scan, week ${scan.week}: ${word(view.n)}` : `Ultrasound scan, week ${scan.week}`}>
   <defs>
     <clipPath id="{uid}-fan"><path d={FAN} /></clipPath>
     <radialGradient id="{uid}-bg" cx="200" cy="14" r="290" gradientUnits="userSpaceOnUse">
@@ -139,6 +144,12 @@
           {#if view.early}
             <!-- Just a little bean this early. -->
             <ellipse cx="0" cy="0" rx={view.u * 0.75} ry={view.u * 0.5} fill="url(#{uid}-bean)" />
+          {:else if eggs}
+            <!-- An egg: a bright shell (narrower at the top), a little one curled up inside. -->
+            <path d="M0,{-view.u * 1.05} C{view.u * 0.62},{-view.u * 1.05} {view.u * 0.82},{view.u * 0.1} {view.u * 0.72},{view.u * 0.42} C{view.u * 0.6},{view.u * 0.82} {-view.u * 0.6},{view.u * 0.82} {-view.u * 0.72},{view.u * 0.42} C{-view.u * 0.82},{view.u * 0.1} {-view.u * 0.62},{-view.u * 1.05} 0,{-view.u * 1.05} Z"
+              fill="#1a1a1a" stroke="#ececec" stroke-width={Math.max(3, view.u * 0.14)} />
+            <circle cx={-view.u * 0.08} cy={-view.u * 0.12} r={view.u * 0.3} fill="url(#{uid}-bean)" />
+            <ellipse cx={view.u * 0.12} cy={view.u * 0.2} rx={view.u * 0.26} ry={view.u * 0.34} fill="url(#{uid}-bean)" transform="rotate(25 {view.u * 0.12} {view.u * 0.2})" />
           {:else}
             <!-- Curled up: a big round head and a soft body, nothing else to tell by. -->
             <ellipse cx={view.u * 0.15} cy={view.u * 0.32} rx={view.u * 0.5} ry={view.u * 0.62} fill="url(#{uid}-bean)" transform="rotate(18 {view.u * 0.15} {view.u * 0.32})" />
@@ -182,7 +193,7 @@
     {/each}
   </g>
   <text {...text(390, H - 23)} text-anchor="end" fill="#9a9a9a">MI 0.8  TIs 0.2</text>
-  <text {...text(390, H - 10)} text-anchor="end">{view.n ? babyWord(view.n).replace("!", "").toUpperCase() : "1/1"}</text>
+  <text {...text(390, H - 10)} text-anchor="end">{view.n ? word(view.n).replace("!", "").toUpperCase() : "1/1"}</text>
 
   <!-- What the doctor scribbled on the rare ones. -->
   {#if v}

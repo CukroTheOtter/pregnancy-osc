@@ -4,7 +4,7 @@
 import type { AppData, AvatarProfile, InstanceKind, JournalEntry, Keepsake, Mapping, MappingInfo, NewPregnancy, Partner, Person, Pregnancy, Problem, ResetKind, Settings, Status } from "./types";
 import { emptyData, baby, defaultSettings } from "./testdata";
 import { newTimeline, progress } from "./timeline";
-import { chance, cycleDay, cycleMs, graceMs } from "./fertility";
+import { chance, cycleDay, cycleMs, graceMs, isEggs, isIncubating } from "./fertility";
 import { groupMembers, isMyPartner, owner, pendingFor, pregnancyFor, pregnancyIdOf, samePartner } from "./scope";
 import { socketCounts, typeOf } from "./sps";
 import { FIXED } from "./params";
@@ -173,6 +173,8 @@ function status(): Status {
     instanceKind: kind,
     autoHidden: !!kind && !!safety?.hideBellyIn.includes(kind) && shownHere == null,
     shownHere: shownHere != null,
+    // The preview reads no log, so VRChat's Safe Mode is never on.
+    safeMode: false,
     laborHeld: !!kind && !!safety?.laborWaitsIn.includes(kind),
     laborElapsedMs: p?.labor ? Math.min(Date.now() - p.labor.startedMs + p.labor.elapsedMs, data.settings.labor.minutes * 60_000) : null,
     mappingPath: "config/osc-parameters.json",
@@ -266,6 +268,31 @@ function setCurrent(avatarId: string | null, id: string | null) {
   } else data.activePregnancyId = id;
 }
 
+/** Laid: eggs hatch later (actions.rs give_birth). */
+function markBorn(p: Pregnancy, now: number) {
+  p.born = true;
+  if (isEggs(p)) p.hatchMs = now + (data.settings.labor.hatchHours ?? 72) * 3_600_000;
+}
+
+/** Eggs whose time came hatch, at their time (actions.rs take_hatched). */
+function hatchDue(now: number) {
+  let any = false;
+  for (const p of data.pregnancies.filter(isIncubating)) {
+    // Laid before eggs had a hatch time (older saves): they hatched when laid.
+    const at = p.hatchMs ?? p.endedMs ?? now;
+    if (now >= at) {
+      p.hatchedMs = at;
+      any = true;
+    }
+  }
+  if (any) changed();
+}
+
+/** A new labor for this pregnancy (labor.rs Labor::for_pregnancy). */
+function newLabor(p: Pregnancy, now: number, cause: NonNullable<Pregnancy["labor"]>["cause"]): NonNullable<Pregnancy["labor"]> {
+  return { phase: "early", startedMs: now, elapsedMs: 0, waterFirst: false, waterBrokeMs: null, paused: false, partnerAtBirth: false, cause, eggs: isEggs(p) };
+}
+
 function createPregnancy(opts: NewPregnancy & { partner?: Partner; babyCount?: number | null }): Pregnancy {
   const now = Date.now();
   const s = data.settings;
@@ -276,7 +303,8 @@ function createPregnancy(opts: NewPregnancy & { partner?: Partner; babyCount?: n
     createdMs: now,
     timeline: newTimeline(opts.startMs ?? now, opts.mode ?? s.defaultMode, opts.speed ?? s.defaultSpeed, opts.customMs ?? s.defaultCustomMs),
     babyCount: opts.babyCount ?? rollBabies(),
-    kind: "human",
+    // The avatar's Eggs switch (actions.rs start_pregnancy: kind from the profile).
+    kind: (aid && data.avatars[aid]?.kind) || "human",
     motherSpecies: s.userSpecies,
     partner: opts.partner ?? guessPartner(),
     babies: [],
@@ -425,6 +453,7 @@ export const mock = {
     return structuredClone(data);
   },
   async get_status() {
+    hatchDue(Date.now());
     return status();
   },
   async take_load_warning() {
@@ -460,13 +489,35 @@ export const mock = {
   async give_birth({ id }: { id: string }) {
     closePregnancy(id);
     const p = data.pregnancies.find((x) => x.id === id);
-    if (p) p.born = true;
+    if (p) markBorn(p, Date.now());
+    changed();
+  },
+  async hatch_eggs({ id }: { id: string }) {
+    const p = data.pregnancies.find((x) => x.id === id);
+    if (!p || !isIncubating(p)) return;
+    const now = Date.now();
+    p.hatchMs = Math.min(p.hatchMs ?? now, now);
+    hatchDue(now);
+    changed();
+  },
+  async set_avatar_eggs({ avatarId, on }: { avatarId: string; on: boolean }) {
+    const a = data.avatars[avatarId];
+    if (a) a.kind = on ? "egg" : null;
+    // Its pregnancy (not laid yet) changes too (actions.rs set_avatar_eggs).
+    const p = pregnancyFor(data, avatarId);
+    if (p && p.endedMs == null) {
+      p.kind = on ? "egg" : "human";
+      if (p.labor) {
+        p.labor.eggs = on;
+        if (on) p.labor.waterFirst = false;
+      }
+    }
     changed();
   },
   async start_labor({ id }: { id: string }) {
     const p = data.pregnancies.find((x) => x.id === id);
     if (p && p.endedMs == null && !p.labor) {
-      p.labor = { phase: "early", startedMs: Date.now(), elapsedMs: 0, waterFirst: false, waterBrokeMs: null, paused: false, partnerAtBirth: false, cause: "you" };
+      p.labor = newLabor(p, Date.now(), "you");
       changed();
     }
   },
@@ -690,7 +741,7 @@ export const mock = {
       `Saved in the app: ${line(a?.params)}`,
       `SPS sockets: ${st.spsFound.length}`,
       `Instance type: ${st.instanceKind ?? "unknown"}`,
-      `Safety: belly hidden ${st.autoHidden ? "yes" : "no"}, labor waiting ${st.laborHeld ? "yes" : "no"}`,
+      `Safety: belly hidden ${st.autoHidden ? "yes" : "no"}${st.safeMode ? " (VRChat Safe Mode)" : st.shownHere ? " (shown here)" : ""}, labor waiting ${st.laborHeld ? "yes" : "no"}`,
     ].join("\n");
   },
   async open_troubleshooting() {
@@ -780,17 +831,19 @@ export const mock = {
     const now = Date.now();
     if (skip === null) {
       if (p.labor) throw new Error("Already in labor.");
-      p.labor = { phase: "early", startedMs: now, elapsedMs: 0, waterFirst: false, waterBrokeMs: null, paused: false, partnerAtBirth: false, cause: "you" };
+      p.labor = newLabor(p, now, "you");
       p.debug = true;
     } else {
       if (!p.labor) throw new Error("Not in labor yet.");
-      // Same split as pregsys-core/src/labor.rs: early half, water 30%, pushing 20%.
+      // Same split as pregsys-core/src/labor.rs: early half, water 30%, pushing
+      // 20%; eggs early 60%, laying 40% (no water).
       const total = data.settings.labor.minutes * 60_000;
-      const ends = [total * 0.5, total * 0.8, total];
+      const eggs = !!p.labor.eggs;
+      const ends = eggs ? [total * 0.6, total * 0.6, total] : [total * 0.5, total * 0.8, total];
       const at = Math.min(total, now - p.labor.startedMs + p.labor.elapsedMs);
       if (skip === "prevPhase") {
         // Back to the start of the phase before (pregsys-core/src/labor.rs skip).
-        const i = ["early", "active", "pushing"].indexOf(p.labor.phase);
+        const i = eggs && p.labor.phase === "pushing" ? 1 : ["early", "active", "pushing"].indexOf(p.labor.phase);
         const back = [0, ends[0], ends[1]][Math.max(0, i - 1)];
         p.labor.elapsedMs -= at - back;
         p.debug = true;
@@ -806,7 +859,7 @@ export const mock = {
       p.debug = true;
       if (now2 >= total) {
         closePregnancy(p.id);
-        p.born = true;
+        markBorn(p, now);
       }
     }
     changed();
@@ -887,7 +940,7 @@ async function woohoo(forced: boolean | null) {
       const partnerAway = !!s.labor.waitsForPartner && !!preg.partner.name && !data.instance.present.some((x) => x.name === preg.partner.name);
       woohooNote = null;
       if (s.labor.woohooStarts && !preg.labor && !partnerAway && roll < chance) {
-        preg.labor = { phase: "early", startedMs: now, elapsedMs: 0, waterFirst: false, waterBrokeMs: null, paused: false, partnerAtBirth: false, cause: "wooHoo" };
+        preg.labor = newLabor(preg, now, "wooHoo");
         changed();
       } else if (s.labor.woohooStarts && !preg.labor && week >= 37) {
         const text = partnerAway ? "WooHoo noticed, but labor waits for the other parent." : `WooHoo noticed, but labor didn't start (${Math.round(chance * 100)}% chance). Next try after a ${s.sps.gapSeconds % 60 ? `${s.sps.gapSeconds}-second` : `${s.sps.gapSeconds / 60}-minute`} break.`;

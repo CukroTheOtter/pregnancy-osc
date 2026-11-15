@@ -71,6 +71,8 @@ export type InstanceKind = "public" | "groupPublic" | "friendsPlus" | "groupPlus
 export interface SafetySettings {
   hideBellyIn: InstanceKind[];
   laborWaitsIn: InstanceKind[];
+  /** The belly is hidden while VRChat's Safe Mode (the panic button) is on. */
+  hideInSafeMode?: boolean;
 }
 
 /** Where notifications show in your headset. SteamVR is only the fallback (see model.rs VrNotices). */
@@ -94,6 +96,8 @@ export interface LaborSettings {
   quietEarly?: boolean;
   /** Labor starts, and the water breaks, only while you're up. */
   restingHolds?: boolean;
+  /** Eggs hatch this many real hours after they're laid. */
+  hatchHours?: number;
 }
 
 /** Labor in progress (kept after the birth). Mirrors pregsys-core/src/labor.rs. */
@@ -107,6 +111,8 @@ export interface Labor {
   partnerAtBirth: boolean;
   /** What started it (pregsys-core/src/labor.rs Cause). */
   cause?: "unknown" | "due" | "induced" | "up" | "walking" | "wooHoo" | "you";
+  /** Laying eggs: no water breaking, early labor then laying ("pushing"). */
+  eggs?: boolean;
 }
 
 export interface Settings {
@@ -237,6 +243,9 @@ export interface Pregnancy {
   milestones: string[];
   oscHints: { speciesIndex: number | null };
   labor?: Labor | null;
+  /** Eggs (kind "egg"): when the laid eggs hatch, and when they did. */
+  hatchMs?: number | null;
+  hatchedMs?: number | null;
   /** Debug: made or changed by the debug tools (left out of achievements). */
   debug?: boolean;
 }
@@ -469,6 +478,8 @@ export interface Status {
   autoHidden?: boolean;
   /** You showed the belly in this instance ("Show here"). */
   shownHere?: boolean;
+  /** VRChat's Safe Mode is on and Settings > Safety hides the belly for it. */
+  safeMode?: boolean;
   /** Settings > Safety: labor waits in this instance. */
   laborHeld?: boolean;
   mappingPath: string;

@@ -36,6 +36,7 @@ If it's still missing, check that the feature's parameter is on the uploaded ava
 ## The belly isn't changing
 
 - **Hide Belly is on.** Home shows a 🙈 note with a **Show** button.
+- **VRChat's Safe Mode is on** (the panic button). The belly stays hidden until you turn it off. Change it in **Settings > Safety**.
 - **You're in a public instance.** By default the belly is hidden in Public and Group Public. Tap **Show here** on Home, or change it in **Settings > Safety**.
 - **The pregnancy is paused.** While paused, the app leaves the belly alone so you can set it in-game.
 - **You're waiting to find out.** The belly stays flat until the reveal.

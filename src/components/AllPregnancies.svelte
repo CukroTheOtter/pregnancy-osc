@@ -6,7 +6,7 @@
   import { journalFor } from "../lib/journal";
   import { app, homeAvatarId, currentPregnancy, viewPending, viewPregnancy } from "../lib/app.svelte";
   import { groupMembers, owner, ownerAvatar, ownerName, pregnancyAvatar, pregnancyAvatarNames, pregnancyGroup } from "../lib/scope";
-  import { babyWord, genderText } from "../lib/fertility";
+  import { birthTitle, genderText, isEggs } from "../lib/fertility";
   import { progress, humanDuration, TERM_WEEKS } from "../lib/timeline";
   import type { Pregnancy } from "../lib/types";
   import { shownName } from "../lib/privacy";
@@ -76,11 +76,11 @@
         <ul class="list past">
           {#each showAllPast ? past : past.slice(0, PAST_SHOWN) as p (p.id)}
             <li>
-              <span class="dot-pic" aria-hidden="true">{p.born ? "🍼" : "🤍"}</span>
+              <span class="dot-pic" aria-hidden="true">{p.born ? (isEggs(p) ? "🥚" : "🍼") : "🤍"}</span>
               <div class="grow">
-                <strong>{p.born ? `${babyWord(p.babyCount).replace("!", "")} born` : "Ended early"}</strong>
+                <strong>{p.born ? birthTitle(p) : "Ended early"}</strong>
                 <div class="muted small">
-                  {dateFmt.format(p.endedMs ?? 0)}{p.partner.name ? ` · with ${shownName(d, p.partner.name, p.partner.userId)}` : ""}{p.born && d.settings.genderMode === "random" && p.genders.length ? ` · ${genderText(p.genders)}` : ""}
+                  {dateFmt.format(p.endedMs ?? 0)}{p.partner.name ? ` · with ${shownName(d, p.partner.name, p.partner.userId)}` : ""}{p.born && (!isEggs(p) || p.hatchedMs != null) && d.settings.genderMode === "random" && p.genders.length ? ` · ${genderText(p.genders)}` : ""}
                 </div>
               </div>
               <button class="small soft" onclick={() => (reading = p)}>📔 Journal</button>
@@ -98,7 +98,7 @@
 {#if reading}
   {@const r = d.pregnancies.find((x) => x.id === reading?.id)}
   {#if r}
-    <Modal title="📔 {r.born ? `${babyWord(r.babyCount).replace("!", "")} born` : "Ended early"} · {dateFmt.format(r.endedMs ?? 0)}" onclose={() => (reading = null)}>
+    <Modal title="📔 {r.born ? birthTitle(r) : "Ended early"} · {dateFmt.format(r.endedMs ?? 0)}" onclose={() => (reading = null)}>
       <JournalList p={r} items={journalFor(d, r, app.now)} />
     </Modal>
   {/if}

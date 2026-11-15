@@ -22,7 +22,7 @@ const LIST: AchievementInfo[] = [
   { id: "little_bean", tier: 1, emoji: "🫘", title: "Little Bean", hint: "Your first pregnancy" },
   { id: "double_trouble", tier: 3, emoji: "👯", title: "Double Trouble", hint: "Carry twins" },
   { id: "triple_treat", tier: 4, emoji: "🎉", title: "Triple Treat", hint: "Carry triplets or more" },
-  { id: "welcome_home", tier: 1, emoji: "🍼", title: "Welcome Home", hint: "Welcome your first baby" },
+  { id: "welcome_home", tier: 1, emoji: "🍼", title: "Welcome Home", hint: "Welcome your first baby (or lay your first eggs)" },
   { id: "full_house", tier: 3, emoji: "🏡", title: "Full House", hint: "5 babies born" },
   { id: "fashionably_late", tier: 1, emoji: "⏰", title: "Fashionably Late", hint: "Go past your due date" },
   { id: "splash", tier: 3, emoji: "💦", title: "Splash!", hint: "Your water breaks before labor gets going", secret: "Sometimes things start with a surprise…" },
@@ -48,6 +48,10 @@ const LIST: AchievementInfo[] = [
   { id: "globetrotter", tier: 3, emoji: "🌍", title: "Globetrotter", hint: "WooHoos in 10 different worlds" },
   { id: "favorite_spot", tier: 3, emoji: "🏠", title: "Favorite Spot", hint: "10 WooHoos in the same world" },
   { id: "taking_a_break", tier: 1, emoji: "☕", title: "Taking A Break", hint: "A birth after pausing that pregnancy", secret: "Everyone needs a rest sometimes…" },
+  // Eggs (an avatar's Eggs switch). Laying counts as a birth for everything above.
+  { id: "egg_cellent", tier: 2, emoji: "🥚", title: "Egg-cellent!", hint: "Lay your first eggs", secret: "Some little ones come in shells…" },
+  { id: "hatch_day", tier: 2, emoji: "🐣", title: "Hatch Day", hint: "Your eggs hatch", secret: "Keep them warm…" },
+  { id: "best_of_both", tier: 3, emoji: "🪺", title: "Best Of Both", hint: "A live birth and a clutch of eggs", secret: "Why choose?…" },
 ];
 
 /** Easiest first. */

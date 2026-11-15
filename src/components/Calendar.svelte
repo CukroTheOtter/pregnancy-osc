@@ -15,7 +15,7 @@
   import { ACHIEVEMENTS } from "../lib/achievements";
   import { journalFor } from "../lib/journal";
   import { toIcs, type IcsEvent } from "../lib/ics";
-  import { BABY_REVEAL_WEEK, GENDER_REVEAL_WEEK, chance, cycleDay, cycleMs, level } from "../lib/fertility";
+  import { BABY_REVEAL_WEEK, GENDER_REVEAL_WEEK, chance, cycleDay, cycleMs, isEggs, level } from "../lib/fertility";
   import { TERM_WEEKS, dueMs, timeAtProgress } from "../lib/timeline";
   import type { Pregnancy } from "../lib/types";
 
@@ -38,7 +38,7 @@
     { kind: "journal", name: "📔 Journal" },
     { kind: "milestone", name: "✨ Weeks 12 & 20" },
     { kind: "due", name: "📅 Due date" },
-    { kind: "born", name: "👶 Born" },
+    { kind: "born", name: "👶 Born & 🐣 hatched" },
     { kind: "achievement", name: "🏆 Achievements" },
   ];
   const MAX_LANES = 3;
@@ -131,7 +131,7 @@
   const lastDay = (p: Pregnancy) => dayOf(p.endedMs ?? dueMs(p.timeline, app.now));
 
   // Journal entries by pregnancy (the birth and due date have their own chips).
-  const journals = $derived(pregnancies.map((p) => ({ p, items: journalFor(d, p, app.now).filter((j) => j.key !== "born" && j.key !== "due") })));
+  const journals = $derived(pregnancies.map((p) => ({ p, items: journalFor(d, p, app.now).filter((j) => j.key !== "born" && j.key !== "due" && j.key !== "hatched") })));
 
   // Fertile days only make sense when a cycle lasts at least two weeks (fast
   // pregnancies have cycles of hours, too short to show by the day).
@@ -169,11 +169,18 @@
       if (p.endedMs == null) {
         // Weeks 12 and 20 until they come (then the journal's scan covers them).
         for (const [w, e, what] of [[BABY_REVEAL_WEEK, "✨", "how many babies"], [GENDER_REVEAL_WEEK, "🎀", "girl or boy"]] as const) {
+          // Eggs: girl or boy only shows when they hatch.
+          if (w === GENDER_REVEAL_WEEK && isEggs(p)) continue;
           const n = dayOf(timeAtProgress(p.timeline, now, w / TERM_WEEKS));
           if (n >= todayN) out.push({ kind: "milestone", a: n, b: n, label: `${e} Wk ${w}`, title: `${e} Week ${w}: ${what}` });
         }
         const due = lastDay(p);
         out.push({ kind: "due", a: due, b: due, label: "📅 Due", title: "📅 Due date" });
+      } else if (p.born && isEggs(p)) {
+        out.push({ kind: "born", a: lastDay(p), b: lastDay(p), label: "🥚 Laid", title: p.babyCount > 1 ? "🥚 Eggs laid" : "🥚 Egg laid" });
+        // When they hatch (or did).
+        const at = p.hatchedMs ?? p.hatchMs;
+        if (at != null) out.push({ kind: "born", a: dayOf(at), b: dayOf(at), label: p.hatchedMs ? "🐣 Hatched" : "🐣 Hatch", title: p.hatchedMs ? "🐣 Hatched" : "🐣 Hatching" });
       } else if (p.born) {
         out.push({ kind: "born", a: lastDay(p), b: lastDay(p), label: "👶 Born", title: p.babyCount > 1 ? "👶 Babies born" : "👶 Baby born" });
       }
@@ -267,15 +274,20 @@
     for (const p of pregnancies) {
       const a = dayOf(p.timeline.startMs);
       const b = lastDay(p);
+      // Eggs hatch after the pregnancy ended.
+      const hatchAt = p.born && isEggs(p) ? (p.hatchedMs ?? p.hatchMs ?? null) : null;
+      if (on("born") && hatchAt != null && n === dayOf(hatchAt)) {
+        out.push({ kind: "born", text: p.hatchedMs ? (p.babyCount > 1 ? `${p.babyCount} eggs hatched` : "Your egg hatched") : `Hatching at ${timeFmt.format(hatchAt)}`, about: aboutOf(p) });
+      }
       if (n < a || n > b) continue;
       const about = aboutOf(p);
       if (on("pregnant")) out.push({ kind: "pregnant", text: `Pregnant, week ${weekOn(p, n)}${n === a ? ": the first day!" : ""}`, about });
       if (p.endedMs == null) {
         if (on("milestone") && n >= todayN && n === dayOf(timeAtProgress(p.timeline, now, BABY_REVEAL_WEEK / TERM_WEEKS))) out.push({ kind: "milestone", text: `Week ${BABY_REVEAL_WEEK}: find out how many babies`, about });
-        if (on("milestone") && n >= todayN && n === dayOf(timeAtProgress(p.timeline, now, GENDER_REVEAL_WEEK / TERM_WEEKS))) out.push({ kind: "milestone", text: `Week ${GENDER_REVEAL_WEEK}: find out girl or boy`, about });
+        if (on("milestone") && !isEggs(p) && n >= todayN && n === dayOf(timeAtProgress(p.timeline, now, GENDER_REVEAL_WEEK / TERM_WEEKS))) out.push({ kind: "milestone", text: `Week ${GENDER_REVEAL_WEEK}: find out girl or boy`, about });
         if (on("due") && n === b) out.push({ kind: "due", text: "Due date", about });
       } else if (on("born") && p.born && n === b) {
-        out.push({ kind: "born", text: p.babyCount > 1 ? `${p.babyCount} babies were born` : "Your baby was born", about });
+        out.push({ kind: "born", text: isEggs(p) ? (p.babyCount > 1 ? `${p.babyCount} eggs were laid` : "Your egg was laid") : p.babyCount > 1 ? `${p.babyCount} babies were born` : "Your baby was born", about });
       }
     }
     if (on("waiting")) {

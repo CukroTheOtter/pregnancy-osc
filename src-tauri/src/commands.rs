@@ -122,6 +122,20 @@ pub fn give_birth(app: AppHandle, s: S, id: String) {
     changed(&app, &s, true);
 }
 
+/// Eggs: they hatch now ("Hatch now" on Home; the engine says so on its next tick).
+#[tauri::command]
+pub fn hatch_eggs(app: AppHandle, s: S, id: String) {
+    actions::hatch_now(&mut s.data.lock().unwrap(), &id, now_ms());
+    changed(&app, &s, true);
+}
+
+/// The avatar's Eggs switch (Avatars > Edit).
+#[tauri::command]
+pub fn set_avatar_eggs(app: AppHandle, s: S, avatar_id: String, on: bool) {
+    actions::set_avatar_eggs(&mut s.data.lock().unwrap(), &avatar_id, on);
+    changed(&app, &s, true);
+}
+
 #[tauri::command]
 pub fn start_labor(app: AppHandle, s: S, id: String) {
     pregsys_core::labor::start(&mut s.data.lock().unwrap(), &id, now_ms());
@@ -492,6 +506,7 @@ pub fn copy_details(app: AppHandle, s: S) -> String {
         hide_belly: mapping.sync_role(SyncRole::HideBelly).and_then(|r| d.sync_values.get(&r.name)).is_some_and(|&v| v > 0.5),
         auto_hidden: st.auto_hidden,
         shown_here: st.shown_here,
+        safe_mode: st.safe_mode,
         labor_held: st.labor_held,
     })
 }

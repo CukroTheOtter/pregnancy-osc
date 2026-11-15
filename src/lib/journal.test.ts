@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { journalFor, parseScan, rareRoll, scanTag, MAX_CRAVINGS, MAX_RARE_SCANS } from "./journal";
+import { journalFor, parseScan, rareRoll, scanTag, EGG_SCANS, MAX_CRAVINGS, MAX_RARE_SCANS } from "./journal";
 import { emptyData, pregnancy } from "./testdata";
 import { DAY_MS } from "./timeline";
 
@@ -27,6 +27,31 @@ describe("journal", () => {
     expect(items[0]).toMatchObject({ key: "born", title: "Triplets born!" });
     expect(items.some((x) => x.key === "scan-20")).toBe(false);
     expect(journalFor(d, pregnancy(), week(37)).some((x) => x.key === "scan-36")).toBe(true);
+  });
+
+  it("gives eggs only the rare scans an egg can have", () => {
+    const scans = Array.from({ length: 300 }, (_, i) => pregnancy({ id: `e${i}`, kind: "egg", babyCount: 2 })).flatMap((p) =>
+      Array.from({ length: 28 }, (_, w) => rareRoll(p, w + 12)?.scan).filter(Boolean),
+    );
+    expect(scans.length).toBeGreaterThan(0);
+    expect(scans.every((s) => EGG_SCANS.includes(s!))).toBe(true);
+  });
+
+  it("lays eggs, then hatches them", () => {
+    const d = emptyData();
+    const p = pregnancy({ kind: "egg", endedMs: week(15), born: true, babyCount: 2, hatchMs: week(18) });
+    const laid = journalFor(d, p, week(16));
+    expect(laid[0]).toMatchObject({ key: "born", emoji: "🥚", title: "2 eggs laid!" });
+    expect(laid.find((x) => x.key === "scan-12")!.text).toBe("2 eggs!");
+    // Girl or boy stays a surprise until they hatch.
+    d.settings.genderMode = "random";
+    const g = { ...p, genders: ["girl", "boy"] };
+    const going = pregnancy({ kind: "egg", babyCount: 2, genders: ["girl", "boy"] });
+    expect(journalFor(d, going, week(21)).find((x) => x.key === "scan-20")!.text).toBe("2 eggs!");
+    expect(journalFor(d, { ...g, hatchedMs: week(18) }, week(20))[0].text).toBe("A girl and a boy!");
+    expect(laid.some((x) => x.key === "hatched")).toBe(false);
+    const hatched = journalFor(d, { ...p, hatchedMs: week(18) }, week(20));
+    expect(hatched[0]).toMatchObject({ key: "hatched", emoji: "🐣", title: "Hatched!" });
   });
 
   it("keeps your notes with their scan, but not the app's old event entries", () => {

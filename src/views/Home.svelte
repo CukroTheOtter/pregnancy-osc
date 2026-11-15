@@ -10,11 +10,12 @@
   import LaborCard from "../components/LaborCard.svelte";
   import FunHistory from "../components/FunHistory.svelte";
   import JournalCard from "../components/JournalCard.svelte";
+  import EggsCard from "../components/EggsCard.svelte";
   import { app, currentPregnancy, currentPending, homeAvatarId, updatePregnancy, errorToast, toast, confirmAsk } from "../lib/app.svelte";
   import { api } from "../lib/api";
   import { avatarName, linkedGroup } from "../lib/scope";
   import { hasSystem } from "../lib/avatars";
-  import { BABY_REVEAL_WEEK, GENDER_REVEAL_WEEK, babyWord, genderEmoji, genderText } from "../lib/fertility";
+  import { BABY_REVEAL_WEEK, GENDER_REVEAL_WEEK, babyWord, eggWord, genderEmoji, genderText, isEggs, kidWord } from "../lib/fertility";
   import { dueMs, humanDuration, pause, progress, resume, retime, setProgress, TERM_WEEKS } from "../lib/timeline";
   import type { Settings } from "../lib/types";
   import { instanceName } from "../lib/safety";
@@ -111,6 +112,15 @@
   async function birth() {
     if (!p) return;
     const many = p.babyCount > 1;
+    if (isEggs(p)) {
+      const hours = app.data?.settings.labor.hatchHours ?? 72;
+      const wait = humanDuration(hours * 3_600_000);
+      if (await confirmAsk({ title: many ? "Lay your eggs? 🥚" : "Lay your egg? 🥚", text: `This ends the pregnancy and counts as a birth in your stats. ${many ? "They hatch" : "It hatches"} in ${wait}.`, ok: "Lay them!" })) {
+        await api.giveBirth(p.id);
+        toast(`${eggWord(p.babyCount)} Laid! 🥚 Hatching in ${wait}.`, undefined, "success", 8000);
+      }
+      return;
+    }
     if (await confirmAsk({ title: many ? "Welcome your babies? 🍼" : "Welcome your baby? 🍼", text: "This ends the pregnancy with a birth and counts in your stats.", ok: many ? "Welcome them!" : "Welcome baby!" })) {
       await api.giveBirth(p.id);
       toast(many ? `${babyWord(p.babyCount)} Congratulations! 🍼` : "Congratulations! 🍼", undefined, "success", 8000);
@@ -161,6 +171,8 @@
     <RevealCard r={reveal} {p} />
   {/if}
 
+  <EggsCard />
+
   {#if p}
     <section class="card hero">
       <ProgressRing value={Math.min(1, pr)} size={190} stroke={16}>
@@ -182,21 +194,23 @@
           </span>
         </div>
         <div class="fact">
-          <span class="muted small">Babies</span>
+          <span class="muted small">{isEggs(p) ? "Eggs" : "Babies"}</span>
           {#if week < BABY_REVEAL_WEEK}
             <strong>Too early to tell</strong>
             <span class="muted small">how many at week {BABY_REVEAL_WEEK}</span>
-          {:else if genders && week >= GENDER_REVEAL_WEEK}
-            <strong>{genderEmoji(p.genders)} {p.babyCount > 1 ? babyWord(p.babyCount) : ""}</strong>
+          {:else if genders && !isEggs(p) && week >= GENDER_REVEAL_WEEK}
+            <strong>{genderEmoji(p.genders)} {p.babyCount > 1 ? kidWord(p, p.babyCount) : ""}</strong>
             <span class="small">{genderText(p.genders)}</span>
           {:else}
-            <strong>{"👶".repeat(Math.min(p.babyCount, 4))} {babyWord(p.babyCount)}</strong>
-            {#if genders}<span class="muted small">{p.babyCount > 1 ? "genders" : "boy or girl"} at week {GENDER_REVEAL_WEEK}</span>{/if}
+            <strong>{(isEggs(p) ? "🥚" : "👶").repeat(Math.min(p.babyCount, 4))} {kidWord(p, p.babyCount)}</strong>
+            {#if genders}<span class="muted small">{p.babyCount > 1 ? "genders" : "boy or girl"} {isEggs(p) ? "when they hatch" : `at week ${GENDER_REVEAL_WEEK}`}</span>{/if}
           {/if}
         </div>
       </div>
       {#if bellyHidden && !viewingOther}
         <div class="hidden-note">🙈 <span><strong>Your belly is hidden.</strong> Hide Belly is on (in the Pregnancy System menu).</span><button class="small" onclick={showBelly}>Show</button></div>
+      {:else if status?.safeMode && !viewingOther}
+        <div class="hidden-note">🙈 <span><strong>Hidden while VRChat's Safe Mode is on.</strong> It comes back when you turn Safe Mode off (Settings > Safety).</span></div>
       {:else if autoHidden && !viewingOther}
         <div class="hidden-note">🙈 <span><strong>Hidden in this {instanceName(status?.instanceKind)} instance.</strong> It comes back when you leave (Settings > Safety).</span><button class="small" onclick={() => api.showBellyHere().catch(errorToast)}>Show here</button></div>
       {/if}
@@ -222,7 +236,8 @@
       {/if}
     </section>
 
-    <MovementCard {p} />
+    <!-- Eggs don't kick (driver.rs tick_kicks). -->
+    {#if !isEggs(p)}<MovementCard {p} />{/if}
 
     <PartnerCard {p} />
 

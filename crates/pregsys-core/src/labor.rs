@@ -65,11 +65,13 @@ pub struct LaborSettings {
     /// Labor only starts, and the water only breaks, while you're up
     /// (standing, not seated). Resting holds it off; Induce at still forces it.
     pub resting_holds: bool,
+    /// Eggs hatch this many real hours after they're laid.
+    pub hatch_hours: u32,
 }
 
 impl Default for LaborSettings {
     fn default() -> Self {
-        Self { start: LaborStart::Random, induce_week: None, minutes: 20, waits_for_partner: false, woohoo_starts: false, quiet_early: false, resting_holds: false }
+        Self { start: LaborStart::Random, induce_week: None, minutes: 20, waits_for_partner: false, woohoo_starts: false, quiet_early: false, resting_holds: false, hatch_hours: 72 }
     }
 }
 
@@ -136,6 +138,8 @@ pub struct Labor {
     pub partner_at_birth: bool,
     /// What started it.
     pub cause: Cause,
+    /// Laying eggs: no water breaking, early labor then laying (`Pushing`).
+    pub eggs: bool,
     /// When the last tick counted (not saved: after a restart counting starts fresh).
     #[serde(skip)]
     last_ms: Option<i64>,
@@ -143,19 +147,22 @@ pub struct Labor {
 
 /// How labor time splits: early, active, pushing.
 const SPLIT: [f64; 3] = [0.5, 0.3, 0.2];
+/// Laying eggs: early, then laying (no water breaking).
+const EGG_SPLIT: [f64; 3] = [0.6, 0.0, 0.4];
 
 fn total_ms(minutes: u32) -> i64 {
     minutes.max(1) as i64 * 60_000
 }
 
-/// Labor time when each phase ends.
-fn ends_ms(minutes: u32) -> [i64; 3] {
+/// Labor time when each phase ends (eggs skip the water: no active phase).
+fn ends_ms(minutes: u32, eggs: bool) -> [i64; 3] {
     let t = total_ms(minutes) as f64;
-    [(t * SPLIT[0]) as i64, (t * (SPLIT[0] + SPLIT[1])) as i64, t as i64]
+    let s = if eggs { EGG_SPLIT } else { SPLIT };
+    [(t * s[0]) as i64, (t * (s[0] + s[1])) as i64, t as i64]
 }
 
-fn phase_at(elapsed_ms: i64, minutes: u32) -> Phase {
-    let e = ends_ms(minutes);
+fn phase_at(elapsed_ms: i64, minutes: u32, eggs: bool) -> Phase {
+    let e = ends_ms(minutes, eggs);
     if elapsed_ms < e[0] {
         Phase::Early
     } else if elapsed_ms < e[1] {
@@ -168,9 +175,9 @@ fn phase_at(elapsed_ms: i64, minutes: u32) -> Phase {
 impl Labor {
     pub fn new(water_first: bool, minutes: u32, now_ms: i64) -> Self {
         // The water breaking first skips the early part.
-        let elapsed_ms = if water_first { ends_ms(minutes)[0] } else { 0 };
+        let elapsed_ms = if water_first { ends_ms(minutes, false)[0] } else { 0 };
         Self {
-            phase: phase_at(elapsed_ms, minutes),
+            phase: phase_at(elapsed_ms, minutes, false),
             started_ms: now_ms,
             elapsed_ms,
             water_first,
@@ -179,11 +186,16 @@ impl Labor {
         }
     }
 
+    /// Labor for this pregnancy: eggs never have the water break first.
+    pub fn for_pregnancy(p: &Pregnancy, minutes: u32, now_ms: i64) -> Self {
+        Self { eggs: p.eggs(), ..Self::new(water_first(p), minutes, now_ms) }
+    }
+
     /// Time until the next contraction starts: every 5 minutes, closing in to
     /// 2 early on, then every minute, a bit faster while pushing. `boost`
     /// (partner here) makes them come a little sooner.
     pub fn contraction_gap_ms(&self, minutes: u32, boost: bool) -> i64 {
-        let e = ends_ms(minutes);
+        let e = ends_ms(minutes, self.eggs);
         let gap = match self.phase {
             Phase::Early => {
                 let f = (self.elapsed_ms as f64 / e[0].max(1) as f64).clamp(0.0, 1.0);
@@ -225,9 +237,9 @@ pub fn labor_week(p: &Pregnancy) -> f64 {
     w - earlier
 }
 
-/// Does the water break first in this pregnancy? (The same every run.)
+/// Does the water break first in this pregnancy? (The same every run; never for eggs.)
 pub fn water_first(p: &Pregnancy) -> bool {
-    seeded(&p.id, "water") < WATER_FIRST_CHANCE
+    !p.eggs() && seeded(&p.id, "water") < WATER_FIRST_CHANCE
 }
 
 /// Labor is due by the settings (ignores whether you're in-game).
@@ -333,7 +345,7 @@ pub fn woohoo(data: &mut AppData, preg_id: &str, now_ms: i64, roll: f64) -> Opti
 pub fn start(data: &mut AppData, preg_id: &str, now_ms: i64) -> bool {
     let minutes = data.settings.labor.minutes;
     let Some(p) = data.pregnancy_mut(preg_id).filter(|p| p.is_active() && p.labor.is_none()) else { return false };
-    p.labor = Some(Labor { cause: Cause::You, ..Labor::new(water_first(p), minutes, now_ms) });
+    p.labor = Some(Labor { cause: Cause::You, ..Labor::for_pregnancy(p, minutes, now_ms) });
     true
 }
 
@@ -357,7 +369,7 @@ pub enum Skip {
 pub fn skip(data: &mut AppData, preg_id: &str, how: Skip) -> bool {
     let minutes = data.settings.labor.minutes;
     let Some(l) = data.pregnancy_mut(preg_id).filter(|p| p.is_active()).and_then(|p| p.labor.as_mut()) else { return false };
-    let ends = ends_ms(minutes);
+    let ends = ends_ms(minutes, l.eggs);
     l.elapsed_ms = match how {
         Skip::Minute => l.elapsed_ms + 60_000,
         Skip::NextPhase => ends.into_iter().find(|&e| e > l.elapsed_ms).unwrap_or(ends[2]),
@@ -367,6 +379,8 @@ pub fn skip(data: &mut AppData, preg_id: &str, how: Skip) -> bool {
             let i: usize = match l.phase {
                 Phase::Early => 0,
                 Phase::Active => 1,
+                // Eggs have no active phase: back from laying is early labor.
+                Phase::Pushing if l.eggs => 1,
                 Phase::Pushing => 2,
             };
             starts[i.saturating_sub(1)]
@@ -375,7 +389,7 @@ pub fn skip(data: &mut AppData, preg_id: &str, how: Skip) -> bool {
     .min(ends[2]);
     if how == Skip::PrevPhase {
         // The tick only moves phases forward: set it here.
-        l.phase = phase_at(l.elapsed_ms, minutes);
+        l.phase = phase_at(l.elapsed_ms, minutes, l.eggs);
         if l.phase == Phase::Early {
             l.water_broke_ms = None;
         }
@@ -469,7 +483,7 @@ impl Watch {
                 if ctx.up && roll < chance {
                     let wf = water_first(p);
                     let cause = if ctx.moving { Cause::Walking } else { Cause::Up };
-                    p.labor = Some(Labor { cause, ..Labor::new(wf, minutes, now_ms) });
+                    p.labor = Some(Labor { cause, ..Labor::for_pregnancy(p, minutes, now_ms) });
                     out.push(Event::Started { water_first: wf });
                 }
                 return out;
@@ -489,7 +503,7 @@ impl Watch {
                 // Due without the Induce at week: its time came; otherwise induced.
                 let by_start = due(p, &LaborSettings { induce_week: None, ..s.clone() }, now_ms);
                 let cause = if by_start { Cause::Due } else { Cause::Induced };
-                p.labor = Some(Labor { cause, ..Labor::new(wf, minutes, now_ms) });
+                p.labor = Some(Labor { cause, ..Labor::for_pregnancy(p, minutes, now_ms) });
                 out.push(Event::Started { water_first: wf });
             }
             return out;
@@ -504,13 +518,14 @@ impl Watch {
         let step = l.last_ms.map_or(0, |t| (now_ms - t).clamp(0, MAX_STEP_MS));
         l.last_ms = Some(now_ms);
         l.elapsed_ms += step;
-        // Resting: early labor goes on, but the water doesn't break until you're up.
+        // Resting: early labor goes on, but the water doesn't break (or
+        // laying doesn't start) until you're up.
         if s.resting_holds && !ctx.up && l.phase == Phase::Early {
-            l.elapsed_ms = l.elapsed_ms.min(ends_ms(minutes)[0] - 1);
+            l.elapsed_ms = l.elapsed_ms.min(ends_ms(minutes, l.eggs)[0] - 1);
         }
-        let phase = phase_at(l.elapsed_ms, minutes);
+        let phase = phase_at(l.elapsed_ms, minutes, l.eggs);
         if phase > l.phase {
-            if l.phase == Phase::Early {
+            if l.phase == Phase::Early && !l.eggs {
                 l.water_broke_ms = Some(now_ms);
                 out.push(Event::WaterBroke);
             }
@@ -589,6 +604,55 @@ mod tests {
             assert!(matches!(ev.as_slice(), [Event::WaterBroke, Event::Pushing, Event::Born { .. }]), "{ev:?}");
         }
         assert!(p.born && p.ended_ms.is_some());
+    }
+
+    #[test]
+    fn eggs_skip_the_water_then_hatch() {
+        let mut d = data();
+        d.pregnancies[0].kind = crate::model::BodyKind::Egg;
+        // Never the water first, whatever the id rolls.
+        for i in 0..200 {
+            let p = Pregnancy { id: format!("preg_{i}"), kind: crate::model::BodyKind::Egg, ..Default::default() };
+            assert!(!water_first(&p));
+        }
+        let mut w = Watch::default();
+        assert!(start(&mut d, "p", T0));
+        assert!(d.pregnancy("p").unwrap().labor.as_ref().unwrap().eggs);
+        let ev = run(&mut w, &mut d, &ready(), T0, 21 * 60);
+        assert!(matches!(ev.as_slice(), [Event::Pushing, Event::Born { .. }]), "early, laying, laid: {ev:?}");
+        // Laying starts at 60%.
+        let p = d.pregnancy("p").unwrap();
+        assert!(p.born && p.incubating());
+        let laid = p.ended_ms.unwrap();
+        assert_eq!(p.hatch_ms, Some(laid + 72 * 3_600_000));
+        assert!(actions::take_hatched(&mut d, laid + 71 * 3_600_000).is_empty());
+        // The app was closed when they came due: they hatched at their time.
+        assert_eq!(actions::take_hatched(&mut d, laid + 100 * 3_600_000), vec!["p".to_string()]);
+        let p = d.pregnancy("p").unwrap();
+        assert_eq!(p.hatched_ms, Some(laid + 72 * 3_600_000));
+        assert!(!p.incubating() && actions::take_hatched(&mut d, laid + 200 * 3_600_000).is_empty(), "only once");
+    }
+
+    #[test]
+    fn hatch_now_and_the_eggs_switch() {
+        let mut d = data();
+        d.pregnancies[0].avatar_id = Some("avtr_a".into());
+        crate::actions::touch_avatar(&mut d, "avtr_a", T0);
+        d.current_avatar_id = Some("avtr_a".into());
+        assert!(start(&mut d, "p", T0));
+        // Turned on mid-labor: the pregnancy and its labor become eggs.
+        actions::set_avatar_eggs(&mut d, "avtr_a", true);
+        let p = d.pregnancy("p").unwrap();
+        assert!(p.eggs() && p.labor.as_ref().unwrap().eggs);
+        assert_eq!(d.avatars["avtr_a"].kind, Some(crate::model::BodyKind::Egg));
+        actions::give_birth(&mut d, "p", T0 + 1_000);
+        assert!(!actions::hatch_now(&mut d, "nope", T0));
+        assert!(actions::hatch_now(&mut d, "p", T0 + 2_000));
+        assert_eq!(actions::take_hatched(&mut d, T0 + 2_000), vec!["p".to_string()]);
+        assert!(!actions::hatch_now(&mut d, "p", T0 + 3_000), "already hatched");
+        // Off again: laid eggs stay eggs.
+        actions::set_avatar_eggs(&mut d, "avtr_a", false);
+        assert!(d.pregnancy("p").unwrap().eggs() && d.avatars["avtr_a"].kind.is_none());
     }
 
     #[test]

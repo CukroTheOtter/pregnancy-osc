@@ -6,7 +6,7 @@
   import { journalFor } from "../lib/journal";
   import { app, viewPending, viewPregnancy } from "../lib/app.svelte";
   import { canOpenPregnancy, groupMembers, ownerAvatar, ownerName, personKey, pregnancyAvatar, pregnancyAvatarNames, pregnancyGroup } from "../lib/scope";
-  import { babyWord, genderText } from "../lib/fertility";
+  import { birthTitle, genderText, isEggs } from "../lib/fertility";
   import { humanDuration, progress, TERM_WEEKS } from "../lib/timeline";
   import type { Pregnancy } from "../lib/types";
 
@@ -57,11 +57,11 @@
 
   {#each past as p (p.id)}
     <div class="item past">
-      <span class="dot-pic" aria-hidden="true">{p.born ? "🍼" : "🤍"}</span>
+      <span class="dot-pic" aria-hidden="true">{p.born ? (isEggs(p) ? "🥚" : "🍼") : "🤍"}</span>
       <div class="grow">
-        <strong>{p.born ? `${babyWord(p.babyCount).replace("!", "")} born` : "Ended early"}</strong>
+        <strong>{p.born ? birthTitle(p) : "Ended early"}</strong>
         <div class="muted small">
-          {dateFmt.format(p.endedMs ?? 0)}{p.born && d.settings.genderMode === "random" && p.genders.length ? ` · ${genderText(p.genders)}` : ""}
+          {dateFmt.format(p.endedMs ?? 0)}{p.born && (!isEggs(p) || p.hatchedMs != null) && d.settings.genderMode === "random" && p.genders.length ? ` · ${genderText(p.genders)}` : ""}
         </div>
       </div>
       <button class="small soft" onclick={() => (reading = p)}>📔 Journal</button>
@@ -76,7 +76,7 @@
 {#if reading}
   {@const r = d.pregnancies.find((x) => x.id === reading?.id)}
   {#if r}
-    <Modal title="📔 {r.born ? `${babyWord(r.babyCount).replace("!", "")} born` : "Ended early"} · {dateFmt.format(r.endedMs ?? 0)}" onclose={() => (reading = null)}>
+    <Modal title="📔 {r.born ? birthTitle(r) : "Ended early"} · {dateFmt.format(r.endedMs ?? 0)}" onclose={() => (reading = null)}>
       <JournalList p={r} items={journalFor(d, r, app.now)} />
     </Modal>
   {/if}

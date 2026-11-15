@@ -62,6 +62,10 @@ pub struct InstanceTracker {
     /// wrld_...", which then belongs to the same new instance.
     #[serde(skip)]
     entering: bool,
+    /// VRChat's Safe Mode (the panic button) is on, from the log. Not saved:
+    /// the log is read again from the start when the app starts.
+    #[serde(skip)]
+    pub safe_mode: bool,
 }
 
 impl InstanceTracker {
@@ -134,6 +138,8 @@ impl InstanceTracker {
             }
             // Nothing changes: VRChat kept the avatar you had (the engine handles it).
             LogEvent::AvatarRefused { .. } => {}
+            // Any other level means Safe Mode was turned off.
+            LogEvent::SafetyLevel { level } => self.safe_mode = level == "PanicMode",
         }
         while self.changes.len() > 64 {
             self.changes.pop_front();
@@ -158,6 +164,7 @@ impl InstanceTracker {
     /// VRChat closed. It doesn't always log leaving the room, so leave here.
     pub fn vrchat_closed(&mut self, now_ms: i64) {
         self.leave(now_ms);
+        self.safe_mode = false;
     }
 
     fn touch_session(&mut self, p: Person) {
@@ -317,6 +324,22 @@ mod tests {
         t.apply(&join("Fox"), 0);
         assert_eq!(t.local.as_ref().unwrap().name, "Me");
         assert_eq!(t.others().len(), 1);
+    }
+
+    #[test]
+    fn safe_mode_until_turned_off_or_vrchat_closes() {
+        let mut t = InstanceTracker::default();
+        let level = |l: &str| SafetyLevel { level: l.into() };
+        t.apply(&level("Custom"), 0);
+        assert!(!t.safe_mode);
+        t.apply(&level("PanicMode"), M);
+        room(&mut t, 2 * M);
+        assert!(t.safe_mode, "joining a world keeps it on");
+        t.apply(&level("Custom"), 3 * M);
+        assert!(!t.safe_mode);
+        t.apply(&level("PanicMode"), 4 * M);
+        t.vrchat_closed(5 * M);
+        assert!(!t.safe_mode);
     }
 
     #[test]

@@ -4,7 +4,7 @@
   // The logic lives in pregsys-core/src/labor.rs; this only shows it.
   import { app, errorToast } from "../lib/app.svelte";
   import { api } from "../lib/api";
-  import { BABY_REVEAL_WEEK } from "../lib/fertility";
+  import { BABY_REVEAL_WEEK, isEggs } from "../lib/fertility";
   import type { Labor, Pregnancy } from "../lib/types";
   import { hipWarning } from "../lib/posture";
   import HeightDoubt from "./HeightDoubt.svelte";
@@ -28,18 +28,21 @@
   const resting = $derived(!!settings?.labor.restingHolds && canShow && status?.up === false);
   // "Labor waits for the other parent", and they aren't in the instance (same as labor.rs).
   const waitingPartner = $derived(!!settings?.labor.waitsForPartner && !!partner && status?.partnerHere === false);
-  const welcome = $derived(many ? "Welcome your babies 🍼" : "Welcome your baby 🍼");
+  // Eggs: no water breaking, early labor then laying (labor.rs EGG_SPLIT).
+  const eggs = $derived(isEggs(p));
+  const welcome = $derived(eggs ? (many ? "Lay your eggs 🥚" : "Lay your egg 🥚") : many ? "Welcome your babies 🍼" : "Welcome your baby 🍼");
   let busy = $state(false);
 
   /** Minutes between contractions (same as Labor::contraction_gap_ms). */
   function gapMinutes(l: Labor, minutes: number): number {
-    const early = minutes * 0.5 * 60_000;
+    const early = minutes * (eggs ? 0.6 : 0.5) * 60_000;
     if (l.phase === "early") return 5 - 3 * Math.min(1, l.elapsedMs / Math.max(1, early));
     return l.phase === "active" ? 1 : 0.75;
   }
 
-  // Progress through labor: early half, water broke 30%, pushing 20% (as in labor.rs).
-  const SPLIT = [0.5, 0.3, 0.2];
+  // Progress through labor: early half, water broke 30%, pushing 20%; eggs
+  // early 60%, laying 40% (as in labor.rs).
+  const SPLIT = $derived(eggs ? [0.6, 0, 0.4] : [0.5, 0.3, 0.2]);
   const total = $derived((settings?.labor.minutes ?? 20) * 60_000);
   const done = $derived(labor ? Math.min(1, ((viewingOther ? null : status?.laborElapsedMs) ?? labor.elapsedMs) / total) : 0);
   const leftMin = $derived(Math.max(1, Math.ceil(((1 - done) * total) / 60_000)));
@@ -56,7 +59,7 @@
   const cause = $derived(labor?.cause ? (CAUSE[labor.cause] ?? "") : "");
 
   const title = $derived(
-    !labor ? "" : labor.phase === "early" ? "🤰 Labor has started" : labor.phase === "active" ? "💦 Your water broke" : "💪 Almost there!",
+    !labor ? "" : labor.phase === "early" ? (eggs ? "🥚 Laying has started" : "🤰 Labor has started") : labor.phase === "active" ? "💦 Your water broke" : eggs ? "🥚 Laying your eggs!" : "💪 Almost there!",
   );
 
   const pausedWhy = $derived.by(() => {
@@ -89,7 +92,7 @@
     {#if paused}
       <span class="small">⏸ Labor paused. {pausedWhy}</span>
     {:else if resting && labor.phase === "early"}
-      <span class="rest small">🛋️ Resting: your water won't break until you're up</span>
+      <span class="rest small">{eggs ? "🛋️ Resting: laying won't start until you're up" : "🛋️ Resting: your water won't break until you're up"}</span>
       <HeightDoubt />
     {:else if settings}
       <span class="small muted">Contractions about every {Math.round(gapMinutes(labor, settings.labor.minutes) * 10) / 10} min</span>
@@ -97,12 +100,12 @@
     <div class="bar" role="progressbar" aria-label="Labor progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow={Math.round(done * 100)}>
       <div class="fill" class:paused style="width:{done * 100}%"></div>
       <span class="mark" style="left:{SPLIT[0] * 100}%"></span>
-      <span class="mark" style="left:{(SPLIT[0] + SPLIT[1]) * 100}%"></span>
+      {#if !eggs}<span class="mark" style="left:{(SPLIT[0] + SPLIT[1]) * 100}%"></span>{/if}
     </div>
     <div class="steps small">
-      <span style="width:{SPLIT[0] * 100}%" class:now={labor.phase === "early"}>🤰 Early</span>
-      <span style="width:{SPLIT[1] * 100}%" class:now={labor.phase === "active"}>💦 Water</span>
-      <span style="width:{SPLIT[2] * 100}%" class:now={labor.phase === "pushing"}>💪 Push</span>
+      <span style="width:{SPLIT[0] * 100}%" class:now={labor.phase === "early"}>{eggs ? "🥚" : "🤰"} Early</span>
+      {#if !eggs}<span style="width:{SPLIT[1] * 100}%" class:now={labor.phase === "active"}>💦 Water</span>{/if}
+      <span style="width:{SPLIT[2] * 100}%" class:now={labor.phase === "pushing"}>{eggs ? "🥚 Lay" : "💪 Push"}</span>
     </div>
     {#if !paused}<span class="small muted">About {leftMin} min to go</span>{/if}
     {#if partner && status?.partnerHere != null && !viewingOther}
@@ -122,10 +125,10 @@
     <span class="small muted">Ready when {partner} is here 💞</span>
   {/if}
   {#if status?.woohooNote}<span class="small muted">💕 {status.woohooNote}</span>{/if}
-  <button class="big" onclick={startLabor} disabled={busy}>Start labor 🤰</button>
+  <button class="big" onclick={startLabor} disabled={busy}>{eggs ? "Start laying 🥚" : "Start labor 🤰"}</button>
 {:else if isDue}
   {#if status?.laborAvatar && !viewingOther}
-    <span class="small muted">Ready for labor 🍼 Switch to {status.laborAvatar} to start it, or:</span>
+    <span class="small muted">{eggs ? "Ready to lay 🥚" : "Ready for labor 🍼"} Switch to {status.laborAvatar} to start it, or:</span>
   {/if}
   <button class="big" onclick={onbirth}>{welcome}</button>
 {/if}

@@ -72,6 +72,27 @@ export function babyWord(n: number): string {
   return n === 1 ? "One baby" : n === 2 ? "Twins!" : n === 3 ? "Triplets!" : n === 4 ? "Quadruplets!" : `${n} babies!`;
 }
 
+/** An egg pregnancy (the avatar's Eggs switch, pregsys-core `Pregnancy::eggs`). */
+export const isEggs = (p: { kind?: string | null }) => p.kind === "egg";
+
+/** Laid eggs that haven't hatched yet (pregsys-core `Pregnancy::incubating`). */
+export const isIncubating = (p: { kind?: string | null; born: boolean; hatchedMs?: number | null }) => p.born && isEggs(p) && p.hatchedMs == null;
+
+export function eggWord(n: number): string {
+  return n === 1 ? "One egg" : `${n} eggs!`;
+}
+
+/** babyWord, or eggWord for an egg pregnancy. */
+export function kidWord(p: { kind?: string | null }, n: number): string {
+  return isEggs(p) ? eggWord(n) : babyWord(n);
+}
+
+/** "Twins born", "One baby born", "2 eggs laid", "Egg laid" (no "!"). */
+export function birthTitle(p: { kind?: string | null; babyCount: number }): string {
+  if (isEggs(p)) return p.babyCount > 1 ? `${p.babyCount} eggs laid` : "Egg laid";
+  return `${babyWord(p.babyCount).replace("!", "")} born`;
+}
+
 export function genderEmoji(genders: string[]): string {
   return genders.map((g) => (g === "girl" ? "👧" : "👦")).join("");
 }

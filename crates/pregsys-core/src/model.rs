@@ -482,6 +482,9 @@ pub struct Pregnancy {
     pub osc_hints: OscHints,
     /// Labor, once it has started (kept after the birth).
     pub labor: Option<crate::labor::Labor>,
+    /// Eggs (`kind` Egg): when the laid eggs hatch, and when they did.
+    pub hatch_ms: Option<i64>,
+    pub hatched_ms: Option<i64>,
     /// Debug: made or changed by the debug tools, so it doesn't count toward
     /// achievements (see `achievements::real`).
     pub debug: bool,
@@ -511,6 +514,8 @@ impl Default for Pregnancy {
             milestones: Vec::new(),
             osc_hints: OscHints::default(),
             labor: None,
+            hatch_ms: None,
+            hatched_ms: None,
             debug: false,
         }
     }
@@ -519,6 +524,17 @@ impl Default for Pregnancy {
 impl Pregnancy {
     pub fn is_active(&self) -> bool {
         self.ended_ms.is_none()
+    }
+
+    /// An egg pregnancy (the avatar's Eggs switch): no water breaking, the
+    /// eggs are laid, then hatch later.
+    pub fn eggs(&self) -> bool {
+        self.kind == BodyKind::Egg
+    }
+
+    /// Laid eggs that haven't hatched yet.
+    pub fn incubating(&self) -> bool {
+        self.born && self.eggs() && self.hatched_ms.is_none()
     }
 
     /// Ended without a birth: left out of counts and achievements.

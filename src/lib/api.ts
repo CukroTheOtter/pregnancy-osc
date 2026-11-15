@@ -88,6 +88,10 @@ export const api = {
   partnerPicture: (userId: string) => call<string | null>("partner_picture", { userId }),
   giveBirth: (id: string) => call<void>("give_birth", { id }),
   startLabor: (id: string) => call<void>("start_labor", { id }),
+  /** Eggs: they hatch now. */
+  hatchEggs: (id: string) => call<void>("hatch_eggs", { id }),
+  /** The avatar's Eggs switch (its pregnancy, not laid yet, changes too). */
+  setAvatarEggs: (avatarId: string, on: boolean) => call<void>("set_avatar_eggs", { avatarId, on }),
   debugWoohoo: (outcome: boolean | null) => call<void>("debug_woohoo", { outcome }),
   debugRevealNow: () => call<void>("debug_reveal_now"),
   /** Debug: add Test Buddy, or remove them and everything they touched. */

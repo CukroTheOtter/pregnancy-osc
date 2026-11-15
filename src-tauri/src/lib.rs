@@ -267,6 +267,8 @@ pub fn run() {
             commands::debug_kick,
             commands::debug_clear_test_achievements,
             commands::give_birth,
+            commands::hatch_eggs,
+            commands::set_avatar_eggs,
             commands::start_labor,
             commands::restart_cycle,
             commands::quit_app,

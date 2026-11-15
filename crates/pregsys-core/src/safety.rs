@@ -64,12 +64,15 @@ pub struct SafetySettings {
     pub hide_belly_in: Vec<InstanceKind>,
     /// Labor doesn't start, and labor under way waits, in these instances.
     pub labor_waits_in: Vec<InstanceKind>,
+    /// The belly is hidden while VRChat's Safe Mode (the panic button) is on,
+    /// whatever the instance or "Show here".
+    pub hide_in_safe_mode: bool,
 }
 
 impl Default for SafetySettings {
     fn default() -> Self {
         let public = vec![InstanceKind::Public, InstanceKind::GroupPublic];
-        Self { hide_belly_in: public.clone(), labor_waits_in: public }
+        Self { hide_belly_in: public.clone(), labor_waits_in: public, hide_in_safe_mode: true }
     }
 }
 
@@ -110,7 +113,14 @@ mod tests {
         assert!(s.hides(Some("1~region(eu)")) && s.holds_labor(Some("1~region(eu)")));
         assert!(!s.hides(Some("1~private(usr_x)")) && !s.holds_labor(Some("1~friends(usr_x)")));
         assert!(!s.hides(None), "not in a world (or no log): nothing changes");
-        let off = SafetySettings { hide_belly_in: vec![], labor_waits_in: vec![Friends] };
+        assert!(s.hide_in_safe_mode);
+        let off = SafetySettings { hide_belly_in: vec![], labor_waits_in: vec![Friends], hide_in_safe_mode: false };
         assert!(!off.hides(Some("1")) && off.holds_labor(Some("1~friends(usr_x)")));
+    }
+
+    #[test]
+    fn older_saves_hide_in_safe_mode() {
+        let s: SafetySettings = serde_json::from_str(r#"{"hideBellyIn":[],"laborWaitsIn":[]}"#).unwrap();
+        assert!(s.hide_in_safe_mode);
     }
 }

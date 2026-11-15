@@ -2,7 +2,7 @@
 // plus the notes you write. Scans are drawn by the app (Ultrasound.svelte), so
 // an entry only keeps a short "scan:<babies>:<week>:<seed>" tag, never a photo.
 
-import { BABY_REVEAL_WEEK, GENDER_REVEAL_WEEK, babyWord, genderText } from "./fertility";
+import { BABY_REVEAL_WEEK, GENDER_REVEAL_WEEK, birthTitle, genderText, isEggs, kidWord } from "./fertility";
 import { progress, timeAtProgress, TERM_WEEKS } from "./timeline";
 import { rng } from "./scanstats";
 import { hidesMe, shownName } from "./privacy";
@@ -59,6 +59,9 @@ export const RARE_SCANS: Record<ScanVariant, { emoji: string; title: string; tex
   highfive: { emoji: "🙌", title: "High five!", text: "Caught them touching hands in there." },
 };
 
+/** The rare scans an egg can have (the rest need a baby you can see). */
+export const EGG_SCANS: ScanVariant[] = ["shy", "heart"];
+
 /** Rare week rolls. */
 export const RARE_CHANCE = 1 / 6;
 export const CRAVING_CHANCE = 1 / 10;
@@ -79,7 +82,8 @@ export function rareRoll(p: Pregnancy, week: number): { scan?: ScanVariant; crav
   const roll = r();
   if (week >= BABY_REVEAL_WEEK) {
     if (roll < RARE_CHANCE) {
-      const kinds: ScanVariant[] = ["wave", "yawn", "shy", "hiccups", "heart", ...(p.babyCount > 1 ? (["highfive"] as const) : [])];
+      // Inside a shell nobody can wave, yawn, hiccup or high-five: eggs only get the ones that still fit.
+      const kinds: ScanVariant[] = isEggs(p) ? EGG_SCANS : ["wave", "yawn", "shy", "hiccups", "heart", ...(p.babyCount > 1 ? (["highfive"] as const) : [])];
       return { scan: kinds[Math.floor(r() * kinds.length)] };
     }
   }
@@ -114,13 +118,16 @@ export const SCAN_WEEKS = [8, BABY_REVEAL_WEEK, GENDER_REVEAL_WEEK, 36] as const
 
 /** What a scan's screen says, worked out fresh for every picture: your name, the dates, and genders once they're shown. */
 export function scanMeta(d: AppData, p: Pregnancy, timeMs: number, scanWeek: number, showName = true) {
-  const genders = d.settings.genderMode === "random" && p.genders.length && scanWeek >= GENDER_REVEAL_WEEK ? p.genders : null;
+  // Eggs: nobody can tell until they hatch, so never on a scan.
+  const genders = d.settings.genderMode === "random" && p.genders.length && scanWeek >= GENDER_REVEAL_WEEK && !isEggs(p) ? p.genders : null;
   return {
     // Privacy mode: no name on the scan screen.
     patient: showName && !hidesMe(d) ? (d.instance.local?.name ?? null) : null,
     timeMs,
     dueMs: timeAtProgress(p.timeline, p.endedMs ?? timeMs, 1),
     genders,
+    // Eggs show as eggs on the scan.
+    eggs: isEggs(p),
   };
 }
 
@@ -178,9 +185,10 @@ export function journalFor(d: AppData, p: Pregnancy, now: number): JournalItem[]
   for (const w of SCAN_WEEKS) {
     if (reached < w) continue;
     const babies = shownBabies(p, w);
-    let text = w === 8 ? "Too early to count, but there's a little bean in there." : babyWord(p.babyCount);
-    if (w === GENDER_REVEAL_WEEK && genders) text = `${babyWord(p.babyCount)} ${genderText(p.genders)}`.trim();
-    if (w === 36) text = p.babyCount > 1 ? "Getting really snug in there!" : "Running out of room in there!";
+    const eggs = isEggs(p);
+    let text = w === 8 ? (eggs ? "Too early to count, but there's a little egg forming." : "Too early to count, but there's a little bean in there.") : kidWord(p, p.babyCount);
+    if (w === GENDER_REVEAL_WEEK && genders && !isEggs(p)) text = `${kidWord(p, p.babyCount)} ${genderText(p.genders)}`.trim();
+    if (w === 36) text = eggs ? "The shells are getting hard. Almost time to lay!" : p.babyCount > 1 ? "Getting really snug in there!" : "Running out of room in there!";
     add(`scan-${w}`, at(w), "🩻", `Week ${w} scan`, text, { babies, week: w, seed: seed + w }, w);
   }
 
@@ -214,10 +222,15 @@ export function journalFor(d: AppData, p: Pregnancy, now: number): JournalItem[]
   const dueAt = timeAtProgress(p.timeline, until, 1);
   if (reached >= TERM_WEEKS && dueAt < until - 60_000) add("due", Math.max(startedMs, dueAt), "📅", "Due date", "", null, TERM_WEEKS);
   if (p.labor?.waterBrokeMs) add("water", p.labor.waterBrokeMs, "💧", "Water broke");
-  if (p.labor?.startedMs) add("labor", p.labor.startedMs, "⏳", "Labor started");
+  if (p.labor?.startedMs) add("labor", p.labor.startedMs, "⏳", isEggs(p) ? "Laying started" : "Labor started");
   if (p.endedMs) {
-    if (p.born) add("born", p.endedMs, "🍼", p.babyCount > 1 ? `${babyWord(p.babyCount).replace("!", "")} born!` : "Baby born!", p.labor?.partnerAtBirth && partnerName ? `${partnerName} was there` : "");
+    if (p.born) add("born", p.endedMs, isEggs(p) ? "🥚" : "🍼", isEggs(p) || p.babyCount > 1 ? `${birthTitle(p)}!` : "Baby born!", p.labor?.partnerAtBirth && partnerName ? `${partnerName} was there` : "");
     else add("ended", p.endedMs, "🤍", "Ended early");
+  }
+  // Eggs hatch after they're laid (dated after the end, so it's the newest).
+  if (p.hatchedMs) {
+    const who = genders ? genderText(p.genders) : p.babyCount > 1 ? `${p.babyCount} little ones` : "";
+    out.push({ key: "hatched", timeMs: p.hatchedMs, emoji: "🐣", title: "Hatched!", text: who, scan: null, card: null, note: false, week: TERM_WEEKS });
   }
 
   // Your notes. The app's own old "event" entries are covered above.

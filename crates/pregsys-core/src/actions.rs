@@ -375,14 +375,14 @@ pub fn resolve_due(data: &mut AppData, now_ms: i64) -> Option<bool> {
 
 /// Pregnancies that just reached their due date (each only once, kept in
 /// its milestones): their baby counts, for the notification.
-pub fn take_due(data: &mut AppData, now_ms: i64) -> Vec<u32> {
+pub fn take_due(data: &mut AppData, now_ms: i64) -> Vec<(u32, bool)> {
     let mut out = Vec::new();
     for p in data.pregnancies.iter_mut() {
         if p.ended_ms.is_some() || p.timeline.is_paused() || p.timeline.progress(now_ms) < 1.0 || p.milestones.iter().any(|m| m == "due") {
             continue;
         }
         p.milestones.push("due".into());
-        out.push(p.baby_count);
+        out.push((p.baby_count, p.eggs()));
     }
     out
 }
@@ -612,8 +612,54 @@ fn close(data: &mut AppData, preg_id: &str, now_ms: i64) {
 /// The happy ending: ends the pregnancy as a birth.
 pub fn give_birth(data: &mut AppData, preg_id: &str, now_ms: i64) {
     close(data, preg_id, now_ms);
+    let hatch_ms = data.settings.labor.hatch_hours as i64 * 3_600_000;
     if let Some(p) = data.pregnancy_mut(preg_id) {
         p.born = true;
+        // Eggs are laid: they hatch later (see `take_hatched`).
+        if p.eggs() {
+            p.hatch_ms = Some(now_ms + hatch_ms);
+        }
+    }
+}
+
+/// Laid eggs whose time has come hatch (also the ones that came due while
+/// the app was closed, at the time they were due). Returns the pregnancies
+/// that hatched.
+pub fn take_hatched(data: &mut AppData, now_ms: i64) -> Vec<String> {
+    let mut out = Vec::new();
+    for p in data.pregnancies.iter_mut().filter(|p| p.incubating()) {
+        // Laid before eggs had a hatch time (older saves): they hatched when laid.
+        let at = p.hatch_ms.or(p.ended_ms).unwrap_or(now_ms);
+        if let Some(at) = Some(at).filter(|&at| now_ms >= at) {
+            p.hatched_ms = Some(at);
+            out.push(p.id.clone());
+        }
+    }
+    out
+}
+
+/// "Hatch now": the eggs hatch on the next check. False if they aren't incubating.
+pub fn hatch_now(data: &mut AppData, preg_id: &str, now_ms: i64) -> bool {
+    let Some(p) = data.pregnancy_mut(preg_id).filter(|p| p.incubating()) else { return false };
+    p.hatch_ms = Some(p.hatch_ms.map_or(now_ms, |at| at.min(now_ms)));
+    true
+}
+
+/// The avatar's Eggs switch. Its pregnancy (not laid yet) changes with it,
+/// labor already going too.
+pub fn set_avatar_eggs(data: &mut AppData, avatar_id: &str, on: bool) {
+    if let Some(a) = data.avatars.get_mut(avatar_id) {
+        a.kind = on.then_some(BodyKind::Egg);
+    }
+    let Some(id) = data.current_pregnancy_id(Some(avatar_id)) else { return };
+    if let Some(p) = data.pregnancy_mut(&id).filter(|p| p.is_active()) {
+        p.kind = if on { BodyKind::Egg } else { BodyKind::Human };
+        if let Some(l) = p.labor.as_mut() {
+            l.eggs = on;
+            if on {
+                l.water_first = false;
+            }
+        }
     }
 }
 
@@ -933,7 +979,7 @@ mod tests {
         let id = start_pregnancy(&mut d, NewPregnancy { mode: Some(DurationMode::Custom), custom_ms: Some(LATER), ..Default::default() }, 0);
         assert!(take_due(&mut d, LATER / 2).is_empty());
         let n = d.pregnancy(&id).unwrap().baby_count;
-        assert_eq!(take_due(&mut d, LATER), vec![n]);
+        assert_eq!(take_due(&mut d, LATER), vec![(n, false)]);
         assert!(take_due(&mut d, LATER * 2).is_empty(), "only once");
     }
 

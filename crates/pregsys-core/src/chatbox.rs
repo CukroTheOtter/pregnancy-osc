@@ -23,7 +23,7 @@ const UNKNOWN: &str = "Unknown";
 pub const DEBUG_EVENTS: [&str; 7] = ["avatarChange", "avatarLoaded", "sync", "menuButtons", "bellySnap", "heard", "kicks"];
 
 /// Event keys, in the order the settings show them.
-pub const EVENTS: [&str; 10] = ["started", "paused", "resumed", "stopped", "labor", "waterBroke", "born", "woohoo", "notPregnant", "achievement"];
+pub const EVENTS: [&str; 12] = ["started", "paused", "resumed", "stopped", "labor", "waterBroke", "born", "laid", "hatched", "woohoo", "notPregnant", "achievement"];
 
 fn default_text(event: &str) -> &'static str {
     match event {
@@ -34,6 +34,8 @@ fn default_text(event: &str) -> &'static str {
         "labor" => "🤰 Labor has started!",
         "waterBroke" => "💦 Water broke!",
         "born" => "🍼 The baby is here!",
+        "laid" => "🥚 The eggs are laid!",
+        "hatched" => "🐣 The eggs hatched!",
         "woohoo" => "💕 WooHoo!",
         "notPregnant" => "Not pregnant this time",
         "achievement" => "🏆 {achievement}",
@@ -203,7 +205,7 @@ impl Watch {
                 if new { vec![("started", vars(b))] } else { vec![] }
             }
             (Some(a), None) => match data.pregnancies.iter().find(|p| p.id == *a) {
-                Some(p) if p.born => vec![("born", vars(a))],
+                Some(p) if p.born => vec![(if p.eggs() { "laid" } else { "born" }, vars(a))],
                 Some(p) if p.ended_ms.is_some() => vec![("stopped", vars(a))],
                 // Stopped (it's gone now, see `AppData::stops`).
                 None if data.stops.iter().any(|s| s.id == *a) => vec![("stopped", Vars::default())],

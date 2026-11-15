@@ -330,6 +330,8 @@
           <input value={p.name ?? ""} onchange={(e) => save(p, (x) => ((x.name = (e.target as HTMLInputElement).value.trim() || null), (x.autoName = false)))} />
         </label>
 
+        <Toggle checked={p.kind === "egg"} label="🥚 Eggs" hint="Lays eggs instead of giving birth: no water breaking, and the eggs hatch later (Settings > Labor and birth). Changes its pregnancy too, if not laid yet." onchange={(v) => api.setAvatarEggs(p.id, v).catch(errorToast)} />
+
         {#if perAvatar}
           <label class="field">Group
             <select value={p.groupId && d.groups[p.groupId] ? p.groupId : ""} onchange={(e) => chooseGroup(p, (e.target as HTMLSelectElement).value)}>

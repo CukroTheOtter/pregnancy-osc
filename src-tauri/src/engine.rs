@@ -151,6 +151,12 @@ impl Posture {
     }
 }
 
+/// "3 days", "1 day", "12 hours" (how long eggs take to hatch).
+fn hours_text(h: u32) -> String {
+    let plural = |n: u32, w: &str| if n == 1 { format!("1 {w}") } else { format!("{n} {w}s") };
+    if h >= 24 && h % 24 == 0 { plural(h / 24, "day") } else { plural(h, "hour") }
+}
+
 fn to_osc(v: ParamValue) -> OscValue {
     match v {
         ParamValue::Float(f) => OscValue::Float(f),
@@ -353,6 +359,7 @@ impl Engine {
             self.check_reveal(now);
             self.check_due(now);
             self.tick_labor(now);
+            self.check_hatched(now);
             if self.last_params_fill.elapsed() >= Duration::from_secs(60) {
                 self.last_params_fill = Instant::now();
                 self.fill_params_from_vrchat();
@@ -1058,13 +1065,34 @@ impl Engine {
         }
         self.shared.mark_dirty();
         let _ = self.app.emit("data-changed", ());
-        for babies in due {
-            let (title, body) = if babies > 1 {
-                ("Your babies are due! 🍼", "Open the app to welcome them.")
-            } else {
-                ("Your baby is due! 🍼", "Open the app to welcome them.")
+        for (babies, eggs) in due {
+            let (title, body) = match (eggs, babies > 1) {
+                (true, _) => ("Your eggs are due! 🥚", "Open the app to lay them."),
+                (false, true) => ("Your babies are due! 🍼", "Open the app to welcome them."),
+                (false, false) => ("Your baby is due! 🍼", "Open the app to welcome them."),
             };
             crate::notify(&self.app, title, body);
+        }
+    }
+
+    /// Laid eggs hatch when their time comes (Settings > Labor and birth).
+    fn check_hatched(&mut self, now: i64) {
+        let (hatched, vars) = {
+            let mut d = self.shared.data.lock().unwrap();
+            let ids = actions::take_hatched(&mut d, now);
+            let vars: Vec<(u32, Vars)> = ids.iter().filter_map(|id| d.pregnancy(id)).map(|p| (p.baby_count, Vars::of(p, now))).collect();
+            (ids, vars)
+        };
+        if hatched.is_empty() {
+            return;
+        }
+        self.trace.note("eggs", &format!("Hatched: {}", hatched.join(", ")));
+        self.shared.mark_dirty();
+        let _ = self.app.emit("data-changed", ());
+        for (n, v) in vars {
+            let body = if n > 1 { format!("{n} little ones are here.") } else { "Your little one is here.".into() };
+            crate::notify(&self.app, "Your eggs hatched! 🐣", &body);
+            self.chat("hatched", v);
         }
     }
 
@@ -1096,20 +1124,32 @@ impl Engine {
     }
 
     /// Settings > Safety: hides the belly in some instance types (unless you
-    /// showed it here). Your saved Hide Belly isn't touched.
+    /// showed it here), and while VRChat's Safe Mode is on (always). Your
+    /// saved Hide Belly isn't touched.
     fn update_safety(&mut self) {
-        let hide = {
+        let (hide, safe_mode) = {
             let d = self.shared.data.lock().unwrap();
             let here = d.instance.instance.clone().filter(|_| d.settings.read_logs);
             if self.shown_here.is_some() && self.shown_here != here {
                 self.shown_here = None;
             }
-            d.settings.safety.hides(here.as_deref()) && self.shown_here.is_none()
+            let safe_mode = self.safe_mode_hides(&d);
+            (safe_mode || (d.settings.safety.hides(here.as_deref()) && self.shown_here.is_none()), safe_mode)
         };
         if hide != self.driver.auto_hide() {
-            self.trace.note("safety", if hide { "The instance hides the belly" } else { "The instance stopped hiding the belly" });
+            let why = match (hide, safe_mode) {
+                (true, true) => "VRChat's Safe Mode hides the belly",
+                (true, false) => "The instance hides the belly",
+                (false, _) => "Safety stopped hiding the belly",
+            };
+            self.trace.note("safety", why);
         }
         self.driver.set_auto_hide(hide);
+    }
+
+    /// VRChat's Safe Mode (the panic button) is on and Settings > Safety hides the belly for it.
+    fn safe_mode_hides(&self, d: &pregsys_core::model::AppData) -> bool {
+        d.settings.read_logs && d.settings.safety.hide_in_safe_mode && d.instance.safe_mode
     }
 
     /// The belly is hidden right now (Hide Belly, or by the instance).
@@ -1180,9 +1220,10 @@ impl Engine {
         }
         self.shared.mark_dirty();
         let _ = self.app.emit("data-changed", ());
-        let vars = {
+        let (vars, eggs, hatch_hours) = {
             let d = self.shared.data.lock().unwrap();
-            d.current_pregnancy(self.driver.avatar_id()).map(|p| Vars::of(p, now)).unwrap_or_default()
+            let cur = d.current_pregnancy(self.driver.avatar_id());
+            (cur.map(|p| Vars::of(p, now)).unwrap_or_default(), cur.is_some_and(|p| p.eggs()), d.settings.labor.hatch_hours)
         };
         for e in events {
             self.trace.note("labor", &format!("{e:?}"));
@@ -1196,12 +1237,18 @@ impl Engine {
                         self.chat("waterBroke", vars.clone());
                     }
                     let body = if water_first { "Your water broke! The baby is on the way." } else { "Contractions have started." };
-                    crate::notify(&self.app, "Labor has started! 🤰", body);
+                    crate::notify(&self.app, if eggs { "Laying has started! 🥚" } else { "Labor has started! 🤰" }, body);
                 }
                 Event::WaterBroke => self.chat("waterBroke", vars.clone()),
                 Event::Pushing => {}
-                Event::Born { .. } => {
-                    crate::notify(&self.app, "Welcome, little one! 🍼", "Your baby is here.");
+                Event::Born { pregnancy_id } => {
+                    // The worn avatar's pregnancy just ended: ask the one that did.
+                    let laid = self.shared.data.lock().unwrap().pregnancy(&pregnancy_id).is_some_and(|p| p.eggs());
+                    if laid {
+                        crate::notify(&self.app, "Your eggs are laid! 🥚", &format!("They hatch in {}.", hours_text(hatch_hours)));
+                    } else {
+                        crate::notify(&self.app, "Welcome, little one! 🍼", "Your baby is here.");
+                    }
                     let _ = self.app.emit("born", ());
                 }
             }
@@ -1403,6 +1450,7 @@ impl Engine {
             st.auto_hidden = self.driver.auto_hide();
             st.labor_held = d.settings.read_logs && d.settings.safety.holds_labor(here);
             st.shown_here = self.shown_here.is_some();
+            st.safe_mode = self.safe_mode_hides(&d);
         }
         st.afk = self.afk;
         st.up = self.posture.up(self.steamvr_resting());

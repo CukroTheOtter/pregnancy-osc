@@ -225,7 +225,7 @@
   <div class="group">
     <strong>⏩ Labor</strong>
     <span class="muted small">
-      {#if !p}Not pregnant on this avatar.{:else if p.labor}In labor: {p.labor.phase === "early" ? "early" : p.labor.phase === "active" ? "water broke" : "pushing"}. Skips play out within a second, with the real events. Going back is quiet (back to early un-breaks the water).{:else}Not in labor yet (week {Math.floor(pWeek)}). Starting it here skips the week and avatar checks.{/if}
+      {#if !p}Not pregnant on this avatar.{:else if p.labor}In labor: {p.labor.phase === "early" ? "early" : p.labor.phase === "active" ? "water broke" : p.labor.eggs ? "laying" : "pushing"}. Skips play out within a second, with the real events. Going back is quiet (back to early un-breaks the water).{:else}Not in labor yet (week {Math.floor(pWeek)}). Starting it here skips the week and avatar checks.{/if}
     </span>
     <div class="row">
       <button class="small" onclick={() => run("Labor started", () => api.debugLabor(null))} disabled={!p || !!p.labor}>🤰 Start labor</button>

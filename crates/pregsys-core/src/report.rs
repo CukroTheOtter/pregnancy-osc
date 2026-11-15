@@ -31,6 +31,8 @@ pub struct Input<'a> {
     pub hide_belly: bool,
     pub auto_hidden: bool,
     pub shown_here: bool,
+    /// Hidden because VRChat's Safe Mode is on.
+    pub safe_mode: bool,
     pub labor_held: bool,
 }
 
@@ -78,7 +80,7 @@ pub fn render(i: &Input) -> String {
         format!("SPS sockets: {}", i.sps_sockets),
         format!("Instance type: {}", i.instance_kind.map_or("unknown", kind_name)),
         format!("Hide Belly: {}", if i.hide_belly { "on" } else { "off" }),
-        format!("Safety: belly hidden {}{}, labor waiting {}", yes(i.auto_hidden), if i.shown_here { " (shown here)" } else { "" }, yes(i.labor_held)),
+        format!("Safety: belly hidden {}{}, labor waiting {}", yes(i.auto_hidden), if i.safe_mode { " (VRChat Safe Mode)" } else if i.shown_here { " (shown here)" } else { "" }, yes(i.labor_held)),
     ];
     lines.join("\n")
 }
@@ -113,6 +115,7 @@ mod tests {
             hide_belly: false,
             auto_hidden: false,
             shown_here: false,
+            safe_mode: false,
             labor_held: true,
         });
         assert_eq!(

@@ -30,6 +30,8 @@
     { id: "labor", label: "Labor started", def: "🤰 Labor has started!", off: true },
     { id: "waterBroke", label: "Water broke", def: "💦 Water broke!", off: true },
     { id: "born", label: "Baby born", def: "🍼 The baby is here!" },
+    { id: "laid", label: "Eggs laid", def: "🥚 The eggs are laid!" },
+    { id: "hatched", label: "Eggs hatched", def: "🐣 The eggs hatched!" },
     { id: "woohoo", label: "WooHoo", def: "💕 WooHoo!" },
     { id: "notPregnant", label: "Not pregnant this time", def: "Not pregnant this time" },
     { id: "achievement", label: "Achievement unlocked", def: "🏆 {achievement}" },
@@ -202,8 +204,12 @@
   }
 
   // Settings > Safety (older saves have none yet: the defaults, as in safety.rs).
-  const safety = $derived<SafetySettings>(s.safety ?? { hideBellyIn: [...OPEN_KINDS], laborWaitsIn: [...OPEN_KINDS] });
-  async function toggleKind(list: keyof SafetySettings, k: InstanceKind) {
+  const safety = $derived<SafetySettings>(s.safety ?? { hideBellyIn: [...OPEN_KINDS], laborWaitsIn: [...OPEN_KINDS], hideInSafeMode: true });
+  function setSafeMode(on: boolean) {
+    s.safety = { ...safety, hideInSafeMode: on };
+    commit();
+  }
+  async function toggleKind(list: "hideBellyIn" | "laborWaitsIn", k: InstanceKind) {
     const cur = { ...safety, [list]: [...safety[list]] };
     const on = cur[list].includes(k);
     if (on && list === "laborWaitsIn" && OPEN_KINDS.includes(k)) {
@@ -507,6 +513,7 @@
       </div>
       <span class="hint">Your Hide Belly isn't changed: back in another instance, your belly is shown (or hidden) just as you left it. Home's <strong>Show here</strong> shows it anyway, until you leave.</span>
     </div>
+    <Toggle checked={safety.hideInSafeMode !== false} label="Hide the belly in VRChat's Safe Mode" hint="The panic button. Hidden in any instance, even if you turn it on while loading, until Safe Mode is off." onchange={setSafeMode} />
     <div class="field">
       <strong>🍼 Labor waits in</strong>
       <div class="kinds">
@@ -784,6 +791,16 @@
         <Toggle checked={s.vrHeightAuto !== false} label="Set height automatically" hint="Learns the highest height your headset spends 20 seconds at. Off: only the height you set." onchange={(v) => { s.vrHeightAuto = v; commit(); }} />
       {/if}
     {/if}
+    <strong class="sub">🥚 Eggs</strong>
+    <div class="field">
+      <strong>Eggs hatch after</strong>
+      <div class="segmented">
+        {#each [[1, "1 hour"], [24, "1 day"], [72, "3 days"], [168, "1 week"]] as [h, label]}
+          <button class:on={(s.labor.hatchHours ?? 72) === h} onclick={() => { s.labor.hatchHours = h as number; commit(); }}>{label}</button>
+        {/each}
+      </div>
+      <span class="hint">For avatars with Eggs on (Avatars > edit an avatar). Labor has no water breaking: early labor, then laying. The eggs hatch this long after they're laid (real time, even with the app closed). Home has <strong>Hatch now</strong>.</span>
+    </div>
     <span class="muted small">Labor only moves while you're in VRChat on an avatar with <code>Pregnancy/Labor</code>. On other avatars, "Welcome your baby" skips straight to the birth. Holding Start in the avatar's menu (from week 37) starts labor too.</span>
     {#if lacks("labor")}{@render cantShow("labor", "Labor")}{/if}
   </Section>

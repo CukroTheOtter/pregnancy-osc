@@ -118,6 +118,8 @@ pub struct Status {
     pub auto_hidden: bool,
     /// You showed the belly in this instance ("Show here").
     pub shown_here: bool,
+    /// VRChat's Safe Mode is on and Settings > Safety hides the belly for it.
+    pub safe_mode: bool,
     /// Settings > Safety: labor waits in this instance.
     pub labor_held: bool,
     pub mapping_path: String,

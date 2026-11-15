@@ -88,6 +88,8 @@ The manifest grants: network (OSC/OSCQuery), read-only access to the VRChat fold
 
 **What each parameter does**, the sync cost, and how the "app active" flag and heartbeat work: **[docs/osc-parameters.md](docs/osc-parameters.md)**.
 
+**Egg-laying sonas:** turn on 🥚 Eggs for an avatar to lay eggs that hatch later. See **[docs/eggs.md](docs/eggs.md)**.
+
 **Minimum:** one synced float (8 bits). **Everything:** 49 synced bits. The app-active flag and heartbeat are local and free.
 
 ---
@@ -102,10 +104,12 @@ The manifest grants: network (OSC/OSCQuery), read-only access to the VRChat fold
 | Pregnancy paused | Lets go of the belly and extra size, so you can set them in-game. |
 | Chatbox on (Settings) | Shows your own message in the chatbox when a pregnancy starts, pauses, resumes, stops, and more, then clears it. Can also always show your pregnancy status (and the other parent); by default not while your belly is hidden. |
 | Public instance (Settings > Safety) | By default the belly is hidden and labor waits in Public and Group Public instances (pick any instance types). Your own Hide Belly isn't changed, so it's back as you left it in the next instance. Home's **Show here** shows it anyway until you leave. |
+| VRChat's Safe Mode (Settings > Safety) | On by default: while Safe Mode is on (the panic button, even from the loading screen), the belly is hidden in any instance until you turn it off. Needs log reading. |
 | A WooHoo (SPS sockets, see Settings) | Starts the grace period (or a pregnancy right away with Fertility off) and guesses who it was from the log. With 2+ others around you pick who it was (or 🎲 Random); once you've WooHoo'd as many times in one instance as there are other people in it, it picks at random for you. With **Only my partners** on, only your 💞 partners count: someone else named doesn't count, and with nobody named it's your partners still in the instance (none: it doesn't count; one: them; more: you pick, and 🎲 Random picks among them). |
 | Waiting to find out | The waiting card on Home has **Find out now** (after a confirm), and **We used protection**, which calls the wait off. Those WooHoos stay in the history as "Protected", not tries. |
 | Exactly one other person in the instance, nobody left for 10 min | Other parent shown as **Guessed**, with confirm or change. |
 | More people, or joins/leaves | Other parent **Unknown**, with a list of who was in that instance to pick from. |
+| Eggs on for an avatar (Avatars) | Labor skips the water breaking (`Pregnancy/Labor` never sends 2), the eggs are laid, then hatch after a while (Settings > Labor and birth, 3 days by default; Home has **Hatch now**). See [docs/eggs.md](docs/eggs.md). |
 | App closes | Sends the final belly value and releases the app-active flag. |
 
 ---
@@ -126,6 +130,7 @@ The manifest grants: network (OSC/OSCQuery), read-only access to the VRChat fold
 app/
   config/osc-parameters.json   default parameter names (copied to your settings folder on first run)
   docs/osc-parameters.md       avatar-side parameter list and budget
+  docs/eggs.md                 laying eggs and hatching (the avatar's Eggs switch)
   crates/pregsys-core/         pure logic + tests: timeline, mapping, stage, driver, storage, log parser
   crates/pregsys-osc/          OSC send/receive, OSCQuery advertise + discovery
   crates/belly-cli/            command-line tool to test OSC by hand

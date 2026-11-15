@@ -94,11 +94,12 @@ fn worlds(d: &AppData) -> HashMap<&str, usize> {
     n
 }
 
-/// Both a girl and a boy, once genders are known (a birth or week 20).
+/// Both a girl and a boy, once genders are known (a birth or week 20; eggs
+/// only once they've hatched).
 fn one_of_each(d: &AppData, now: i64) -> bool {
     counted(d).any(|p| {
         let week = p.timeline.progress(p.ended_ms.unwrap_or(now)) * TERM_WEEKS;
-        let known = p.born || week >= crate::fertility::GENDER_REVEAL_WEEK;
+        let known = if p.eggs() { p.hatched_ms.is_some() } else { p.born || week >= crate::fertility::GENDER_REVEAL_WEEK };
         known && p.genders.iter().any(|g| g == "girl") && p.genders.iter().any(|g| g == "boy")
     })
 }
@@ -167,6 +168,14 @@ pub const ALL: &[Achievement] = &[
     Achievement { id: "globetrotter", title: "Globetrotter", earned: |d, _| worlds(d).len() >= 10 },
     Achievement { id: "favorite_spot", title: "Favorite Spot", earned: |d, _| worlds(d).values().any(|&n| n >= 10) },
     Achievement { id: "taking_a_break", title: "Taking A Break", earned: |d, _| counted(d).any(|p| p.born && p.timeline.paused_total_ms > 0) },
+    // Eggs: laying counts as a birth everywhere above; these are just for eggs.
+    Achievement { id: "egg_cellent", title: "Egg-cellent!", earned: |d, _| counted(d).any(|p| p.born && p.eggs()) },
+    Achievement { id: "hatch_day", title: "Hatch Day", earned: |d, _| counted(d).any(|p| p.eggs() && p.hatched_ms.is_some()) },
+    Achievement {
+        id: "best_of_both",
+        title: "Best Of Both",
+        earned: |d, _| counted(d).any(|p| p.born && p.eggs()) && counted(d).any(|p| p.born && !p.eggs()),
+    },
 ];
 
 /// Is this achievement earned with the data as it is now?
@@ -278,6 +287,26 @@ mod tests {
             assert!(got.contains(&id), "{id}");
         }
         assert!(!got.contains(&"triple_treat") && !got.contains(&"full_house") && !got.contains(&"long_haul"));
+    }
+
+    #[test]
+    fn eggs_laid_and_hatched() {
+        let mut d = AppData::new();
+        let mut eggs = preg(0, 2, Some(DAY_MS));
+        eggs.kind = crate::model::BodyKind::Egg;
+        d.pregnancies.push(eggs);
+        let got = check(&mut d, DAY_MS);
+        for id in ["welcome_home", "egg_cellent", "double_trouble"] {
+            assert!(got.contains(&id), "laying counts as a birth: {id}");
+        }
+        assert!(!got.contains(&"hatch_day") && !got.contains(&"best_of_both"));
+        // Girl or boy is a surprise until they hatch.
+        d.pregnancies[0].genders = vec!["girl".into(), "boy".into()];
+        assert!(!check(&mut d, 2 * DAY_MS).contains(&"one_of_each"), "laid, not hatched");
+        d.pregnancies[0].hatched_ms = Some(2 * DAY_MS);
+        assert_eq!(check(&mut d, 2 * DAY_MS), vec!["one_of_each", "hatch_day"]);
+        d.pregnancies.push(Pregnancy { id: "live".into(), ..preg(0, 1, Some(DAY_MS)) });
+        assert!(check(&mut d, 3 * DAY_MS).contains(&"best_of_both"));
     }
 
     #[test]

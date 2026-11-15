@@ -10,7 +10,7 @@
 
   const RESET = "In VRChat: Action Menu > Options > OSC > Reset Config, then switch avatars and back.";
   const FIXES: { emoji: string; title: string; steps: string[] }[] = [
-    { emoji: "🫃", title: "The belly isn't changing", steps: ["Is Hide Belly on, or is it hidden in a public instance? Home has a Show button.", "Paused, or waiting to find out? The app leaves the belly alone, or keeps it flat.", "Your avatar uses its own belly name? Set it in Avatars > Edit."] },
+    { emoji: "🫃", title: "The belly isn't changing", steps: ["Is Hide Belly on, VRChat's Safe Mode on, or is it hidden in a public instance? Home says which.", "Paused, or waiting to find out? The app leaves the belly alone, or keeps it flat.", "Your avatar uses its own belly name? Set it in Avatars > Edit."] },
     { emoji: "💕", title: "WooHoos aren't noticed", steps: ["Settings > Detecting WooHoos: is it on, and does your socket's type count?", "No sockets listed? They need VRCFury haptics on your avatar.", "While you're pregnant they're kept as “Already pregnant”, not tries.", "With Only my partners on, they only count with your 💞 partners."] },
     { emoji: "🧩", title: "An avatar “doesn't have the system”", steps: ["Wear it and wait about 30 seconds.", RESET, "Check the system is on it in Unity, then upload it again."] },
     { emoji: "📦", title: "Something's missing after an upload", steps: [`VRChat can keep the old list. ${RESET}`, "Check that parameter is on the uploaded avatar."] },
