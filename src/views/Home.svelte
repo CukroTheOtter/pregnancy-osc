@@ -209,10 +209,10 @@
           {/if}
         </div>
       </div>
-      {#if bellyHidden && !viewingOther}
+      {#if status?.safeMode && !viewingOther}
+        <div class="hidden-note">🙈 <span><strong>Hidden: VRChat's Safe Mode is on.</strong> It stays hidden after you turn Safe Mode off, until you tap Show (Settings > Safety).</span></div>
+      {:else if bellyHidden && !viewingOther}
         <div class="hidden-note">🙈 <span><strong>Your belly is hidden.</strong> Hide Belly is on (in the Pregnancy System menu).</span><button class="small" onclick={showBelly}>Show</button></div>
-      {:else if status?.safeMode && !viewingOther}
-        <div class="hidden-note">🙈 <span><strong>Hidden while VRChat's Safe Mode is on.</strong> It comes back when you turn Safe Mode off (Settings > Safety).</span></div>
       {:else if autoHidden && !viewingOther}
         <div class="hidden-note">🙈 <span><strong>Hidden in this {instanceName(status?.instanceKind)} instance.</strong> It comes back when you leave (Settings > Safety).</span><button class="small" onclick={() => api.showBellyHere().catch(errorToast)}>Show here</button></div>
       {/if}

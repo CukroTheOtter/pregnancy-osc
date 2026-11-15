@@ -106,6 +106,8 @@ struct Engine {
     /// "Show here": the instance where you showed the belly (Settings > Safety
     /// hides it there otherwise). Forgotten when you leave it.
     shown_here: Option<String>,
+    /// VRChat's Safe Mode was hiding the belly last check (its start saves Hide Belly on).
+    safe_mode_on: bool,
     /// Debug mode: what the engine is thinking, written to files.
     trace: Trace,
     /// An avatar VRChat refused to change to, whatever its OSCQuery says.
@@ -212,6 +214,7 @@ impl Engine {
             last_labor_save: past,
             height_doubt_since: None,
             shown_here: None,
+            safe_mode_on: false,
         }
     }
 
@@ -1136,6 +1139,12 @@ impl Engine {
             let safe_mode = self.safe_mode_hides(&d);
             (safe_mode || (d.settings.safety.hides(here.as_deref()) && self.shown_here.is_none()), safe_mode)
         };
+        // Safe Mode just came on: Hide Belly is saved on too, so the belly
+        // stays hidden after it ends (Home's Show brings it back).
+        if safe_mode && !self.safe_mode_on {
+            self.keep_belly_hidden();
+        }
+        self.safe_mode_on = safe_mode;
         if hide != self.driver.auto_hide() {
             let why = match (hide, safe_mode) {
                 (true, true) => "VRChat's Safe Mode hides the belly",
@@ -1145,6 +1154,17 @@ impl Engine {
             self.trace.note("safety", why);
         }
         self.driver.set_auto_hide(hide);
+    }
+
+    /// Saves Hide Belly on (like turning it on in the app or in-game) and sends it.
+    fn keep_belly_hidden(&mut self) {
+        let Some(name) = self.driver.mapping().sync_role(pregsys_core::mapping::SyncRole::HideBelly).map(|s| s.name.clone()) else { return };
+        self.shared.data.lock().unwrap().sync_values.insert(name.clone(), 1.0);
+        self.shared.mark_dirty();
+        self.driver.drop_held_sync(&name);
+        self.driver.resync();
+        self.trace.note("safety", "VRChat's Safe Mode: Hide Belly saved on");
+        let _ = self.app.emit("data-changed", ());
     }
 
     /// VRChat's Safe Mode (the panic button) is on and Settings > Safety hides the belly for it.

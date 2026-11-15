@@ -513,7 +513,7 @@
       </div>
       <span class="hint">Your Hide Belly isn't changed: back in another instance, your belly is shown (or hidden) just as you left it. Home's <strong>Show here</strong> shows it anyway, until you leave.</span>
     </div>
-    <Toggle checked={safety.hideInSafeMode !== false} label="Hide the belly in VRChat's Safe Mode" hint="The panic button. Hidden in any instance, even if you turn it on while loading, until Safe Mode is off." onchange={setSafeMode} />
+    <Toggle checked={safety.hideInSafeMode !== false} label="Hide the belly in VRChat's Safe Mode" hint="The panic button, even while loading. It turns Hide Belly on, so your belly stays hidden after Safe Mode too, until you tap Show on Home (or turn Hide Belly off in-game)." onchange={setSafeMode} />
     <div class="field">
       <strong>🍼 Labor waits in</strong>
       <div class="kinds">
