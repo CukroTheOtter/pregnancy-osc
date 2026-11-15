@@ -39,13 +39,15 @@
   // Settings > Safety hides it in this instance (Hide Belly itself stays as it is).
   const autoHidden = $derived(!!status?.autoHidden);
 
-  /** Turns Hide Belly off (saved, like doing it in-game). */
-  function showBelly() {
+  /** Turns Hide Belly on or off (saved, like doing it in-game). */
+  function setBellyHidden(on: boolean) {
     const name = status?.hideBelly;
     if (!name || !app.data) return;
-    app.data.syncValues = { ...app.data.syncValues, [name]: 0 };
-    api.setSyncValue(name, 0).catch(errorToast);
+    const value = on ? 1 : 0;
+    app.data.syncValues = { ...app.data.syncValues, [name]: value };
+    api.setSyncValue(name, value).catch(errorToast);
   }
+  const showBelly = () => setBellyHidden(false);
   // The avatar shown (worn or picked) has no Pregnancy System parameters (checked; the worn one not loading).
   const noSystem = $derived.by(() => {
     const a = aid ? app.data?.avatars[aid] : undefined;
@@ -218,6 +220,9 @@
       <div class="row controls">
         <button class="soft" onclick={togglePause}>{paused ? "▶ Resume" : "⏸ Pause"}</button>
         <button class="soft" onclick={openAdjust}>Adjust progress</button>
+        {#if status?.hideBelly && !bellyHidden && !viewingOther}
+          <button class="soft" onclick={() => setBellyHidden(true)} title="Turns Hide Belly on, like in the Pregnancy System menu">🙈 Hide belly</button>
+        {/if}
         <button class="soft stop" onclick={endEarly} title="Ends it without a birth">✕ End pregnancy</button>
       </div>
       {#if adjusting}
