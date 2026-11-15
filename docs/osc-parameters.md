@@ -166,7 +166,7 @@ These are local parameters on the avatar, so they cost no synced bits.
 | Situation | What the app does |
 |---|---|
 | Running, pregnant | Writes `stage` from the timeline about every `sendIntervalMs` (default 1 s) when it changed by at least `minStageChange`, and re-sends it every second anyway so in-game changes are put back. Plus Active and the heartbeat. |
-| Running, pregnancy paused | Does not write `stage` or `bellyExtra`, so you can set them in-game. Both are sent again on resume. |
+| Running, pregnancy paused | Does not write `stage` or `bellyExtra`, so you can set them in-game. Both are sent again on resume. Kicks (`fetalMovement`) carry on. |
 | Running, not pregnant | Does not write `stage` (so the in-game menu still works). Still holds Active and the heartbeat. |
 | App starts or VRChat connects | **Snaps** `stage` to the app's timeline, ignoring whatever the avatar did while the app was closed. A visible jump is expected. |
 | Avatar change | Loads that avatar's pregnancy (or its linked group's), snaps the belly, then re-sends the Sync parameters once the avatar has loaded. A birth's belly going down stops at the switch (it was the old avatar's). |

@@ -32,8 +32,6 @@
     <p class="muted small">Kicks are off (Settings > Kicks).</p>
   {:else if week < FIRST_KICK_WEEK}
     <p class="muted small">Too small to feel yet. Kicks start around week {FIRST_KICK_WEEK}.</p>
-  {:else if p.timeline.pausedAtMs}
-    <p class="muted small">Resting while paused.</p>
   {:else if last}
     <div class="kick">
       <span class="heart" aria-hidden="true">💓</span>

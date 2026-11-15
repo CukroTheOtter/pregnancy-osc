@@ -819,8 +819,9 @@ impl Driver {
             return Some(());
         }
         self.next_contraction_ms = None;
-        // Eggs don't kick (laying still has contractions, above).
-        if !s.kicks || p.timeline.is_paused() || p.eggs() {
+        // Eggs don't kick (laying still has contractions, above). A paused
+        // pregnancy still kicks: only its clock (and the belly) stops.
+        if !s.kicks || p.eggs() {
             self.next_kick_ms = None;
             return None;
         }
@@ -1427,13 +1428,24 @@ mod tests {
     }
 
     #[test]
-    fn kicks_off_or_paused_means_none() {
+    fn kicks_off_means_none() {
         let mut d = Driver::new(Mapping::default());
         d.set_connected(true);
         let mut data = data_pregnant();
         data.settings.kicks = false;
         let start = T0 + 210 * DAY_MS;
         assert!((0..200).all(|i| d.tick(start + i * 60_000, &data).iter().all(|s| s.key != "fetalMovement")));
+    }
+
+    #[test]
+    fn paused_still_kicks() {
+        let mut d = Driver::new(Mapping::default());
+        d.set_connected(true);
+        let mut data = data_pregnant();
+        let start = T0 + 210 * DAY_MS;
+        data.pregnancies[0].timeline.pause(start);
+        let kicked = (0..2000).any(|i| d.tick(start + i * 60_000, &data).iter().any(|s| s.key == "fetalMovement" && s.value != ParamValue::Int(0)));
+        assert!(kicked, "kicks carry on while paused");
     }
 
     #[test]
