@@ -58,6 +58,11 @@
     if (!d || d.settings.syncScope !== "perAvatar" || !aid) return [];
     return linkedGroup(d, aid).filter((id) => id !== aid).map((id) => avatarName(d, id));
   });
+  // The group's name, for the short "Shared with" line.
+  const groupName = $derived.by(() => {
+    const g = aid ? app.data?.avatars[aid]?.groupId : null;
+    return g ? (app.data?.groups[g]?.name ?? null) : null;
+  });
 
   // Start from the length picked last time.
   const s0 = app.data?.settings;
@@ -236,8 +241,16 @@
           </div>
         </div>
       {/if}
-      {#if shared.length}
-        <span class="muted small">Shared with {shared.join(", ")}</span>
+      {#if shared.length === 1}
+        <span class="muted small">💞 Shared with {shared[0]}</span>
+      {:else if shared.length > 1}
+        <!-- A long list of avatar names is a wall of text: folded, with chips inside. -->
+        <details class="shared">
+          <summary class="muted small">💞 Shared with {shared.length} other avatars{groupName ? ` (${groupName})` : ""}</summary>
+          <div class="chips">
+            {#each shared as name}<span class="chip">{name}</span>{/each}
+          </div>
+        </details>
       {/if}
     </section>
 
@@ -406,6 +419,43 @@
     flex-wrap: wrap;
     justify-content: center;
     gap: 8px;
+  }
+  .shared {
+    text-align: center;
+    max-width: 100%;
+  }
+  .shared summary {
+    cursor: pointer;
+    list-style: none;
+  }
+  .shared summary::-webkit-details-marker {
+    display: none;
+  }
+  .shared summary::after {
+    content: " ›";
+    display: inline-block;
+    transition: transform 0.15s;
+  }
+  .shared[open] summary::after {
+    transform: rotate(90deg);
+  }
+  .shared .chips {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .shared .chip {
+    font-size: 0.78rem;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: var(--bg-3);
+    color: var(--muted);
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .stop {
     color: var(--danger);
