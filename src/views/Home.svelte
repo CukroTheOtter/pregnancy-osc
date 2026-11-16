@@ -222,7 +222,7 @@
         <div class="hidden-note">🙈 <span><strong>Hidden in this {instanceName(status?.instanceKind)} instance.</strong> It comes back when you leave (Settings > Safety).</span><button class="small" onclick={() => api.showBellyHere().catch(errorToast)}>Show here</button></div>
       {/if}
       <LaborCard {p} {week} {isDue} {viewingOther} onbirth={birth} />
-      <div class="row controls">
+      <div class="controls">
         <button class="soft" onclick={togglePause}>{paused ? "▶ Resume" : "⏸ Pause"}</button>
         <button class="soft" onclick={openAdjust}>Adjust progress</button>
         {#if status?.hideBelly && !bellyHidden && !viewingOther}
@@ -415,10 +415,21 @@
   .adjust input {
     width: 100%;
   }
+  /* Two equal columns: Pause / Adjust on top, Hide belly / End below. An odd
+     one out (belly already hidden) takes the whole last row. */
   .controls {
-    flex-wrap: wrap;
-    justify-content: center;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
     gap: 8px;
+    width: 100%;
+    max-width: 380px;
+  }
+  .controls > button {
+    width: 100%;
+    justify-content: center;
+  }
+  .controls > :last-child:nth-child(odd) {
+    grid-column: 1 / -1;
   }
   .shared {
     text-align: center;
