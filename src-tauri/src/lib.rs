@@ -28,6 +28,12 @@ pub fn show_main(app: &AppHandle) {
     }
 }
 
+/// `--tray` always stays hidden; `--autostart` (started by itself) does with
+/// "When it starts by itself: Stay in the tray".
+fn starts_hidden(args: &[String], start_in_tray: bool) -> bool {
+    args.iter().any(|a| a == "--tray") || (start_in_tray && args.iter().any(|a| a == "--autostart"))
+}
+
 /// Hands the avatar back, saves, then exits.
 pub fn request_quit(app: &AppHandle) {
     let shared = app.state::<Arc<Shared>>().inner().clone();
@@ -97,14 +103,19 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let args: Vec<String> = std::env::args().collect();
-    let tray_arg = args.iter().any(|a| a == "--tray");
-    let autostart_arg = args.iter().any(|a| a == "--autostart");
     // Testing: real data is read, nothing is changed on disk for this whole run.
     let no_save = args.iter().any(|a| a == "--no-save");
 
     let app = tauri::Builder::default()
         // Must be first: a second launch just focuses the running window.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
+        // Started by itself while already running (VRCX with VRChat, log-in, SteamVR;
+        // easy with "keep running in the tray"): stay hidden, as a first start would.
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            let in_tray = app.try_state::<Arc<Shared>>().is_some_and(|s| s.data.lock().unwrap().settings.start_in_tray);
+            if !starts_hidden(&args, in_tray) {
+                show_main(app);
+            }
+        }))
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--autostart"])))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -172,7 +183,7 @@ pub fn run() {
             steamvr::spawn(handle.clone(), shared.clone());
 
             let start_in_tray = shared.data.lock().unwrap().settings.start_in_tray;
-            let hide = tray_arg || (autostart_arg && start_in_tray);
+            let hide = starts_hidden(&args, start_in_tray);
             if let Some(w) = app.get_webview_window("main") {
                 if !hide {
                     let _ = w.show();
