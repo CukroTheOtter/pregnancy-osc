@@ -20,9 +20,9 @@ other avatars still give birth as usual.
 Everything works like a normal pregnancy (length, the partner, scans).
 What's different:
 
-- No kicks: nothing is sent to `FetalMovement` until laying starts (then
-  contractions, as usual), and Home has no Movement card. Kick achievements
-  and kick moments in the journal come from other pregnancies.
+- Kicks work as usual if the avatar has `FetalMovement` (something wiggling
+  in the egg). An avatar without it never kicks, and Home has no Movement
+  card for it (same for any avatar, eggs or not).
 - Home says **Eggs** instead of Babies: "One egg", "3 eggs!".
 - The journal's scans show eggs, each with a little one curled up inside,
   and the screen counts "2 EGGS". The week 8 scan has a little egg forming,

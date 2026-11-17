@@ -819,9 +819,10 @@ impl Driver {
             return Some(());
         }
         self.next_contraction_ms = None;
-        // Eggs don't kick (laying still has contractions, above). A paused
-        // pregnancy still kicks: only its clock (and the belly) stops.
-        if !s.kicks || p.eggs() {
+        // A paused pregnancy still kicks: only its clock (and the belly) stops.
+        // Eggs kick too, if the avatar has FetalMovement (`send_kick` skips
+        // avatars without it).
+        if !s.kicks {
             self.next_kick_ms = None;
             return None;
         }
@@ -1449,13 +1450,26 @@ mod tests {
     }
 
     #[test]
-    fn eggs_never_kick() {
+    fn eggs_kick_like_babies() {
         let mut d = Driver::new(Mapping::default());
         d.set_connected(true);
         let mut data = data_pregnant();
         data.pregnancies[0].kind = crate::model::BodyKind::Egg;
         let start = T0 + 210 * DAY_MS;
-        assert!((0..200).all(|i| d.tick(start + i * 60_000, &data).iter().all(|s| s.key != "fetalMovement")));
+        let kicked = (0..2000).any(|i| d.tick(start + i * 60_000, &data).iter().any(|s| s.key == "fetalMovement" && s.value != ParamValue::Int(0)));
+        assert!(kicked, "an egg avatar with FetalMovement kicks");
+    }
+
+    #[test]
+    fn no_kicks_without_fetal_movement() {
+        let mut d = Driver::new(Mapping::default());
+        d.set_connected(true);
+        let mapping = Mapping::default();
+        let names = ["stage", "appActive", "appHeartbeat"].map(|k| (mapping.parameters[k].name.clone(), None));
+        d.set_avatar_params(names.to_vec(), T0);
+        let data = data_pregnant();
+        let start = T0 + 210 * DAY_MS;
+        assert!((0..2000).all(|i| d.tick(start + i * 60_000, &data).iter().all(|s| s.key != "fetalMovement")));
         assert!(d.take_kicks().is_empty());
     }
 

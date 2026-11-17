@@ -17,7 +17,9 @@
   import { hasSystem } from "../lib/avatars";
   import { BABY_REVEAL_WEEK, GENDER_REVEAL_WEEK, babyWord, eggWord, genderEmoji, genderText, isEggs, kidWord } from "../lib/fertility";
   import { dueMs, humanDuration, pause, progress, resume, retime, setProgress, TERM_WEEKS } from "../lib/timeline";
-  import type { Settings } from "../lib/types";
+  import type { Mapping, Settings } from "../lib/types";
+  import { hasParam } from "../lib/params";
+  import { onMount } from "svelte";
   import { instanceName } from "../lib/safety";
   import { babySize } from "../lib/sizes";
 
@@ -52,6 +54,15 @@
   const noSystem = $derived.by(() => {
     const a = aid ? app.data?.avatars[aid] : undefined;
     return !!a && !(status?.avatarLoading && !viewingOther) && hasSystem(a) === false;
+  });
+  // The avatar shown is known to have no FetalMovement, so it can't kick.
+  let mapping = $state<Mapping | null>(null);
+  onMount(() => {
+    api.getMapping().then((m) => (mapping = m.mapping), () => {});
+  });
+  const noKicks = $derived.by(() => {
+    const a = aid ? app.data?.avatars[aid] : undefined;
+    return !(status?.avatarLoading && !viewingOther) && hasParam(mapping, a, "fetalMovement") === false;
   });
   const shared = $derived.by(() => {
     const d = app.data;
@@ -254,8 +265,8 @@
       {/if}
     </section>
 
-    <!-- Eggs don't kick (driver.rs tick_kicks). -->
-    {#if !isEggs(p)}<MovementCard {p} />{/if}
+    <!-- Only on avatars that can kick (driver.rs send_kick skips the rest). -->
+    {#if !noKicks}<MovementCard {p} />{/if}
 
     <PartnerCard {p} />
 
