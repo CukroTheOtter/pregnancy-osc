@@ -4,7 +4,8 @@
   import JournalList from "./JournalList.svelte";
   import Modal from "./Modal.svelte";
   import { journalFor } from "../lib/journal";
-  import { app, homeAvatarId, currentPregnancy, viewPending, viewPregnancy } from "../lib/app.svelte";
+  import { app, homeAvatarId, currentPregnancy, viewPending, viewPregnancy, confirmAsk, errorToast } from "../lib/app.svelte";
+  import { api } from "../lib/api";
   import { groupMembers, owner, ownerAvatar, ownerName, pregnancyAvatar, pregnancyAvatarNames, pregnancyGroup } from "../lib/scope";
   import { birthTitle, genderText, isEggs } from "../lib/fertility";
   import { progress, humanDuration, TERM_WEEKS } from "../lib/timeline";
@@ -29,6 +30,19 @@
   const past = $derived(d.pregnancies.filter((p) => p.endedMs).sort((a, b) => (b.endedMs ?? 0) - (a.endedMs ?? 0)));
   const dateFmt = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" });
 
+  /** A pregnancy no avatar shows (left behind by an avatar mode change): due ones get a birth, others can be ended. */
+  async function finish(p: Pregnancy, due: boolean) {
+    try {
+      if (due) {
+        const title = isEggs(p) ? "Lay the eggs? 🥚" : "Welcome the baby? 🍼";
+        if (await confirmAsk({ title, text: `${p.name} isn't on any avatar. This ends it with a birth and counts in your stats.`, ok: isEggs(p) ? "Lay them!" : "Welcome!" })) await api.giveBirth(p.id);
+      } else if (await confirmAsk({ title: `End ${p.name}?`, text: "It isn't on any avatar. It's removed as if it never happened: its journal, keepsakes and achievements go. The WooHoo stays.", ok: "End pregnancy", danger: true })) {
+        await api.endPregnancy(p.id);
+      }
+    } catch (e) {
+      errorToast(e);
+    }
+  }
 </script>
 
 {#if active.length || waiting.length || past.length}
@@ -53,7 +67,8 @@
             <div class="bar"><div style="width:{Math.min(100, pr * 100)}%"></div></div>
             <span class="muted small">{p.partner.name ? `with ${shownName(d, p.partner.name, p.partner.userId)}` : "other parent unknown"}{p.timeline.pausedAtMs ? " · paused" : ""}</span>
           </div>
-          {#if aid}<button class="small soft" onclick={() => viewPregnancy(p)}>Open</button>{/if}
+          {#if aid}<button class="small soft" onclick={() => viewPregnancy(p)}>Open</button>
+          {:else if !on.length && !g}<button class="small soft" onclick={() => finish(p, pr >= 1)}>{pr >= 1 ? (isEggs(p) ? "Lay" : "Welcome") : "End"}</button>{/if}
         </li>
       {/each}
       {#each waiting as w}

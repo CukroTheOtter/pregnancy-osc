@@ -63,6 +63,8 @@ pub fn save_settings(app: AppHandle, s: S, settings: Settings) -> R<Option<Strin
         }
         // A wait to find out follows a new pregnancy length (or wait setting).
         actions::retime_waits(&mut d, &old);
+        // A running pregnancy comes along when the avatar mode changes.
+        actions::scope_changed(&mut d, old.sync_scope);
         old
     };
     changed(&app, &s, true);
