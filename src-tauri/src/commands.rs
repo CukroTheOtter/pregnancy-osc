@@ -649,7 +649,7 @@ pub fn debug_new_woohoo_session(s: S) {
 /// the grace period if you're still waiting to find out.
 #[tauri::command]
 pub fn debug_set_babies(app: AppHandle, s: S, count: u32) -> R<()> {
-    let count = count.clamp(1, 4);
+    let count = count.clamp(1, pregsys_core::fertility::MAX_BABIES);
     {
         let mut d = s.data.lock().unwrap();
         let aid = d.current_avatar_id.clone();

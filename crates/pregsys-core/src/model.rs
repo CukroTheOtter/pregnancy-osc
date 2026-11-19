@@ -55,6 +55,38 @@ pub enum Multiples {
     Lots,
 }
 
+/// How much a litter's size varies around its usual size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum LitterSpread {
+    Little,
+    #[default]
+    Some,
+    Lots,
+}
+
+/// Litter mode: litters of about `usual` (1 to `fertility::MAX_BABIES`),
+/// varying by `spread`. Used instead of `Multiples` when set.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Litter {
+    pub usual: u32,
+    pub spread: LitterSpread,
+}
+
+impl Default for Litter {
+    fn default() -> Self {
+        Self { usual: 4, spread: LitterSpread::Some }
+    }
+}
+
+/// How many babies a new pregnancy rolls: a `Multiples` preset or a litter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BabyOdds {
+    Preset(Multiples),
+    Litter(Litter),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub enum ThemeMode {
@@ -255,6 +287,9 @@ pub struct Settings {
     /// When the current cycle started (day 1).
     pub cycle_anchor_ms: Option<i64>,
     pub multiples: Multiples,
+    /// Litter mode (used instead of `multiples` when set). A separate field so
+    /// older versions still read the file.
+    pub litter: Option<Litter>,
     /// Extra size (bellyExtra): twins and more make the belly bigger.
     pub bigger_for_multiples: bool,
     /// Extra size: the belly keeps growing past the due date.
@@ -333,6 +368,7 @@ impl Default for Settings {
             grace_minutes: None,
             cycle_anchor_ms: None,
             multiples: Multiples::Playful,
+            litter: None,
             bigger_for_multiples: true,
             grow_when_overdue: true,
             gender_mode: GenderMode::Random,
@@ -457,6 +493,9 @@ pub struct Pregnancy {
     pub created_ms: i64,
     pub timeline: Timeline,
     pub baby_count: u32,
+    /// Rolled in litter mode: the usual litter size then (wording, and
+    /// Extra size only for litters bigger than that).
+    pub litter: Option<u32>,
     pub kind: BodyKind,
     /// The carrying parent's species (defaults from the avatar profile).
     pub mother_species: String,
@@ -498,6 +537,7 @@ impl Default for Pregnancy {
             created_ms: 0,
             timeline: Timeline::new(0, DurationMode::Realtime, 1.0, None),
             baby_count: 1,
+            litter: None,
             kind: BodyKind::Human,
             mother_species: "human".into(),
             partner: Partner::default(),
@@ -564,6 +604,10 @@ pub struct AvatarProfile {
     pub auto_name: bool,
     pub species: Option<String>,
     pub kind: Option<BodyKind>,
+    /// How many babies on this avatar: a preset or a litter (both `None` =
+    /// the default from Settings; `litter` wins if both are set).
+    pub multiples: Option<Multiples>,
+    pub litter: Option<Litter>,
     pub hide_belly: Option<bool>,
     pub belly_scale: Option<f64>,
     pub fetal_sounds: Option<bool>,
@@ -642,6 +686,8 @@ pub struct PendingConception {
     pub positive: bool,
     /// Babies, rolled at the moment of fun (hidden until about week 12).
     pub baby_count: u32,
+    /// Rolled in litter mode: the usual litter size then (see `Pregnancy::litter`).
+    pub litter: Option<u32>,
     pub partner: Partner,
     pub avatar_id: Option<String>,
     pub world_name: Option<String>,
@@ -907,6 +953,16 @@ impl AppData {
                 None if avatar_id.is_none() => self.active_pregnancy_id.clone(),
                 None => None,
             },
+        }
+    }
+
+    /// How many babies a pregnancy on this avatar rolls (profile override, else Settings).
+    pub fn baby_odds(&self, avatar_id: Option<&str>) -> BabyOdds {
+        let p = avatar_id.and_then(|a| self.avatars.get(a));
+        match (p.and_then(|p| p.litter), p.and_then(|p| p.multiples)) {
+            (Some(l), _) => BabyOdds::Litter(l),
+            (None, Some(m)) => BabyOdds::Preset(m),
+            (None, None) => self.settings.litter.map_or(BabyOdds::Preset(self.settings.multiples), BabyOdds::Litter),
         }
     }
 

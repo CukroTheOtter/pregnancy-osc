@@ -4,7 +4,7 @@
 //! 1/10 of it (28 days vs 280, like real life) and the grace period before
 //! you find out is 1/20 (two pregnancy weeks), unless a fixed wait is picked.
 
-use crate::model::{AppData, Multiples, Settings};
+use crate::model::{AppData, BabyOdds, Litter, LitterSpread, Multiples, Settings};
 use crate::timeline::duration_for;
 
 pub const CYCLE_DAYS: f64 = 28.0;
@@ -108,6 +108,43 @@ pub fn roll_babies(m: Multiples, roll: f64) -> u32 {
     }
 }
 
+/// The most babies a pregnancy can have.
+pub const MAX_BABIES: u32 = 8;
+
+/// The chance of each litter size, 1 to `MAX_BABIES`: a bell around the usual
+/// size (same numbers as `litterOdds` in src/lib/fertility.ts).
+pub fn litter_odds(l: Litter) -> Vec<f64> {
+    let usual = l.usual.clamp(1, MAX_BABIES) as f64;
+    let sd = match l.spread {
+        LitterSpread::Little => 0.5,
+        LitterSpread::Some => 0.9,
+        LitterSpread::Lots => 1.5,
+    };
+    let w: Vec<f64> = (1..=MAX_BABIES).map(|k| (-((k as f64 - usual).powi(2)) / (2.0 * sd * sd)).exp()).collect();
+    let total: f64 = w.iter().sum();
+    w.into_iter().map(|x| x / total).collect()
+}
+
+/// A litter's size, from a random number in [0, 1).
+pub fn roll_litter(l: Litter, roll: f64) -> u32 {
+    let mut acc = 0.0;
+    for (i, p) in litter_odds(l).into_iter().enumerate() {
+        acc += p;
+        if roll < acc {
+            return i as u32 + 1;
+        }
+    }
+    MAX_BABIES
+}
+
+/// How many babies, and the usual litter size when it's a litter.
+pub fn roll_count(odds: BabyOdds, roll: f64) -> (u32, Option<u32>) {
+    match odds {
+        BabyOdds::Preset(m) => (roll_babies(m, roll), None),
+        BabyOdds::Litter(l) => (roll_litter(l, roll), Some(l.usual.clamp(1, MAX_BABIES))),
+    }
+}
+
 /// 0 low, 1 medium, 2 high, 3 peak; 0 when pregnant, waiting, or fertility is off.
 pub fn level_now(data: &AppData, avatar_id: Option<&str>, now_ms: i64) -> u8 {
     let s = &data.settings;
@@ -208,5 +245,26 @@ mod tests {
             let r = roll();
             assert!((0.0..1.0).contains(&r));
         }
+    }
+
+    #[test]
+    fn litters_bunch_around_the_usual_size() {
+        let some = Litter { usual: 4, spread: LitterSpread::Some };
+        let odds = litter_odds(some);
+        assert_eq!(odds.len(), MAX_BABIES as usize);
+        assert!((odds.iter().sum::<f64>() - 1.0).abs() < 1e-9);
+        assert!((odds[3] - 0.44).abs() < 0.02, "4 is the most likely: {}", odds[3]);
+        assert!((odds[2] - odds[4]).abs() < 1e-9, "3 and 5 as likely");
+        let tight = litter_odds(Litter { usual: 4, spread: LitterSpread::Little });
+        let wide = litter_odds(Litter { usual: 4, spread: LitterSpread::Lots });
+        assert!(tight[3] > odds[3] && odds[3] > wide[3]);
+        // Every roll lands in range, and the ends are reachable.
+        let count = |l, n| (0..10_000).filter(|i| roll_litter(l, *i as f64 / 10_000.0) == n).count();
+        assert!(count(some, 4) > count(some, 3));
+        assert_eq!(roll_litter(Litter { usual: 8, spread: LitterSpread::Little }, 0.999), 8);
+        assert_eq!(roll_litter(Litter { usual: 1, spread: LitterSpread::Little }, 0.0), 1);
+        assert_eq!(roll_litter(Litter { usual: 99, spread: LitterSpread::Some }, 0.999), 8, "capped");
+        assert_eq!(roll_count(BabyOdds::Litter(some), 0.5), (4, Some(4)));
+        assert_eq!(roll_count(BabyOdds::Preset(Multiples::Realistic), 0.5), (1, None));
     }
 }

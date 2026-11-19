@@ -28,7 +28,7 @@ Everyone you've been with, with fun stats: WooHoos, times pregnant by them, kids
 ## Settings
 - **VRChat**: control the belly; start on in-game conception.
 - **Detecting WooHoos**: **from SPS sockets** (pick sockets, how deep, how long). The avatar's own fertility trigger isn't used.
-- **Fertility**: on/off, chance at peak, **multiples** (Realistic / Playful / Lots), start a new cycle today.
+- **Fertility**: on/off, chance at peak, **how many babies** (Realistic / Playful / Lots / Litter: usually 1–8, varies a little / some / a lot; also per avatar), start a new cycle today.
 - **Avatar parameters** (shared names): each with name, on/off and a one-line explanation.
 - **Safety**: hide the belly / hold labor in picked instance types (default Public, Group Public), never changing your own Hide Belly.
 - **Look**: a palette, or Custom: an accent and (optionally) a background, picked on a color wheel (ring for the color, square for paler or vivid, brighter or darker). The rest of the theme is worked out from them (`src/lib/theme.ts`), and your own background decides light or dark by itself.

@@ -11,6 +11,12 @@ export type SpeciesSource = "guess" | "confirmed" | "fallback" | "manual";
 export type BabyMode = "rolled" | "manual";
 export type PregnancySource = "manual" | "conception";
 export type Multiples = "realistic" | "playful" | "lots";
+export type LitterSpread = "little" | "some" | "lots";
+/** Litter mode: litters of about `usual` (1 to 8), varying by `spread` (pregsys-core `Litter`). */
+export interface Litter {
+  usual: number;
+  spread: LitterSpread;
+}
 export type GenderMode = "off" | "random";
 export type KickStrength = "weak" | "strong" | "extreme";
 export type KickFrequency = "calm" | "normal" | "active";
@@ -165,6 +171,8 @@ export interface Settings {
   graceMinutes?: number | null;
   cycleAnchorMs: number | null;
   multiples: Multiples;
+  /** Litter mode, used instead of `multiples` when set. */
+  litter?: Litter | null;
   biggerForMultiples: boolean;
   growWhenOverdue: boolean;
   genderMode: GenderMode;
@@ -226,6 +234,8 @@ export interface Pregnancy {
   createdMs: number;
   timeline: Timeline;
   babyCount: number;
+  /** Rolled in litter mode: the usual litter size then. */
+  litter?: number | null;
   kind: BodyKind;
   motherSpecies: string;
   partner: Partner;
@@ -256,6 +266,9 @@ export interface AvatarProfile {
   autoName?: boolean;
   species: string | null;
   kind: BodyKind | null;
+  /** How many babies on this avatar (both null: Settings; `litter` wins). */
+  multiples?: Multiples | null;
+  litter?: Litter | null;
   hideBelly: boolean | null;
   bellyScale: number | null;
   fetalSounds: boolean | null;
@@ -307,6 +320,7 @@ export interface PendingConception {
   /** Secret until the reveal: the UI never shows it. */
   positive: boolean;
   babyCount: number;
+  litter?: number | null;
   partner: Partner;
   avatarId: string | null;
   worldName: string | null;
@@ -493,6 +507,7 @@ export interface NewPregnancy {
   speed?: number | null;
   customMs?: number | null;
   babyCount?: number | null;
+  litter?: number | null;
   kind?: BodyKind | null;
   motherSpecies?: string | null;
   source?: PregnancySource;

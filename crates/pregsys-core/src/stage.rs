@@ -35,6 +35,8 @@ pub fn progress_from_stage(stage: f32) -> f64 {
 pub struct ExtraInput {
     pub progress: f64,
     pub babies: u32,
+    /// A litter: its usual size (that size and smaller get no extra).
+    pub litter: Option<u32>,
     /// Twins and more make the belly bigger.
     pub multiples: bool,
     /// The belly keeps growing past the due date.
@@ -44,16 +46,19 @@ pub struct ExtraInput {
 }
 
 /// Extra size from 0 to 1: a bit for each extra baby, then growing to 1 when overdue.
+/// A litter's usual size is a normal belly; bigger litters reach 0.8 at the most babies.
 pub fn extra_value(i: ExtraInput) -> f32 {
-    let base = if i.multiples {
-        match i.babies {
+    let max = crate::fertility::MAX_BABIES;
+    let base = match (i.multiples, i.litter) {
+        (false, _) => 0.0,
+        (true, Some(usual)) if usual >= max || i.babies <= usual => 0.0,
+        (true, Some(usual)) => 0.8 * (i.babies.min(max) - usual) as f64 / (max - usual) as f64,
+        (true, None) => match i.babies {
             0 | 1 => 0.0,
             2 => 0.35,
             3 => 0.6,
             _ => 0.8,
-        }
-    } else {
-        0.0
+        },
     };
     let over = if i.overdue && i.progress > 1.0 { ((i.progress - 1.0) / i.max_overdue_fraction.max(1e-6)).min(1.0) } else { 0.0 };
     (base + (1.0 - base) * over) as f32
@@ -81,7 +86,7 @@ mod tests {
 
     #[test]
     fn extra_size() {
-        let mk = |progress, babies| ExtraInput { progress, babies, multiples: true, overdue: true, max_overdue_fraction: 0.05 };
+        let mk = |progress, babies| ExtraInput { progress, babies, litter: None, multiples: true, overdue: true, max_overdue_fraction: 0.05 };
         assert_eq!(extra_value(mk(0.5, 1)), 0.0);
         assert!((extra_value(mk(0.5, 2)) - 0.35).abs() < 1e-6);
         assert!((extra_value(mk(0.5, 5)) - 0.8).abs() < 1e-6);
@@ -92,6 +97,19 @@ mod tests {
         // Both off.
         let off = ExtraInput { multiples: false, overdue: false, ..mk(2.0, 3) };
         assert_eq!(extra_value(off), 0.0);
+    }
+
+    #[test]
+    fn a_usual_litter_is_a_normal_belly() {
+        let mk = |babies| ExtraInput { progress: 0.5, babies, litter: Some(4), multiples: true, overdue: true, max_overdue_fraction: 0.05 };
+        assert_eq!(extra_value(mk(3)), 0.0, "smaller than usual");
+        assert_eq!(extra_value(mk(4)), 0.0, "the usual size");
+        assert!((extra_value(mk(6)) - 0.4).abs() < 1e-6);
+        assert!((extra_value(mk(8)) - 0.8).abs() < 1e-6, "the most babies");
+        // Overdue still grows to full.
+        assert_eq!(extra_value(ExtraInput { progress: 2.0, ..mk(4) }), 1.0);
+        // Usual 8: never bigger than normal for its size.
+        assert_eq!(extra_value(ExtraInput { litter: Some(8), ..mk(8) }), 0.0);
     }
 
     #[test]

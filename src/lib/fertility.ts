@@ -1,6 +1,6 @@
 // Fertility cycle maths, mirroring crates/pregsys-core/src/fertility.rs.
 
-import type { Settings } from "./types";
+import type { Litter, LitterSpread, Settings } from "./types";
 import { durationFor } from "./timeline";
 
 export const CYCLE_DAYS = 28;
@@ -68,8 +68,47 @@ export const MULTIPLES_LABEL = {
   lots: { name: "Lots of babies", hint: "Twins 25%, triplets 8%, quads 2%" },
 } as const;
 
+/** The most babies a pregnancy can have (pregsys-core `fertility::MAX_BABIES`). */
+export const MAX_BABIES = 8;
+
+export const SPREAD_LABEL: Record<LitterSpread, string> = { little: "A little", some: "Some", lots: "A lot" };
+
+/** The chance of each litter size, 1 to 8 (index 0 is 1 baby): a bell around the usual size (fertility.rs `litter_odds`). */
+export function litterOdds(l: Litter): number[] {
+  const usual = Math.min(MAX_BABIES, Math.max(1, Math.round(l.usual)));
+  const sd = l.spread === "little" ? 0.5 : l.spread === "lots" ? 1.5 : 0.9;
+  const w = Array.from({ length: MAX_BABIES }, (_, i) => Math.exp(-((i + 1 - usual) ** 2) / (2 * sd * sd)));
+  const total = w.reduce((a, b) => a + b, 0);
+  return w.map((x) => x / total);
+}
+
+/** A litter's size from a random number in [0, 1) (fertility.rs `roll_litter`). */
+export function rollLitter(l: Litter, roll: number): number {
+  let acc = 0;
+  const odds = litterOdds(l);
+  for (let i = 0; i < odds.length; i++) {
+    acc += odds[i];
+    if (roll < acc) return i + 1;
+  }
+  return MAX_BABIES;
+}
+
+/** "3 · 24%  4 · 44%  5 · 24%": the likely litter sizes (2% and up). */
+export function litterOddsText(l: Litter): string {
+  return litterOdds(l)
+    .map((p, i) => ({ n: i + 1, p }))
+    .filter((x) => x.p >= 0.02)
+    .map((x) => `${x.n}: ${Math.round(x.p * 100)}%`)
+    .join(" · ");
+}
+
 export function babyWord(n: number): string {
   return n === 1 ? "One baby" : n === 2 ? "Twins!" : n === 3 ? "Triplets!" : n === 4 ? "Quadruplets!" : `${n} babies!`;
+}
+
+/** "Litter of 6!" for a litter-mode pregnancy (one is still "One baby"). */
+export function litterWord(n: number): string {
+  return n === 1 ? "One baby" : `Litter of ${n}!`;
 }
 
 /** An egg pregnancy (the avatar's Eggs switch, pregsys-core `Pregnancy::eggs`). */
@@ -82,19 +121,26 @@ export function eggWord(n: number): string {
   return n === 1 ? "One egg" : `${n} eggs!`;
 }
 
-/** babyWord, or eggWord for an egg pregnancy. */
-export function kidWord(p: { kind?: string | null }, n: number): string {
-  return isEggs(p) ? eggWord(n) : babyWord(n);
+/** A pregnancy rolled in litter mode (pregsys-core `Pregnancy::litter`). */
+export const isLitter = (p: { litter?: number | null }) => p.litter != null;
+
+/** babyWord, litterWord for a litter, or eggWord for an egg pregnancy (eggs win). */
+export function kidWord(p: { kind?: string | null; litter?: number | null }, n: number): string {
+  return isEggs(p) ? eggWord(n) : isLitter(p) ? litterWord(n) : babyWord(n);
 }
 
-/** "Twins born", "One baby born", "2 eggs laid", "Egg laid" (no "!"). */
-export function birthTitle(p: { kind?: string | null; babyCount: number }): string {
+/** "Twins born", "Litter of 6 born", "One baby born", "2 eggs laid", "Egg laid" (no "!"). */
+export function birthTitle(p: { kind?: string | null; babyCount: number; litter?: number | null }): string {
   if (isEggs(p)) return p.babyCount > 1 ? `${p.babyCount} eggs laid` : "Egg laid";
-  return `${babyWord(p.babyCount).replace("!", "")} born`;
+  return `${kidWord(p, p.babyCount).replace("!", "")} born`;
 }
 
+/** One emoji each, or counts past 4: "👧×4 👦×2". */
 export function genderEmoji(genders: string[]): string {
-  return genders.map((g) => (g === "girl" ? "👧" : "👦")).join("");
+  if (genders.length <= 4) return genders.map((g) => (g === "girl" ? "👧" : "👦")).join("");
+  const girls = genders.filter((g) => g === "girl").length;
+  const boys = genders.length - girls;
+  return [girls ? `👧×${girls}` : "", boys ? `👦×${boys}` : ""].filter(Boolean).join(" ");
 }
 
 /** "A girl!", "A girl and a boy!", "2 girls and a boy!" */

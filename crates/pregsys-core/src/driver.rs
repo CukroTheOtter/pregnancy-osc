@@ -672,6 +672,7 @@ impl Driver {
             extra_value(ExtraInput {
                 progress: p.timeline.progress(now_ms),
                 babies: p.baby_count,
+                litter: p.litter,
                 multiples: data.settings.bigger_for_multiples,
                 overdue: data.settings.grow_when_overdue,
                 max_overdue_fraction: self.mapping.overdue.max_overdue_fraction,

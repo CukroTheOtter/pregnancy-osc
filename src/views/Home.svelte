@@ -15,7 +15,7 @@
   import { api } from "../lib/api";
   import { avatarName, linkedGroup } from "../lib/scope";
   import { hasSystem } from "../lib/avatars";
-  import { BABY_REVEAL_WEEK, GENDER_REVEAL_WEEK, babyWord, eggWord, genderEmoji, genderText, isEggs, kidWord } from "../lib/fertility";
+  import { BABY_REVEAL_WEEK, GENDER_REVEAL_WEEK, eggWord, genderEmoji, genderText, isEggs, kidWord } from "../lib/fertility";
   import { dueMs, humanDuration, pause, progress, resume, retime, setProgress, TERM_WEEKS } from "../lib/timeline";
   import type { Mapping, Settings } from "../lib/types";
   import { hasParam } from "../lib/params";
@@ -141,7 +141,7 @@
     }
     if (await confirmAsk({ title: many ? "Welcome your babies? 🍼" : "Welcome your baby? 🍼", text: "This ends the pregnancy with a birth and counts in your stats.", ok: many ? "Welcome them!" : "Welcome baby!" })) {
       await api.giveBirth(p.id);
-      toast(many ? `${babyWord(p.babyCount)} Congratulations! 🍼` : "Congratulations! 🍼", undefined, "success", 8000);
+      toast(many ? `${kidWord(p, p.babyCount)} Congratulations! 🍼` : "Congratulations! 🍼", undefined, "success", 8000);
     }
   }
 

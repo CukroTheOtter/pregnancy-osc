@@ -10,6 +10,8 @@
   import { api, inTauri } from "../lib/api";
   import { avatarName, groupMembers, ownerName, pendingFor, pregnancyFor, savedOnAvatars } from "../lib/scope";
   import Modal from "../components/Modal.svelte";
+  import BabyOdds from "../components/BabyOdds.svelte";
+  import { MULTIPLES_LABEL } from "../lib/fertility";
   import { hasSystem, matches, seenText, shelfOf } from "../lib/avatars";
   import { progress, TERM_WEEKS } from "../lib/timeline";
   import { FEATURES, FIXED, PARAM_INFO, REQUIRED, hasParam, syncLabel } from "../lib/params";
@@ -169,6 +171,9 @@
     if (pendingFor(d, id)) return "💕 Waiting…";
     return "Not pregnant";
   }
+
+  // What "Use my default" means for how many babies (Settings > Babies).
+  const defaultOdds = $derived(d.settings.litter ? `Litter, usually ${d.settings.litter.usual}` : MULTIPLES_LABEL[d.settings.multiples].name);
 
   // Running pregnancies on single avatars or groups (waiting while it's one for every avatar).
   const saved = $derived(savedOnAvatars(d));
@@ -350,6 +355,8 @@
         </label>
 
         <Toggle checked={p.kind === "egg"} label="🥚 Eggs" hint="Lays eggs instead of giving birth: no water breaking, and the eggs hatch later (Settings > Labor and birth). Changes its pregnancy too, if not laid yet." onchange={(v) => api.setAvatarEggs(p.id, v).catch(errorToast)} />
+
+        <BabyOdds multiples={p.multiples ?? null} litter={p.litter ?? null} inherit={defaultOdds} onchange={(m, l) => save(p, (x) => { x.multiples = m; x.litter = l; })} />
 
         {#if perAvatar}
           <label class="field">Group

@@ -2,7 +2,7 @@
 // plus the notes you write. Scans are drawn by the app (Ultrasound.svelte), so
 // an entry only keeps a short "scan:<babies>:<week>:<seed>" tag, never a photo.
 
-import { BABY_REVEAL_WEEK, GENDER_REVEAL_WEEK, birthTitle, genderText, isEggs, kidWord } from "./fertility";
+import { BABY_REVEAL_WEEK, GENDER_REVEAL_WEEK, birthTitle, genderText, isEggs, isLitter, kidWord } from "./fertility";
 import { progress, timeAtProgress, TERM_WEEKS } from "./timeline";
 import { rng } from "./scanstats";
 import { hidesMe, shownName } from "./privacy";
@@ -128,6 +128,8 @@ export function scanMeta(d: AppData, p: Pregnancy, timeMs: number, scanWeek: num
     genders,
     // Eggs show as eggs on the scan.
     eggs: isEggs(p),
+    // A litter says "Litter of 6".
+    litter: isLitter(p),
   };
 }
 

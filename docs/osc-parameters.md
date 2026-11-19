@@ -21,7 +21,7 @@ The short version. Details, sync costs and edge cases are further down.
 | Parameter | Type | Who sets it | What it does |
 |---|---|---|---|
 | `Pregnancy/Stage` | float, synced | App | **The belly size.** 0 = flat, 1 = full term. The app works it out from how far along you are and sends it about once a second. This is the only one your avatar must have. |
-| `Pregnancy/BellyExtra` | float, synced | App | **Extra size on top of full term.** 0 to 1. Used for twins (0.35), triplets (0.6), 4 or more (0.8), and grows to 1 when you go past the due date. Drives the SDK's Bigger Belly. |
+| `Pregnancy/BellyExtra` | float, synced | App | **Extra size on top of full term.** 0 to 1. Used for twins (0.35), triplets (0.6), 4 or more (0.8), and grows to 1 when you go past the due date. In litter mode, the usual litter size gets none; bigger litters reach 0.8 at 8. Drives the SDK's Bigger Belly. |
 | `Pregnancy/HideBelly` | bool, synced | Both | **Hides the belly.** You toggle it in-game; the app remembers it and puts it back on every avatar you switch to, so the belly never pops up while a new avatar loads. |
 
 ### App link (local, free)
@@ -87,7 +87,7 @@ What the app drives or reads. Rename them in **Settings > Advanced** (or per ava
 | Name | Type | Synced | Bits | What it does |
 |---|---|---|---|---|
 | `Pregnancy/Stage` | float | yes | 8 | **Belly size**, 0 to 1. Written by the app. **Required.** |
-| `Pregnancy/BellyExtra` | float | yes | 8 | Optional. **Extra size**, 0 to 1, for the SDK's Bigger Belly (adds Belly_Bigger on top, scaled by Stage). Twins 0.35, triplets 0.6, 4+ 0.8; past the due date it grows to 1. Each part can be turned off under Settings > Bigger belly. |
+| `Pregnancy/BellyExtra` | float | yes | 8 | Optional. **Extra size**, 0 to 1, for the SDK's Bigger Belly (adds Belly_Bigger on top, scaled by Stage). Twins 0.35, triplets 0.6, 4+ 0.8 (litter mode: 0 up to the usual size, then up to 0.8 at 8); past the due date it grows to 1. Each part can be turned off under Settings > Bigger belly. |
 | `Pregnancy/AppActive` | bool | **no** | 0 | True while the app runs. False on exit. **Required.** |
 | `Pregnancy/AppHeartbeat` | bool | **no** | 0 | Flips every second while the app runs. **Required.** |
 | `Pregnancy/Control/Start` | bool | **no** | 0 | Optional, name fixed (Start, Pause and Stop are made for this app, so they can't be renamed or given per-avatar names). Read. Button in the avatar's Settings > App Controls menu: starts a pregnancy with the saved length. Held for 2 seconds from week 37: starts labor. |

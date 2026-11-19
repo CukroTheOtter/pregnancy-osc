@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chance, cycleDay, cycleMs, graceMs, level, untilFertile } from "./fertility";
+import { birthTitle, chance, cycleDay, cycleMs, genderEmoji, graceMs, kidWord, level, litterOdds, rollLitter, untilFertile } from "./fertility";
 import { funRows, linkedGroup, owner, partnerStats, pregnancyFor } from "./scope";
 import { defaultSettings, emptyData, pregnancy } from "./testdata";
 import type { AvatarProfile } from "./types";
@@ -97,5 +97,32 @@ describe("partner stats", () => {
       [2, "W2", "Fox", 2, "pregnant"],
     ]);
     expect(pick(null)).toHaveLength(4);
+  });
+});
+
+describe("litters", () => {
+  it("bunch around the usual size, like fertility.rs litter_odds", () => {
+    const odds = litterOdds({ usual: 4, spread: "some" });
+    expect(odds).toHaveLength(8);
+    expect(odds.reduce((a, b) => a + b, 0)).toBeCloseTo(1, 9);
+    expect(odds[3]).toBeCloseTo(0.44, 1);
+    expect(odds[2]).toBeCloseTo(odds[4], 9);
+    expect(rollLitter({ usual: 8, spread: "little" }, 0.999)).toBe(8);
+    expect(rollLitter({ usual: 1, spread: "little" }, 0)).toBe(1);
+    expect(rollLitter({ usual: 4, spread: "some" }, 0.5)).toBe(4);
+  });
+
+  it("say litter, but eggs win", () => {
+    expect(kidWord({ litter: 4 }, 6)).toBe("Litter of 6!");
+    expect(kidWord({ litter: 4 }, 1)).toBe("One baby");
+    expect(kidWord({ litter: null }, 2)).toBe("Twins!");
+    expect(kidWord({ kind: "egg", litter: 4 }, 6)).toBe("6 eggs!");
+    expect(birthTitle({ babyCount: 6, litter: 4 })).toBe("Litter of 6 born");
+  });
+
+  it("count genders past 4", () => {
+    expect(genderEmoji(["girl", "boy"])).toBe("👧👦");
+    expect(genderEmoji(["girl", "boy", "girl", "girl", "boy", "girl"])).toBe("👧×4 👦×2");
+    expect(genderEmoji(["boy", "boy", "boy", "boy", "boy"])).toBe("👦×5");
   });
 });

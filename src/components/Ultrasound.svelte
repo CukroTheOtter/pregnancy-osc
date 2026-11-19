@@ -11,11 +11,13 @@
     dueMs: number | null;
     /** An egg pregnancy: eggs on the screen instead of babies. */
     eggs?: boolean;
+    /** A litter-mode pregnancy ("Litter of 6"). */
+    litter?: boolean;
   }
 </script>
 
 <script lang="ts">
-  import { babyWord, eggWord } from "../lib/fertility";
+  import { babyWord, eggWord, litterWord } from "../lib/fertility";
   import type { Scan } from "../lib/journal";
   import { rng, scanStats, statLines } from "../lib/scanstats";
 
@@ -44,41 +46,45 @@
     [[148, 124], [252, 124], [148, 200], [252, 200]],
   ];
 
+  // 5 and more: too many for one view, like a real scan. Five in the middle get
+  // circled, and a few more are cut off at the edges of the fan.
+  const CROWD: [number, number][] = [[150, 118], [250, 116], [200, 170], [136, 212], [264, 208]];
+  const EDGES: [number, number][] = [[58, 196], [344, 190], [200, 278]];
+
   const view = $derived.by(() => {
     const r = rng(scan.seed);
     const n = Math.max(0, scan.babies);
     const shown = Math.max(1, n);
+    const crowd = shown >= 5;
     // Late on: the babies fill the space and get pushed together.
     const packed = Math.min(1, Math.max(0, (scan.week - 26) / 12));
     const squeeze = 1 - packed * 0.22;
-    const spots: [number, number][] = (
-      LAYOUTS[shown - 1] ??
-      Array.from({ length: shown }, (_, i) => {
-        const a = (i / shown) * Math.PI * 2 - Math.PI / 2;
-        return [200 + Math.cos(a) * 82, 162 + Math.sin(a) * 66] as [number, number];
-      })
-    ).map(([x, y]) => [200 + (x - 200) * squeeze, 160 + (y - 160) * squeeze]);
-    const sac = (shown === 1 ? 72 : shown === 2 ? 54 : shown <= 4 ? 42 : 32) * (1 - packed * 0.12);
+    const core: [number, number][] = (crowd ? CROWD : LAYOUTS[shown - 1]).map(([x, y]) => [200 + (x - 200) * squeeze, 160 + (y - 160) * squeeze]);
+    const sac = (shown === 1 ? 72 : shown === 2 ? 54 : shown <= 4 ? 42 : 36) * (1 - packed * 0.12);
     const grow = Math.min(1, Math.max(0, (scan.week - 6) / 18));
     const u = sac * (0.24 + 0.5 * grow + 0.42 * packed);
-    const babies = spots.map(([x, y]) => ({
+    const one = (x: number, y: number, edge: boolean) => ({
       x: x + (r() - 0.5) * 14 * (1 - packed),
       y: y + (r() - 0.5) * 12 * (1 - packed),
       rot: (r() - 0.5) * 120,
       flip: r() < 0.5 ? -1 : 1,
       sx: 0.9 + r() * 0.25,
-    }));
+      edge,
+    });
+    const babies = [...core.map(([x, y]) => one(x, y, false)), ...(crowd ? EDGES.map(([x, y]) => one(x, y, true)) : [])];
+    // The ones the doctor circles and letters (not the cut-off ones).
+    const marked = babies.filter((b) => !b.edge);
     // Soft tissue around the sacs.
     const tissue = Array.from({ length: 7 }, () => ({ x: 60 + r() * 280, y: 60 + r() * 200, rx: 30 + r() * 60, ry: 10 + r() * 22, rot: (r() - 0.5) * 70, o: 0.18 + r() * 0.25 }));
     const days = scan.seed % 7;
     const lines = statLines(scanStats(scan.week, n, scan.seed), n > 0, meta?.genders ?? null);
     // Where the heart-shaped shadow sits (the "heart" scan).
     const heart = { x: 120 + r() * 160, y: 215 + r() * 25 };
-    return { n, sac, u, babies, tissue, packed, early: scan.week < 10, turb: Math.floor(r() * 1000), days, lines, heart };
+    return { n, sac, u, babies, marked, crowd, tissue, packed, early: scan.week < 10, turb: Math.floor(r() * 1000), days, lines, heart };
   });
 
   const eggs = $derived(!!meta?.eggs);
-  const word = (n: number) => (eggs ? eggWord(n) : babyWord(n));
+  const word = (n: number) => (eggs ? eggWord(n) : meta?.litter ? litterWord(n) : babyWord(n));
 
   const LETTERS = "ABCDEFGH";
   // The fan: apex at the top, opening 36 degrees each way.
@@ -213,8 +219,9 @@
   {/if}
 
   {#if view.n}
-    {#each view.babies as b, i}
-      {@const rad = Math.max(view.u * 1.05, 18)}
+    {#each view.marked as b, i}
+      <!-- A crowd gets smaller circles, so they don't all overlap late on. -->
+      {@const rad = Math.min(Math.max(view.u * 1.05, 18), view.crowd ? 30 : Infinity)}
       <circle cx={b.x} cy={b.y} r={rad} fill="none" stroke="#ffe14d" stroke-width="2.2" stroke-dasharray="6 5" stroke-linecap="round" />
       {#if view.n > 1}
         <text x={b.x - rad * 0.72} y={b.y - rad * 0.72} text-anchor="middle" font-family={ROUND} font-size="15" font-weight="900" fill="#ffe14d" stroke="#050505" stroke-width="4" paint-order="stroke">{LETTERS[i] ?? i + 1}</text>

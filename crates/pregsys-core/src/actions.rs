@@ -17,6 +17,9 @@ pub struct NewPregnancy {
     pub speed: Option<f64>,
     pub custom_ms: Option<i64>,
     pub baby_count: Option<u32>,
+    /// With `baby_count`: the usual litter size it was rolled around (litter mode).
+    /// Without `baby_count`, both are rolled from the avatar's odds.
+    pub litter: Option<u32>,
     pub kind: Option<BodyKind>,
     pub mother_species: Option<String>,
     pub source: PregnancySource,
@@ -250,7 +253,7 @@ pub fn record_fun_with(data: &mut AppData, now_ms: i64, roll: f64, debug: bool) 
     let day = fertility::cycle_day(now_ms, s.cycle_anchor_ms.unwrap_or(now_ms), fertility::cycle_ms(s));
     let chance = fertility::chance(day, s.fertility_peak);
     let positive = roll < chance;
-    let babies = fertility::roll_babies(s.multiples, fertility::roll());
+    let (babies, litter) = fertility::roll_count(data.baby_odds(data.current_avatar_id.as_deref()), fertility::roll());
     let owner = data.owner(data.current_avatar_id.as_deref());
     let global = data.settings.sync_scope == SyncScope::Global;
     let reveal_ms = now_ms + fertility::grace_ms(s);
@@ -266,6 +269,7 @@ pub fn record_fun_with(data: &mut AppData, now_ms: i64, roll: f64, debug: bool) 
                 p.chance = chance;
                 p.cycle_day = day;
                 p.baby_count = babies;
+                p.litter = litter;
                 p.later = Some(LaterTake { time_ms: now_ms, partner: partner.clone(), world_name });
             }
             // Nobody picked yet: "Who was it?" lists the people here now, took or not.
@@ -280,6 +284,7 @@ pub fn record_fun_with(data: &mut AppData, now_ms: i64, roll: f64, debug: bool) 
             cycle_day: day,
             positive,
             baby_count: babies,
+            litter,
             partner,
             avatar_id: owner,
             world_name,
@@ -356,6 +361,7 @@ pub fn resolve_due(data: &mut AppData, now_ms: i64) -> Option<bool> {
                 avatar_id: p.avatar_id.clone(),
                 partner: Some(partner),
                 baby_count: Some(p.baby_count.max(1)),
+                litter: p.litter,
                 ..Default::default()
             },
             now_ms,
@@ -399,12 +405,17 @@ pub fn start_pregnancy(data: &mut AppData, np: NewPregnancy, now_ms: i64) -> Str
     let mother_species = np.mother_species.clone().unwrap_or_else(|| data.user_species(avatar_id.as_deref()));
     let id = new_id("preg");
     let n = data.pregnancies.len() + 1;
+    let (baby_count, litter) = match np.baby_count {
+        Some(c) => (c, np.litter),
+        None => fertility::roll_count(data.baby_odds(avatar_id.as_deref()), fertility::roll()),
+    };
     let mut p = Pregnancy {
         id: id.clone(),
         name: np.name.filter(|n| !n.trim().is_empty()).unwrap_or_else(|| format!("Little Bean #{n}")),
         created_ms: now_ms,
         timeline: Timeline::new(np.start_ms.unwrap_or(now_ms), mode, speed, np.custom_ms.or(data.settings.default_custom_ms)),
-        baby_count: np.baby_count.unwrap_or_else(|| fertility::roll_babies(data.settings.multiples, fertility::roll())),
+        baby_count,
+        litter,
         kind,
         mother_species,
         partner,
@@ -1229,6 +1240,31 @@ mod tests {
         scope_changed(&mut d, SyncScope::Global, None);
         assert_eq!(d.avatars["avtr_a"].pregnancy_id.as_deref(), Some(other.as_str()));
         assert!(d.active_pregnancy_id.is_none());
+    }
+
+    #[test]
+    fn litters_follow_the_avatar_then_settings() {
+        use crate::model::{BabyOdds, Litter, LitterSpread, Multiples};
+        let mut d = AppData::new();
+        touch_avatar(&mut d, "avtr_a", 100);
+        touch_avatar(&mut d, "avtr_b", 100);
+        assert_eq!(d.baby_odds(Some("avtr_a")), BabyOdds::Preset(d.settings.multiples));
+        let six = Litter { usual: 6, spread: LitterSpread::Little };
+        d.settings.litter = Some(six);
+        assert_eq!(d.baby_odds(Some("avtr_a")), BabyOdds::Litter(six));
+        // An avatar's own choice wins, even a preset over a litter default.
+        d.avatars.get_mut("avtr_b").unwrap().multiples = Some(Multiples::Realistic);
+        assert_eq!(d.baby_odds(Some("avtr_b")), BabyOdds::Preset(Multiples::Realistic));
+        let id = start_pregnancy(&mut d, NewPregnancy { avatar_id: Some("avtr_a".into()), ..Default::default() }, 200);
+        let p = d.pregnancy(&id).unwrap();
+        assert_eq!(p.litter, Some(6), "remembers the usual size");
+        assert!((1..=8).contains(&p.baby_count));
+        let id = start_pregnancy(&mut d, NewPregnancy { avatar_id: Some("avtr_b".into()), ..Default::default() }, 200);
+        assert_eq!(d.pregnancy(&id).unwrap().litter, None);
+        // A count picked earlier (a WooHoo's wait) keeps its litter.
+        let id = start_pregnancy(&mut d, NewPregnancy { avatar_id: Some("avtr_b".into()), baby_count: Some(7), litter: Some(4), ..Default::default() }, 300);
+        let p = d.pregnancy(&id).unwrap();
+        assert_eq!((p.baby_count, p.litter, p.babies.len()), (7, Some(4), 7));
     }
 
     #[test]

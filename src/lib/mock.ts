@@ -4,7 +4,7 @@
 import type { AppData, AvatarProfile, InstanceKind, JournalEntry, Keepsake, Mapping, MappingInfo, NewPregnancy, Partner, Person, Pregnancy, Problem, ResetKind, Settings, Status } from "./types";
 import { emptyData, baby, defaultSettings } from "./testdata";
 import { newTimeline, progress } from "./timeline";
-import { chance, cycleDay, cycleMs, graceMs, isEggs, isIncubating } from "./fertility";
+import { chance, cycleDay, cycleMs, graceMs, isEggs, isIncubating, MAX_BABIES, rollLitter } from "./fertility";
 import { groupMembers, isMyPartner, owner, pendingFor, pregnancyFor, pregnancyIdOf, samePartner } from "./scope";
 import { socketCounts, typeOf } from "./sps";
 import { FIXED } from "./params";
@@ -139,7 +139,7 @@ function status(): Status {
     avatarLoading: false,
     hideBelly: mapping ? (mapping.sync.find((s) => s.role === "hideBelly")?.name ?? null) : "Pregnancy/HideBelly",
     lastStage: p ? Math.min(1, progress(p.timeline, Date.now())) : pendingFor(data, data.currentAvatarId) ? 0 : null,
-    lastExtra: p ? (data.settings.biggerForMultiples ? ([0, 0, 0.35, 0.6][p.babyCount] ?? 0.8) : 0) : null,
+    lastExtra: p ? (data.settings.biggerForMultiples ? extraFor(p.babyCount, p.litter ?? null) : 0) : null,
     logDir: "(browser preview)",
     logFile: null,
     worldName: data.instance.worldName,
@@ -249,10 +249,21 @@ function creditFun(timeMs: number, partner: Partner) {
   if (f) Object.assign(f, { partnerName: partner.name, partnerUserId: partner.userId });
 }
 
-function rollBabies(): number {
+/** Extra size for twins and more; a litter's usual size and smaller get none (stage.rs extra_value). */
+function extraFor(babies: number, litter: number | null): number {
+  if (litter == null) return [0, 0, 0.35, 0.6][babies] ?? 0.8;
+  return litter >= MAX_BABIES || babies <= litter ? 0 : (0.8 * (Math.min(babies, MAX_BABIES) - litter)) / (MAX_BABIES - litter);
+}
+
+/** How many babies, and the usual litter size in litter mode (fertility.rs roll_count, model.rs baby_odds). */
+function rollBabies(avatarId: string | null): { babyCount: number; litter: number | null } {
   const r = Math.random();
-  const [q, t, w] = data.settings.multiples === "realistic" ? [0, 0.001, 0.031] : data.settings.multiples === "lots" ? [0.02, 0.1, 0.35] : [0.002, 0.022, 0.122];
-  return r < q ? 4 : r < t ? 3 : r < w ? 2 : 1;
+  const prof = avatarId ? data.avatars[avatarId] : undefined;
+  const litter = prof?.litter ?? (prof?.multiples ? null : data.settings.litter) ?? null;
+  if (litter) return { babyCount: rollLitter(litter, r), litter: Math.min(MAX_BABIES, Math.max(1, litter.usual)) };
+  const m = prof?.multiples ?? data.settings.multiples;
+  const [q, t, w] = m === "realistic" ? [0, 0.001, 0.031] : m === "lots" ? [0.02, 0.1, 0.35] : [0.002, 0.022, 0.122];
+  return { babyCount: r < q ? 4 : r < t ? 3 : r < w ? 2 : 1, litter: null };
 }
 
 function setCurrent(avatarId: string | null, id: string | null) {
@@ -297,12 +308,14 @@ function createPregnancy(opts: NewPregnancy & { partner?: Partner; babyCount?: n
   const now = Date.now();
   const s = data.settings;
   const aid = opts.avatarId ?? data.currentAvatarId;
+  const rolled = opts.babyCount != null ? { babyCount: opts.babyCount, litter: opts.litter ?? null } : rollBabies(aid);
   const p: Pregnancy = {
     id: newId("preg"),
     name: opts.name?.trim() || `Little Bean #${data.pregnancies.length + 1}`,
     createdMs: now,
     timeline: newTimeline(opts.startMs ?? now, opts.mode ?? s.defaultMode, opts.speed ?? s.defaultSpeed, opts.customMs ?? s.defaultCustomMs),
-    babyCount: opts.babyCount ?? rollBabies(),
+    babyCount: rolled.babyCount,
+    litter: rolled.litter,
     // The avatar's Eggs switch (actions.rs start_pregnancy: kind from the profile).
     kind: (aid && data.avatars[aid]?.kind) || "human",
     motherSpecies: s.userSpecies,
@@ -343,7 +356,7 @@ function resolveDue() {
       if (f.took) Object.assign(f, { partnerName: partner.name, partnerUserId: partner.userId });
     }
   }
-  if (w.positive) createPregnancy({ startMs: tookMs, source: "conception", avatarId: w.avatarId, partner, babyCount: w.babyCount });
+  if (w.positive) createPregnancy({ startMs: tookMs, source: "conception", avatarId: w.avatarId, partner, babyCount: w.babyCount, litter: w.litter ?? null });
   data.lastReveal = { timeMs: now, eventMs: tookMs, positive: w.positive, seen: false };
   changed();
   emit("reveal", w.positive);
@@ -867,7 +880,7 @@ export const mock = {
     changed();
   },
   async debug_set_babies({ count }: { count: number }) {
-    const n = Math.min(4, Math.max(1, Math.round(count)));
+    const n = Math.min(MAX_BABIES, Math.max(1, Math.round(count)));
     const p = pregnancyFor(data, data.currentAvatarId);
     if (p) {
       p.babyCount = n;
@@ -1016,7 +1029,7 @@ async function woohoo(forced: boolean | null) {
       if (!existing.positive && positive) Object.assign(existing, { positive, later: { timeMs: now, partner, worldName: data.instance.worldName } });
       if (existing.partner.name == null) existing.partner = partner;
     } else {
-      data.waiting.push({ timeMs: now, revealMs: now + graceMs(s), chance: c, cycleDay: day, positive, babyCount: rollBabies(), partner, avatarId: owner(data, data.currentAvatarId), worldName: data.instance.worldName, funTimes: [now] });
+      data.waiting.push({ timeMs: now, revealMs: now + graceMs(s), chance: c, cycleDay: day, positive, ...rollBabies(data.currentAvatarId), partner, avatarId: owner(data, data.currentAvatarId), worldName: data.instance.worldName, funTimes: [now] });
     }
     changed();
     emit("fun");

@@ -12,12 +12,13 @@
   import { app, checkForUpdate, confirmAsk, errorToast, settingsChanged, settingsSaved, toast } from "../lib/app.svelte";
   import { HEX } from "../lib/theme";
   import { api, inTauri, pickFolder, pickTextFile, saveTextFile } from "../lib/api";
-  import { MULTIPLES_LABEL, graceMs, termMs } from "../lib/fertility";
+  import { graceMs, termMs } from "../lib/fertility";
+  import BabyOdds from "../components/BabyOdds.svelte";
   import { HAPTICS_DISABLED, HOLE_TYPES, spsNewerText, spsTooNew } from "../lib/sps";
   import { FEATURES, FIXED, PARAM_INFO, PARAM_ORDER, REQUIRED, SYNC_ROLES, hasParam, syncLabel } from "../lib/params";
   import { humanDuration, week as weekOf } from "../lib/timeline";
   import { pregnancyFor } from "../lib/scope";
-  import type { InstanceKind, LaborStart, MappingInfo, Multiples, ResetKind, SafetySettings, Settings, VrNotices, VrTarget } from "../lib/types";
+  import type { InstanceKind, LaborStart, MappingInfo, ResetKind, SafetySettings, Settings, VrNotices, VrTarget } from "../lib/types";
   import { INSTANCE_KINDS, OPEN_KINDS } from "../lib/safety";
   import { autoPrivacyReason, syncAutoPrivacy } from "../lib/autoPrivacy.svelte";
 
@@ -673,14 +674,9 @@
 
   <Section id="babies" title="👶 Babies">
     <div class="field">
-      <strong>Twins and more</strong>
-      <div class="choices three">
-        {#each Object.entries(MULTIPLES_LABEL) as [k, m]}
-          <button class="opt" class:on={s.multiples === k} onclick={() => { s.multiples = k as Multiples; commit(); }}>
-            <strong>{m.name}</strong><span>{m.hint}</span>
-          </button>
-        {/each}
-      </div>
+      <strong>How many babies</strong>
+      <BabyOdds multiples={s.multiples} litter={s.litter ?? null} onchange={(m, l) => { if (m) s.multiples = m; s.litter = l; commit(); }} />
+      <span class="hint">Each avatar can have its own (Avatars tab). The number is picked when the pregnancy starts.</span>
     </div>
     <div class="field">
       <strong>Genders</strong>
@@ -696,7 +692,7 @@
   </Section>
 
   <Section id="belly" title="🫃 Belly">
-    <Toggle bind:checked={s.biggerForMultiples} label="Bigger for twins and more" hint="Twins a little bigger, triplets more" onchange={() => commit()} />
+    <Toggle bind:checked={s.biggerForMultiples} label="Bigger for twins and more" hint="Twins a little bigger, triplets more. In a litter, only litters bigger than usual." onchange={() => commit()} />
     <Toggle bind:checked={s.growWhenOverdue} label="Keep growing when overdue" hint="The belly grows a little more after the due date" onchange={() => commit()} />
     <span class="muted small">Both need Bigger Belly from the Pregnancy System SDK (<code>Pregnancy/BellyExtra</code>).</span>
     {#if lacks("bellyExtra")}{@render cantShow("a bigger belly", "Extra size")}{/if}

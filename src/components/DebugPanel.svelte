@@ -216,7 +216,7 @@
       {#if p}This pregnancy has {p.babyCount}. The Home card shows them from week 12.{:else if w}Waiting to find out: sets how many there will be.{:else}Not pregnant or waiting on this avatar.{/if}
     </span>
     <div class="segmented" style="align-self:flex-start">
-      {#each [1, 2, 3, 4] as n}
+      {#each [1, 2, 3, 4, 5, 6, 7, 8] as n}
         <button class:on={(p?.babyCount ?? w?.babyCount) === n} disabled={!p && !w} onclick={() => run(n === 1 ? "One baby" : `${n} babies`, () => api.debugSetBabies(n))}>{n}</button>
       {/each}
     </div>
