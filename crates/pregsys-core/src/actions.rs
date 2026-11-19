@@ -786,9 +786,10 @@ pub fn touch_avatar(data: &mut AppData, avatar_id: &str, now_ms: i64) {
 
 /// Brings a running pregnancy along when "same on every avatar" is turned on
 /// or off, so it never ends up on no avatar at all.
-/// Per avatar → shared: the worn avatar's (else the newest) becomes the shared one.
+/// Per avatar → shared: `share` (picked in the app), else the worn avatar's,
+/// else the newest becomes the shared one. The others stay on their avatars.
 /// Shared → per avatar: the shared one goes on the worn avatar, if that has none.
-pub fn scope_changed(data: &mut AppData, old: SyncScope) {
+pub fn scope_changed(data: &mut AppData, old: SyncScope, share: Option<&str>) {
     let new = data.settings.sync_scope;
     if old == new {
         return;
@@ -811,7 +812,8 @@ pub fn scope_changed(data: &mut AppData, old: SyncScope) {
             };
             let mut owners: Vec<String> = data.groups.keys().cloned().collect();
             owners.extend(data.avatars.values().filter(|a| a.group_id.as_deref().is_none_or(|g| !data.groups.contains_key(g))).map(|a| a.id.clone()));
-            let from_worn = worn.as_deref().map(|a| owner_of(data, a)).filter(|o| active(data, &held(data, o)));
+            let picked = share.and_then(|id| owners.iter().find(|o| held(data, o).as_deref() == Some(id))).filter(|o| active(data, &held(data, o))).cloned();
+            let from_worn = picked.or_else(|| worn.as_deref().map(|a| owner_of(data, a)).filter(|o| active(data, &held(data, o))));
             let newest = owners
                 .iter()
                 .filter(|o| active(data, &held(data, o)))
@@ -830,10 +832,13 @@ pub fn scope_changed(data: &mut AppData, old: SyncScope) {
                 return;
             }
             let on_one = data.groups.values().any(|g| g.pregnancy_id == id) || data.avatars.values().any(|a| a.follow_global || a.pregnancy_id == id);
-            let Some(a) = worn.filter(|a| data.avatars.contains_key(a)) else { return };
-            if on_one || data.current_pregnancy(Some(&a)).is_some() {
+            if on_one {
                 return;
             }
+            // The worn avatar, else the one it started on, whichever has none.
+            let started_on = id.as_deref().and_then(|i| data.pregnancy(i)).and_then(|p| p.avatar_id.clone());
+            let free = |a: &String| data.avatars.contains_key(a) && data.current_pregnancy(Some(a)).is_none();
+            let Some(a) = worn.filter(free).or(started_on.filter(free)) else { return };
             data.set_current(Some(&a), id);
             data.active_pregnancy_id = None;
         }
@@ -1196,22 +1201,34 @@ mod tests {
         let id = start_pregnancy(&mut d, NewPregnancy { avatar_id: Some("avtr_a".into()), ..Default::default() }, 200);
         // Worn: avtr_b (no pregnancy). The newest running one is shared.
         d.settings.sync_scope = SyncScope::Global;
-        scope_changed(&mut d, SyncScope::PerAvatar);
+        scope_changed(&mut d, SyncScope::PerAvatar, None);
         assert_eq!(d.active_pregnancy_id.as_deref(), Some(id.as_str()));
         assert!(d.avatars["avtr_a"].pregnancy_id.is_none(), "not on two places at once");
         assert_eq!(d.current_pregnancy(Some("avtr_b")).map(|p| p.id.as_str()), Some(id.as_str()));
         // Back to per avatar: it goes on the worn avatar.
         d.settings.sync_scope = SyncScope::PerAvatar;
-        scope_changed(&mut d, SyncScope::Global);
+        scope_changed(&mut d, SyncScope::Global, None);
         assert_eq!(d.current_pregnancy(Some("avtr_b")).map(|p| p.id.as_str()), Some(id.as_str()));
         assert!(d.active_pregnancy_id.is_none());
         // An already shared pregnancy is kept; the worn avatar's otherwise wins.
         let other = start_pregnancy(&mut d, NewPregnancy { avatar_id: Some("avtr_a".into()), ..Default::default() }, 300);
         touch_avatar(&mut d, "avtr_b", 400);
         d.settings.sync_scope = SyncScope::Global;
-        scope_changed(&mut d, SyncScope::PerAvatar);
+        scope_changed(&mut d, SyncScope::PerAvatar, None);
         assert_eq!(d.active_pregnancy_id.as_deref(), Some(id.as_str()), "the worn avatar's, not the newest");
         assert_eq!(d.avatars["avtr_a"].pregnancy_id.as_deref(), Some(other.as_str()), "left where it was");
+        // The one picked in the app wins over the worn avatar's.
+        d.settings.sync_scope = SyncScope::PerAvatar;
+        scope_changed(&mut d, SyncScope::Global, None);
+        d.settings.sync_scope = SyncScope::Global;
+        scope_changed(&mut d, SyncScope::PerAvatar, Some(&other));
+        assert_eq!(d.active_pregnancy_id.as_deref(), Some(other.as_str()));
+        assert_eq!(d.avatars["avtr_b"].pregnancy_id.as_deref(), Some(id.as_str()), "the worn avatar keeps its own");
+        // Back to per avatar: the worn one is taken, so it goes back where it started.
+        d.settings.sync_scope = SyncScope::PerAvatar;
+        scope_changed(&mut d, SyncScope::Global, None);
+        assert_eq!(d.avatars["avtr_a"].pregnancy_id.as_deref(), Some(other.as_str()));
+        assert!(d.active_pregnancy_id.is_none());
     }
 
     #[test]

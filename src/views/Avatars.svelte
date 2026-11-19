@@ -8,7 +8,8 @@
   import Toggle from "../components/Toggle.svelte";
   import { app, confirmAsk, errorToast, toast } from "../lib/app.svelte";
   import { api, inTauri } from "../lib/api";
-  import { avatarName, groupMembers, pendingFor, pregnancyFor } from "../lib/scope";
+  import { avatarName, groupMembers, ownerName, pendingFor, pregnancyFor, savedOnAvatars } from "../lib/scope";
+  import Modal from "../components/Modal.svelte";
   import { hasSystem, matches, seenText, shelfOf } from "../lib/avatars";
   import { progress, TERM_WEEKS } from "../lib/timeline";
   import { FEATURES, FIXED, PARAM_INFO, REQUIRED, hasParam, syncLabel } from "../lib/params";
@@ -169,13 +170,31 @@
     return "Not pregnant";
   }
 
-  async function setScope(per: boolean) {
+  // Running pregnancies on single avatars or groups (waiting while it's one for every avatar).
+  const saved = $derived(savedOnAvatars(d));
+  const sharedRunning = $derived(d.pregnancies.some((p) => p.id === d.activePregnancyId && !p.endedMs));
+  // Switching to one for every avatar with several running: which one to share.
+  let sharing = $state<string | null>(null);
+
+  async function setScope(per: boolean, share: string | null = null) {
+    if (per === perAvatar) return;
+    if (!per && !share && !sharedRunning && saved.length > 1) {
+      const worn = d.currentAvatarId ? pregnancyFor(d, d.currentAvatarId)?.id : undefined;
+      sharing = worn ?? saved[0].pregnancy.id;
+      return;
+    }
     const s: Settings = { ...($state.snapshot(d.settings) as Settings), syncScope: per ? "perAvatar" : "global" };
     try {
-      await api.saveSettings(s);
+      await api.saveSettings(s, share);
     } catch (e) {
       errorToast(e);
     }
+  }
+
+  async function shareChosen() {
+    const id = sharing;
+    sharing = null;
+    if (id) await setScope(false, id);
   }
 
   async function save(p: AvatarProfile, change: (x: AvatarProfile) => void) {
@@ -432,7 +451,32 @@
         <span>Their own pregnancy and progress. Put avatars in a group to share.</span>
       </button>
     </div>
+    {#if !perAvatar && saved.length}
+      <p class="muted small">💤 {saved.length === 1 ? "1 more pregnancy is" : `${saved.length} more pregnancies are`} saved on single avatars or groups. {saved.length === 1 ? "It shows" : "They show"} again when each avatar has its own.</p>
+    {/if}
   </section>
+
+  {#if sharing}
+    <Modal title="Share one pregnancy on every avatar?" onclose={() => (sharing = null)}>
+      <p class="muted small">You have {saved.length} running. Pick the one to show everywhere. The others stay saved on their avatars and come back if you switch back.</p>
+      <div class="share-list">
+        {#each saved as s (s.pregnancy.id)}
+          <label class="share-pick" class:on={sharing === s.pregnancy.id}>
+            <input type="radio" name="share" value={s.pregnancy.id} bind:group={sharing} />
+            <span class="grow share-who">
+              <strong>{d.groups?.[s.ownerId] ? "💞 " : ""}{ownerName(d, s.ownerId)}</strong>
+              <span class="muted small">{s.pregnancy.partner.name ? `with ${shownName(d, s.pregnancy.partner.name, s.pregnancy.partner.userId)}` : "other parent unknown"}</span>
+            </span>
+            <span class="muted small">Week {Math.floor(progress(s.pregnancy.timeline, app.now) * TERM_WEEKS)}</span>
+          </label>
+        {/each}
+      </div>
+      <div class="share-actions">
+        <button class="soft" onclick={() => (sharing = null)}>Cancel</button>
+        <button onclick={shareChosen}>Share this one</button>
+      </div>
+    </Modal>
+  {/if}
 
   <section class="card">
     {#if adding}
@@ -653,6 +697,37 @@
   .opt.on {
     border-color: var(--accent);
     background: var(--bg-3);
+  }
+  .share-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 10px 0 14px;
+  }
+  .share-pick {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 2px solid var(--line);
+    border-radius: 14px;
+    cursor: pointer;
+  }
+  .share-pick.on {
+    border-color: var(--accent);
+    background: var(--bg-3);
+  }
+  .share-who {
+    display: flex;
+    flex-direction: column;
+  }
+  .share-pick input {
+    accent-color: var(--accent);
+  }
+  .share-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
   }
   .search {
     min-width: 0;

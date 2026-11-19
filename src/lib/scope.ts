@@ -36,6 +36,22 @@ export function groupMembers(d: AppData, groupId: string): string[] {
     .map((a) => a.id);
 }
 
+/**
+ * Running pregnancies saved on a group or a single avatar (per-avatar mode),
+ * with who holds them, newest first. In "same on every avatar" mode these
+ * wait for per-avatar mode to come back (actions.rs scope_changed).
+ */
+export function savedOnAvatars(d: AppData): { pregnancy: Pregnancy; ownerId: string }[] {
+  const out: { pregnancy: Pregnancy; ownerId: string }[] = [];
+  const add = (ownerId: string, id: string | null | undefined) => {
+    const p = id ? d.pregnancies.find((x) => x.id === id && !x.endedMs) : undefined;
+    if (p && p.id !== d.activePregnancyId) out.push({ pregnancy: p, ownerId });
+  };
+  for (const g of Object.values(d.groups ?? {})) add(g.id, g.pregnancyId);
+  for (const a of Object.values(d.avatars)) if (!a.followGlobal && !(a.groupId && d.groups?.[a.groupId])) add(a.id, a.pregnancyId);
+  return out.sort((a, b) => b.pregnancy.createdMs - a.pregnancy.createdMs);
+}
+
 /** A name for an owner: the group's name, or the avatar's. */
 export function ownerName(d: AppData, ownerId: string | null): string {
   const g = ownerId ? d.groups?.[ownerId] : undefined;

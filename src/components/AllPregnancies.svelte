@@ -6,7 +6,7 @@
   import { journalFor } from "../lib/journal";
   import { app, homeAvatarId, currentPregnancy, viewPending, viewPregnancy, confirmAsk, errorToast } from "../lib/app.svelte";
   import { api } from "../lib/api";
-  import { groupMembers, owner, ownerAvatar, ownerName, pregnancyAvatar, pregnancyAvatarNames, pregnancyGroup } from "../lib/scope";
+  import { groupMembers, owner, ownerAvatar, ownerName, pregnancyAvatar, pregnancyAvatarNames, pregnancyGroup, savedOnAvatars } from "../lib/scope";
   import { birthTitle, genderText, isEggs } from "../lib/fertility";
   import { progress, humanDuration, TERM_WEEKS } from "../lib/timeline";
   import type { Pregnancy } from "../lib/types";
@@ -25,7 +25,9 @@
   const groupOf = (p: Pregnancy) => pregnancyGroup(d, p);
   const firstAvatarOf = (p: Pregnancy) => pregnancyAvatar(d, p);
 
-  const active = $derived(d.pregnancies.filter((p) => !p.endedMs && p.id !== shown?.id));
+  // With one pregnancy for every avatar, others saved on single avatars (from per-avatar mode) stay hidden until it's back.
+  const active = $derived(d.settings.syncScope === "global" ? [] : d.pregnancies.filter((p) => !p.endedMs && p.id !== shown?.id));
+  const saved = $derived(d.settings.syncScope === "global" ? savedOnAvatars(d) : []);
   const waiting = $derived(d.waiting.filter((w) => w.avatarId !== owner(d, homeAvatarId())));
   const past = $derived(d.pregnancies.filter((p) => p.endedMs).sort((a, b) => (b.endedMs ?? 0) - (a.endedMs ?? 0)));
   const dateFmt = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" });
@@ -35,8 +37,8 @@
     try {
       if (due) {
         const title = isEggs(p) ? "Lay the eggs? 🥚" : "Welcome the baby? 🍼";
-        if (await confirmAsk({ title, text: `${p.name} isn't on any avatar. This ends it with a birth and counts in your stats.`, ok: isEggs(p) ? "Lay them!" : "Welcome!" })) await api.giveBirth(p.id);
-      } else if (await confirmAsk({ title: `End ${p.name}?`, text: "It isn't on any avatar. It's removed as if it never happened: its journal, keepsakes and achievements go. The WooHoo stays.", ok: "End pregnancy", danger: true })) {
+        if (await confirmAsk({ title, text: "This pregnancy isn't on any avatar. This ends it with a birth and counts in your stats.", ok: isEggs(p) ? "Lay them!" : "Welcome!" })) await api.giveBirth(p.id);
+      } else if (await confirmAsk({ title: "End this pregnancy?", text: "It isn't on any avatar. It's removed as if it never happened: its journal, keepsakes and achievements go. The WooHoo stays.", ok: "End pregnancy", danger: true })) {
         await api.endPregnancy(p.id);
       }
     } catch (e) {
@@ -45,10 +47,12 @@
   }
 </script>
 
-{#if active.length || waiting.length || past.length}
+{#if active.length || waiting.length || past.length || saved.length}
   <section class="card">
     <h2>🤰 All pregnancies</h2>
-    {#if !active.length && !waiting.length}
+    {#if saved.length}
+      <p class="muted small">💤 {saved.length === 1 ? "1 more pregnancy is" : `${saved.length} more pregnancies are`} saved on single avatars or groups. You're using one pregnancy for every avatar, so {saved.length === 1 ? "it shows" : "they show"} again when each avatar has its own (Avatars tab).</p>
+    {:else if !active.length && !waiting.length}
       <p class="muted small">No other pregnancies right now.</p>
     {/if}
     <ul class="list">

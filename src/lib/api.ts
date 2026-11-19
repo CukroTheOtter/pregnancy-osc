@@ -30,7 +30,8 @@ export const api = {
   getData: () => call<AppData>("get_data"),
   getStatus: () => call<Status>("get_status"),
   takeLoadWarning: () => call<string | null>("take_load_warning"),
-  saveSettings: (settings: Settings) => call<string | null>("save_settings", { settings }),
+  /** `share`: switching to one pregnancy for every avatar, the pregnancy picked to share. */
+  saveSettings: (settings: Settings, share: string | null = null) => call<string | null>("save_settings", { settings, share }),
   createPregnancy: (opts: NewPregnancy) => call<Pregnancy>("create_pregnancy", { opts }),
   savePregnancy: (pregnancy: Pregnancy) => call<void>("save_pregnancy", { pregnancy }),
   endPregnancy: (id: string) => call<void>("end_pregnancy", { id }),

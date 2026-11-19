@@ -52,7 +52,8 @@ pub fn take_load_warning(s: S) -> Option<String> {
 }
 
 #[tauri::command]
-pub fn save_settings(app: AppHandle, s: S, settings: Settings) -> R<Option<String>> {
+/// `share`: switching to one pregnancy for every avatar, the one picked to share.
+pub fn save_settings(app: AppHandle, s: S, settings: Settings, share: Option<String>) -> R<Option<String>> {
     let old = {
         let mut d = s.data.lock().unwrap();
         let old = std::mem::replace(&mut d.settings, settings.clone());
@@ -64,7 +65,7 @@ pub fn save_settings(app: AppHandle, s: S, settings: Settings) -> R<Option<Strin
         // A wait to find out follows a new pregnancy length (or wait setting).
         actions::retime_waits(&mut d, &old);
         // A running pregnancy comes along when the avatar mode changes.
-        actions::scope_changed(&mut d, old.sync_scope);
+        actions::scope_changed(&mut d, old.sync_scope, share.as_deref());
         old
     };
     changed(&app, &s, true);

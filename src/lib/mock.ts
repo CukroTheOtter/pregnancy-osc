@@ -461,7 +461,7 @@ export const mock = {
     loadWarning = null;
     return w;
   },
-  async save_settings({ settings }: { settings: Settings }) {
+  async save_settings({ settings, share }: { settings: Settings; share?: string | null }) {
     // Turning debug mode off removes Test Buddy.
     if (data.settings.debug && !settings.debug) removeTestBuddy();
     // A wait to find out follows a new pregnancy length (actions.rs retime_waits).
@@ -469,7 +469,7 @@ export const mock = {
     if (grace !== graceMs(data.settings)) for (const w of data.waiting) w.revealMs = Math.min(w.timeMs, ...(w.funTimes ?? [])) + grace;
     const oldScope = data.settings.syncScope;
     data.settings = settings;
-    scopeChanged(oldScope);
+    scopeChanged(oldScope, share ?? null);
     changed();
     return null;
   },
@@ -923,7 +923,7 @@ export const mock = {
 };
 
 /** A running pregnancy comes along when the avatar mode changes (actions.rs scope_changed). */
-function scopeChanged(old: Settings["syncScope"]) {
+function scopeChanged(old: Settings["syncScope"], share: string | null) {
   if (old === data.settings.syncScope) return;
   const isActive = (id: string | null | undefined) => !!id && data.pregnancies.some((p) => p.id === id && !p.endedMs);
   const created = (id: string | null | undefined) => data.pregnancies.find((p) => p.id === id)?.createdMs ?? 0;
@@ -938,19 +938,25 @@ function scopeChanged(old: Settings["syncScope"]) {
     };
     const holds = (h: Holder | undefined) => !!h && !(h as AvatarProfile).followGlobal && isActive(h.pregnancyId);
     const all: Holder[] = [...Object.values(groups), ...Object.values(data.avatars).filter((a) => !a.groupId || !groups[a.groupId])];
+    const picked = share ? all.find((x) => x.pregnancyId === share) : undefined;
     const fromWorn = worn ? holderOf(worn) : undefined;
-    const h = holds(fromWorn) ? fromWorn : all.filter(holds).sort((a, b) => created(b.pregnancyId) - created(a.pregnancyId))[0];
+    const h = holds(picked) ? picked : holds(fromWorn) ? fromWorn : all.filter(holds).sort((a, b) => created(b.pregnancyId) - created(a.pregnancyId))[0];
     if (!h) return;
     data.activePregnancyId = h.pregnancyId ?? null;
     h.pregnancyId = null;
   } else {
     const id = data.activePregnancyId;
-    if (!isActive(id) || !worn || !data.avatars[worn]) return;
+    if (!isActive(id)) return;
     const onOne = Object.values(groups).some((g) => g.pregnancyId === id) || Object.values(data.avatars).some((a) => a.followGlobal || a.pregnancyId === id);
-    if (onOne || pregnancyFor(data, worn)) return;
-    const g = data.avatars[worn].groupId;
+    if (onOne) return;
+    // The worn avatar, else the one it started on, whichever has none.
+    const free = (a: string | null | undefined): a is string => !!a && !!data.avatars[a] && !pregnancyFor(data, a);
+    const startedOn = data.pregnancies.find((p) => p.id === id)?.avatarId;
+    const a = free(worn) ? worn : free(startedOn) ? startedOn : null;
+    if (!a) return;
+    const g = data.avatars[a].groupId;
     if (g && groups[g]) groups[g].pregnancyId = id;
-    else data.avatars[worn].pregnancyId = id;
+    else data.avatars[a].pregnancyId = id;
     data.activePregnancyId = null;
   }
 }
