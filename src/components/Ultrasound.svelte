@@ -46,13 +46,12 @@
     [[148, 124], [252, 124], [148, 200], [252, 200]],
   ];
 
-  // 5 and more: one crowded sac, too full to count, like a real scan. Always five
-  // bodies (so a litter of 5 never shows more): three in front, circled, and two
-  // half hidden behind them. The screen's text gives the real number.
-  const CROWD_FRONT: [number, number][] = [[180, 152], [222, 150], [201, 188]];
-  const CROWD_BACK: [number, number][] = [[160, 184], [244, 182]];
-  // The shared sac around them.
-  const CROWD_SAC = { x: 201, y: 168, rx: 86, ry: 68 };
+  // 5 and more: too many for one view, like a real scan. Four fill the view,
+  // packed tight and circled; the rest are pushed out of frame, a cut-off sliver
+  // at the edge of the fan (one for 5, two for more, so it never shows too many).
+  // The screen's text gives the real number.
+  const CROWD_FRONT: [number, number][] = [[160, 128], [240, 126], [160, 204], [240, 202]];
+  const CROWD_EDGES: [number, number][] = [[70, 216], [330, 210]];
 
   const view = $derived.by(() => {
     const r = rng(scan.seed);
@@ -64,8 +63,8 @@
     const squeeze = 1 - packed * 0.22;
     const pull = ([x, y]: [number, number]): [number, number] => [200 + (x - 200) * squeeze, 160 + (y - 160) * squeeze];
     const core = (crowd ? CROWD_FRONT : LAYOUTS[shown - 1]).map(pull);
-    // A crowd's bodies are drawn big for their space, so they overlap.
-    const sac = (shown === 1 ? 72 : shown === 2 ? 54 : shown <= 4 ? 42 : 40) * (1 - packed * 0.12);
+    // A crowd's four are drawn bigger, so their sacs press together.
+    const sac = (shown === 1 ? 72 : shown === 2 ? 54 : shown <= 4 ? 42 : 48) * (1 - packed * 0.12);
     const grow = Math.min(1, Math.max(0, (scan.week - 6) / 18));
     const u = sac * (0.24 + 0.5 * grow + 0.42 * packed);
     const one = (x: number, y: number, edge: boolean) => ({
@@ -76,19 +75,18 @@
       sx: 0.9 + r() * 0.25,
       edge,
     });
-    const babies = [...core.map(([x, y]) => one(x, y, false)), ...(crowd ? CROWD_BACK.map(pull).map(([x, y]) => one(x, y, true)) : [])];
-    // The ones the doctor circles and letters (not the hidden ones).
+    const babies = [...core.map(([x, y]) => one(x, y, false)), ...(crowd ? CROWD_EDGES.slice(0, Math.min(2, shown - 4)).map(([x, y]) => one(x, y, true)) : [])];
+    // The ones the doctor circles and letters (not the cut-off ones).
     const marked = babies.filter((b) => !b.edge);
-    // Drawn back to front, so the hidden ones are covered. `lead` gets the wave or yawn.
+    // Cut-off ones first, so the four are on top. `lead` gets the wave or yawn.
     const drawn = [...babies.filter((b) => b.edge), ...marked].map((b) => ({ ...b, lead: b === babies[0] }));
-    const shared = { ...CROWD_SAC, rx: CROWD_SAC.rx * squeeze, ry: CROWD_SAC.ry * squeeze };
     // Soft tissue around the sacs.
     const tissue = Array.from({ length: 7 }, () => ({ x: 60 + r() * 280, y: 60 + r() * 200, rx: 30 + r() * 60, ry: 10 + r() * 22, rot: (r() - 0.5) * 70, o: 0.18 + r() * 0.25 }));
     const days = scan.seed % 7;
     const lines = statLines(scanStats(scan.week, n, scan.seed), n > 0, meta?.genders ?? null);
     // Where the heart-shaped shadow sits (the "heart" scan).
     const heart = { x: 120 + r() * 160, y: 215 + r() * 25 };
-    return { n, sac, u, babies, marked, drawn, shared, crowd, tissue, packed, early: scan.week < 10, turb: Math.floor(r() * 1000), days, lines, heart };
+    return { n, sac, u, babies, marked, drawn, crowd, tissue, packed, early: scan.week < 10, turb: Math.floor(r() * 1000), days, lines, heart };
   });
 
   const eggs = $derived(!!meta?.eggs);
@@ -140,15 +138,10 @@
     </g>
 
     <g filter="url(#{uid}-soft)">
-      {#if view.crowd}
-        <!-- A litter: one sac, packed full. -->
-        <ellipse cx={view.shared.x} cy={view.shared.y} rx={view.shared.rx} ry={view.shared.ry} fill="#070707" stroke="#b9b9b9" stroke-width={9 + view.packed * 6} stroke-opacity="0.75" />
-      {:else}
-        {#each view.babies as b}
-          <!-- The sac: dark water with a bright wall (thicker when it's a squeeze). -->
-          <ellipse cx={b.x} cy={b.y} rx={view.sac * 1.08} ry={view.sac * 0.9} fill="#070707" stroke="#b9b9b9" stroke-width={7 + view.packed * 6} stroke-opacity="0.75" />
-        {/each}
-      {/if}
+      {#each view.babies as b}
+        <!-- The sac: dark water with a bright wall (thicker when it's a squeeze). -->
+        <ellipse cx={b.x} cy={b.y} rx={view.sac * 1.08} ry={view.sac * 0.9} fill="#070707" stroke="#b9b9b9" stroke-width={7 + view.packed * 6} stroke-opacity="0.75" />
+      {/each}
       {#if v === "heart"}
         <path d="M{view.heart.x},{view.heart.y + 14} c-26,-18 -22,-38 -6,-38 c4,0 6,3 6,6 c0,-3 2,-6 6,-6 c16,0 20,20 -6,38 z" fill="#d6d6d6" opacity="0.85" />
       {/if}
@@ -234,7 +227,7 @@
   {#if view.n}
     {#each view.marked as b, i}
       <!-- A crowd gets smaller circles, so they don't all overlap late on. -->
-      {@const rad = Math.min(Math.max(view.u * 1.05, 18), view.crowd ? 22 : Infinity)}
+      {@const rad = Math.min(Math.max(view.u * 1.05, 18), view.crowd ? 34 : Infinity)}
       <circle cx={b.x} cy={b.y} r={rad} fill="none" stroke="#ffe14d" stroke-width="2.2" stroke-dasharray="6 5" stroke-linecap="round" />
       {#if view.n > 1}
         <text x={b.x - rad * 0.72} y={b.y - rad * 0.72} text-anchor="middle" font-family={ROUND} font-size="15" font-weight="900" fill="#ffe14d" stroke="#050505" stroke-width="4" paint-order="stroke">{LETTERS[i] ?? i + 1}</text>
