@@ -51,7 +51,7 @@
   // at the edge of the fan (one for 5, two for more, so it never shows too many).
   // The screen's text gives the real number.
   const CROWD_FRONT: [number, number][] = [[160, 128], [240, 126], [160, 204], [240, 202]];
-  const CROWD_EDGES: [number, number][] = [[70, 216], [330, 210]];
+  const CROWD_EDGES: [number, number][] = [[50, 220], [350, 212]];
 
   const view = $derived.by(() => {
     const r = rng(scan.seed);
@@ -138,7 +138,7 @@
     </g>
 
     <g filter="url(#{uid}-soft)">
-      {#each view.babies as b}
+      {#each view.drawn as b}
         <!-- The sac: dark water with a bright wall (thicker when it's a squeeze). -->
         <ellipse cx={b.x} cy={b.y} rx={view.sac * 1.08} ry={view.sac * 0.9} fill="#070707" stroke="#b9b9b9" stroke-width={7 + view.packed * 6} stroke-opacity="0.75" />
       {/each}
@@ -206,6 +206,11 @@
   </g>
   <text {...text(390, H - 23)} text-anchor="end" fill="#9a9a9a">MI 0.8  TIs 0.2</text>
   <text {...text(390, H - 10)} text-anchor="end">{view.n ? word(view.n).replace("!", "").toUpperCase() : "1/1"}</text>
+
+  <!-- A litter too big for the view: the doctor points at the ones off the edge. -->
+  {#if view.crowd && view.n > 4}
+    <text {...scribble(104, 262, 16)}>← +{view.n - 4} more!</text>
+  {/if}
 
   <!-- What the doctor scribbled on the rare ones. -->
   {#if v}
