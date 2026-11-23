@@ -249,6 +249,10 @@ impl Engine {
                     let gap_ms = self.shared.data.lock().unwrap().settings.sps.gap_seconds as i64 * 1000;
                     self.debug_session_until = Some(now_ms() + gap_ms);
                 }
+                Ok(EngineCmd::DebugGive) => {
+                    self.trace.note("command", "Debug: giving");
+                    self.gave(now_ms(), true);
+                }
                 Ok(EngineCmd::DebugKick(s)) => {
                     self.trace.note("command", &format!("Debug kick: {s:?}"));
                     self.driver.kick_now(s);
@@ -354,6 +358,11 @@ impl Engine {
         if self.sps.tick(now, &sps_settings, avatar_sps.as_ref()) {
             let debug = self.debug_session_until.take().is_some_and(|until| now < until);
             self.woohoo(now, None, debug);
+        }
+        // Your plugs (giving), with Use SPS plugs off: wakes the baby like a
+        // WooHoo, but isn't one.
+        if self.sps.tick_giving(now, &sps_settings, avatar_sps.as_ref()) {
+            self.gave(now, false);
         }
 
         if self.last_log.elapsed() >= Duration::from_secs(1) {
@@ -759,7 +768,11 @@ impl Engine {
         }
         // Switch VRCFury's haptics channels on (until it's on, every old socket reads 0;
         // SPS3's OGB/Enabled only gates touch for now, but OGB sends it too).
-        let sps_on = self.shared.data.lock().unwrap().settings.sps.enabled;
+        let sps_on = {
+            let d = self.shared.data.lock().unwrap();
+            // Plugs are read for giving too (it wakes the baby, like a WooHoo).
+            d.settings.sps.enabled || d.settings.sps.plugs || d.settings.woohoo_wakes
+        };
         for enable in [pregsys_core::sps::ENABLE_PARAM, pregsys_core::sps::ENABLE_PARAM_V3] {
             let off = params.iter().any(|p| p.name == enable && p.value.as_ref().and_then(|v| v.as_f32()) != Some(1.0));
             if sps_on && !sps_names.is_empty() && off {
@@ -950,6 +963,23 @@ impl Engine {
 
     /// A WooHoo (from SPS sockets or debug). `roll` forces the outcome.
     /// `debug`: made with the debug tools (left out of achievements).
+    /// A WooHoo while pregnant (given or received) wakes the baby up, if that's on.
+    fn wake_baby(&mut self, now: i64, debug: bool) {
+        if self.shared.data.lock().unwrap().settings.woohoo_wakes {
+            self.trace.note("baby woke up", if debug { "debug WooHoo" } else { "WooHoo" });
+            self.driver.wake_baby(now, debug);
+        }
+    }
+
+    /// Giving (your plug inside someone) while pregnant: the baby wakes up.
+    fn gave(&mut self, now: i64, debug: bool) {
+        let pregnant = self.shared.data.lock().unwrap().current_pregnancy(self.driver.avatar_id()).is_some_and(|p| p.labor.is_none());
+        self.trace.note("giving", if pregnant { "while pregnant" } else { "not pregnant: nothing to do" });
+        if pregnant {
+            self.wake_baby(now, debug);
+        }
+    }
+
     fn woohoo(&mut self, now: i64, roll: Option<f64>, debug: bool) {
         // Late in a pregnancy it can start labor (if that's on), on an avatar that can show it.
         use pregsys_core::labor::WooHooLabor;
@@ -1020,6 +1050,9 @@ impl Engine {
         if let Some(water_first) = labor_started {
             self.labor_events(vec![pregsys_core::labor::Event::Started { water_first }], now);
             return;
+        }
+        if outcome == actions::FunOutcome::AlreadyPregnant {
+            self.wake_baby(now, debug);
         }
         // Shown quietly on Home (no notification) until another WooHoo can count.
         self.woohoo_note = labor_note.map(|n| (n, now));
@@ -1431,6 +1464,12 @@ impl Engine {
                 .unwrap_or_default();
             st.sps_live = self.sps.live(&sps_settings, avatar_sps.as_ref());
             st.sps_progress = self.sps.progress(&sps_settings);
+            st.sps_plugs = self
+                .sps
+                .plugs_live(&sps_settings, avatar_sps.as_ref())
+                .into_iter()
+                .map(|(name, value, plug_type, counts)| crate::state::PlugLive { name, value, plug_type, counts })
+                .collect();
             // Until the SPS session ends (or, for a debug WooHoo, for as long as one would).
             let gap_ms = sps_settings.gap_seconds as i64 * 1000;
             let now = pregsys_core::now_ms();
@@ -1438,6 +1477,7 @@ impl Engine {
                 self.woohoo_note = None;
             }
             st.woohoo_note = self.woohoo_note.as_ref().map(|(n, _)| n.clone());
+            st.awake_until_ms = self.driver.awake_until().filter(|&t| t > now);
         }
         match &self.bridge {
             Some(b) => {

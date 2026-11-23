@@ -15,7 +15,7 @@
   import { ACHIEVEMENTS } from "../lib/achievements";
   import { journalFor } from "../lib/journal";
   import { toIcs, type IcsEvent } from "../lib/ics";
-  import { BABY_REVEAL_WEEK, GENDER_REVEAL_WEEK, chance, cycleDay, cycleMs, isEggs, level } from "../lib/fertility";
+  import { BABY_REVEAL_WEEK, GENDER_REVEAL_WEEK, chance, cycleDay, cycleMs, isEggs, level, strength } from "../lib/fertility";
   import { TERM_WEEKS, dueMs, timeAtProgress } from "../lib/timeline";
   import type { Pregnancy } from "../lib/types";
 
@@ -25,7 +25,7 @@
    * 1970 in local time). `label` is for the screen, `title` for the export
    * (never a name).
    */
-  type Ev = { kind: Kind; a: number; b: number; label: string; title: string; seg?: (from: number, to: number) => string; where?: string };
+  type Ev = { kind: Kind; a: number; b: number; label: string; title: string; seg?: (from: number, to: number) => string; shade?: (from: number, to: number) => string; where?: string };
   /** One line in a day's details; `open` links to a journal entry. */
   /** `about`: which pregnancy, avatar or person it is about (a second, quieter line). */
   type Line = { kind: Kind; text: string; about?: string; open?: { p: Pregnancy; key: string } };
@@ -134,13 +134,23 @@
   const journals = $derived(pregnancies.map((p) => ({ p, items: journalFor(d, p, app.now).filter((j) => j.key !== "born" && j.key !== "due" && j.key !== "hatched") })));
 
   // Fertile days only make sense when a cycle lasts at least two weeks (fast
-  // pregnancies have cycles of hours, too short to show by the day).
-  const cycle = $derived(d.settings.fertility && d.settings.cycleAnchorMs != null && cycleMs(d.settings) >= 14 * DAY ? cycleMs(d.settings) : null);
+  // pregnancies have cycles of hours, too short to show by the day). Set
+  // hours are the same every day, so they aren't shown either.
+  const cycle = $derived(d.settings.fertility && !d.settings.fertileHours && d.settings.cycleAnchorMs != null && cycleMs(d.settings) >= 14 * DAY ? cycleMs(d.settings) : null);
   function fertility(n: number): "peak" | "high" | null {
     if (cycle == null) return null;
     const peak = d.settings.fertilityPeak;
     const l = level(chance(cycleDay(noonOf(n), d.settings.cycleAnchorMs!, cycle), peak), peak);
     return l === "peak" || l === "high" ? l : null;
+  }
+  /** A fertile bar from day `a` to `b`, deeper towards the peak day. */
+  function fertileShade(a: number, b: number): string {
+    const stops = [];
+    for (let n = a; n <= b; n++) {
+      const t = cycle == null ? 0 : strength(cycleDay(noonOf(n), d.settings.cycleAnchorMs!, cycle));
+      stops.push(`color-mix(in srgb, var(--c) ${Math.round(15 + 60 * t)}%, var(--bg-2)) ${(((n - a + 0.5) / (b - a + 1)) * 100).toFixed(1)}%`);
+    }
+    return stops.length > 1 ? `linear-gradient(to right, ${stops.join(", ")})` : stops[0].replace(/ [\d.]+%$/, "");
   }
   const pregnantOn = (n: number) => pregnancies.some((p) => dayOf(p.timeline.startMs) <= n && n <= lastDay(p));
 
@@ -215,7 +225,7 @@
       const f = n <= to && !pregnantOn(n) && fertility(n) != null;
       if (f && run == null) run = n;
       if (!f && run != null) {
-        out.push({ kind: "fertile", a: run, b: n - 1, label: "🌸 Fertile", title: "🌸 Fertile days" });
+        out.push({ kind: "fertile", a: run, b: n - 1, label: "🌸 Fertile", title: "🌸 Fertile days", shade: fertileShade });
         run = null;
       }
     }
@@ -243,7 +253,7 @@
         .filter((e) => e.a <= we && e.b >= ws)
         .sort((x, y) => Math.max(x.a, ws) - Math.max(y.a, ws) || y.b - y.a - (x.b - x.a) || order.indexOf(x.kind) - order.indexOf(y.kind));
       const lanes: boolean[][] = [];
-      const bars: { e: Ev; label: string; col: number; span: number; lane: number; cutStart: boolean; cutEnd: boolean }[] = [];
+      const bars: { e: Ev; label: string; bg: string | null; col: number; span: number; lane: number; cutStart: boolean; cutEnd: boolean }[] = [];
       const more = Array(7).fill(0);
       for (const e of here) {
         const a = Math.max(e.a, ws) - ws;
@@ -255,7 +265,7 @@
           continue;
         }
         for (let i = a; i <= b; i++) lanes[lane][i] = true;
-        bars.push({ e, label: e.seg ? e.seg(ws + a, ws + b) : e.label, col: a + 1, span: b - a + 1, lane, cutStart: e.a < ws, cutEnd: e.b > we });
+        bars.push({ e, label: e.seg ? e.seg(ws + a, ws + b) : e.label, bg: e.shade ? e.shade(ws + a, ws + b) : null, col: a + 1, span: b - a + 1, lane, cutStart: e.a < ws, cutEnd: e.b > we });
       }
       const days = Array.from({ length: 7 }, (_, i) => {
         const n = ws + i;
@@ -410,7 +420,7 @@
             class="bar {bar.e.kind}"
             class:cut-start={bar.cutStart}
             class:cut-end={bar.cutEnd}
-            style="grid-column:{bar.col} / span {bar.span};grid-row:{bar.lane + 2}"
+            style="grid-column:{bar.col} / span {bar.span};grid-row:{bar.lane + 2}{bar.bg ? `;background:${bar.bg}` : ''}"
             onclick={() => pick(Math.max(bar.e.a, wk.days[0].n))}
             title={bar.e.label}
           >{bar.label}</button>

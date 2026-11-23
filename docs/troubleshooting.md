@@ -63,7 +63,7 @@ Home's **Welcome your baby** always skips straight to the birth.
 ## WooHoos aren't being detected
 
 - **Use SPS sockets** has to be on (**Settings > Detecting WooHoos**). That section also lists the sockets on the avatar you're wearing and whether each one counts.
-- **No sockets listed?** Sockets need VRCFury haptics turned on, on your avatar.
+- **No sockets or plugs listed?** They need VRCFury haptics turned on, on your avatar. Plugs only count with **Use SPS plugs** on, and only the plug types that are on (a plug named "Dildo" is a toy; fix it on the avatar's page under Avatars).
 - **The hole type has to count.** A socket gets its type from its name. You can fix the type under **Avatars > Edit > SPS sockets**.
 - **Already pregnant?** WooHoos are ignored during a pregnancy, except that one can start labor if you've turned that on.
 - **Only my partners on?** Then a WooHoo only counts with someone under 💞 My partners (Partners tab). Others are kept as "Not a partner".

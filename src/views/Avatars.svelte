@@ -15,8 +15,8 @@
   import { hasSystem, matches, seenText, shelfOf } from "../lib/avatars";
   import { progress, TERM_WEEKS } from "../lib/timeline";
   import { FEATURES, FIXED, PARAM_INFO, REQUIRED, hasParam, syncLabel } from "../lib/params";
-  import { HAPTICS_DISABLED, HOLE_TYPES, socketCounts, socketsFrom, spsNewerText, spsTooNew, typeOf } from "../lib/sps";
-  import type { HoleType } from "../lib/types";
+  import { HAPTICS_DISABLED, HOLE_TYPES, PLUG_TYPES, plugCounts, plugsFrom, plugTypeOf, socketCounts, socketsFrom, spsNewerText, spsTooNew, typeOf } from "../lib/sps";
+  import type { HoleType, PlugType } from "../lib/types";
   import type { AvatarGroup, AvatarProfile, Mapping, Settings } from "../lib/types";
 
   let mapping = $state<Mapping | null>(null);
@@ -401,6 +401,28 @@
               </div>
             {/each}
             <span class="hint">{p.sps?.custom ? "Only the ticked sockets count on this avatar." : "Counts if its type is on in Settings > Detecting WooHoos. Fix a type if the name is unusual."}</span>
+          </details>
+        {/if}
+        {#if !plugsFrom(p.params).length}
+          <details class="field fold">
+            <summary><strong>SPS plugs</strong> <span class="muted small">none found yet</span></summary>
+            <span class="hint">{p.params.includes(HAPTICS_DISABLED) ? "VRCFury's haptics were off when this avatar was uploaded, so its plugs can't be read. Turn on Tools > VRCFury > Settings > Enable SPS Haptics in Unity and upload again." : p.params.length ? "This avatar has no SPS plugs (VRCFury SPS adds OGB/... parameters)." : "Wear this avatar in VRChat so the app can read its plugs."}</span>
+          </details>
+        {:else}
+          {@const plugs = plugsFrom(p.params)}
+          <details class="field fold">
+            <summary><strong>SPS plugs</strong> <span class="muted small">{plugs.filter((n) => plugCounts(d.settings, p, n)).length} of {plugs.length} count</span></summary>
+            {#each plugs as name}
+              <div class="sockrow">
+                <span class="mark" title={plugCounts(d.settings, p, name) ? "Counts" : "Doesn't count"}>{plugCounts(d.settings, p, name) ? "✓" : "–"}</span>
+                <span class="grow">{name}</span>
+                <select value={plugTypeOf(p, name)} aria-label="Plug type"
+                  onchange={(e) => { const t = (e.target as HTMLSelectElement).value as PlugType; save(p, (x) => (x.sps = { ...(x.sps ?? { custom: false, sockets: [], types: {} }), plugTypes: { ...(x.sps?.plugTypes ?? {}), [name]: t } })); }}>
+                  {#each PLUG_TYPES as t}<option value={t.id}>{t.emoji} {t.label}</option>{/each}
+                </select>
+              </div>
+            {/each}
+            <span class="hint">Your own plugs: they count (for Use SPS plugs, and giving waking the baby) if their type is on in Settings > Detecting WooHoos. Fix a type if the name is unusual.</span>
           </details>
         {/if}
 

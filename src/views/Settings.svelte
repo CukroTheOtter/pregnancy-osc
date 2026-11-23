@@ -12,9 +12,9 @@
   import { app, checkForUpdate, confirmAsk, errorToast, settingsChanged, settingsSaved, toast } from "../lib/app.svelte";
   import { HEX } from "../lib/theme";
   import { api, inTauri, pickFolder, pickTextFile, saveTextFile } from "../lib/api";
-  import { graceMs, termMs } from "../lib/fertility";
+  import { cycleMs, graceMs, termMs } from "../lib/fertility";
   import BabyOdds from "../components/BabyOdds.svelte";
-  import { HAPTICS_DISABLED, HOLE_TYPES, spsNewerText, spsTooNew } from "../lib/sps";
+  import { DEFAULT_PLUG_TYPES, HAPTICS_DISABLED, HOLE_TYPES, PLUG_TYPES, spsNewerText, spsTooNew } from "../lib/sps";
   import { FEATURES, FIXED, PARAM_INFO, PARAM_ORDER, REQUIRED, SYNC_ROLES, hasParam, syncLabel } from "../lib/params";
   import { humanDuration, week as weekOf } from "../lib/timeline";
   import { pregnancyFor } from "../lib/scope";
@@ -396,6 +396,23 @@
     if (await confirmAsk({ title: "Quit Pregnancy OSC?", text: "Your avatar's belly stays where it is and its own counter carries on.", ok: "Quit" })) api.quitApp();
   }
 
+  /** "20:00" from minutes after midnight, and back. */
+  const toTime = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+  const fromTime = (t: string) => {
+    const [h, m] = t.split(":").map(Number);
+    return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : null;
+  };
+  function setHours(on: boolean) {
+    s.fertileHours = on ? { startMin: 20 * 60, endMin: 23 * 60 } : null;
+    commit();
+  }
+  function setHour(which: "startMin" | "endMin", t: string) {
+    const m = fromTime(t);
+    if (m == null || !s.fertileHours) return;
+    s.fertileHours = { ...s.fertileHours, [which]: m };
+    commit();
+  }
+
   const PEAKS = [
     { v: 0.3, label: "Realistic", hint: "about 30%" },
     { v: 0.6, label: "Playful", hint: "about 60%" },
@@ -566,13 +583,15 @@
   </Section>
 
   <Section id="woohoos" title="💕 Detecting WooHoos">
-    {#snippet extra()}{#if noPartners}<span class="pill warn">no partners</span>{/if}<span class="pill" class:ok={s.sps.enabled} class:off={!s.sps.enabled}>{s.sps.enabled ? "on" : "off"}</span>{/snippet}
+    {#snippet extra()}{#if noPartners}<span class="pill warn">no partners</span>{/if}<span class="pill" class:ok={s.sps.enabled || s.sps.plugs} class:off={!s.sps.enabled && !s.sps.plugs}>{s.sps.enabled || s.sps.plugs ? "on" : "off"}</span>{/snippet}
     <Toggle bind:checked={s.partnersOnly} disabled={!s.readLogs && !s.partnersOnly} label="Only my partners" hint={s.readLogs ? "A WooHoo only starts a pregnancy (or a wait to find out) with someone under 💞 My partners on the Partners tab. Others still go in your history." : "Needs log reading (Logs and pictures)"} onchange={() => commit()} />
     {#if noPartners}
       <span class="small warn-text">⚠️ You have no 💞 partners yet, so no WooHoo can start a pregnancy. <button class="link-inline" onclick={() => (app.view = "partners")}>Add one on the Partners tab</button></span>
     {/if}
     <Toggle bind:checked={s.sps.enabled} label="Use SPS sockets" hint="Something from another player inside a socket for long enough (like OSC Goes Brrr reads)" onchange={() => commit()} />
-    {#if s.sps.enabled}
+    <Toggle bind:checked={s.sps.plugs} label="Use SPS plugs" hint="Your own plug inside someone for long enough counts as a WooHoo too, so it can get you pregnant. Same depth and time as below." onchange={() => commit()} />
+    {#if s.sps.enabled || s.sps.plugs}
+      {#if s.sps.enabled}
       <div class="field">
         <strong>Hole types that count</strong>
         <span class="hint">For every avatar. Sockets get their type from their name.</span>
@@ -584,25 +603,65 @@
           {/each}
         </div>
       </div>
+      {/if}
+      {#if s.sps.plugs}
+        <div class="field">
+          <strong>Plug types that count</strong>
+          <span class="hint">For every avatar. Your own plugs get their type from their name; plain names count as body. Also which plugs wake the baby when giving.</span>
+          <div class="choices three">
+            {#each PLUG_TYPES as t}
+              {@const on = (s.sps.plugTypes ?? DEFAULT_PLUG_TYPES)[t.id]}
+              <button class="opt" class:on onclick={() => { s.sps.plugTypes = { ...(s.sps.plugTypes ?? DEFAULT_PLUG_TYPES), [t.id]: !on }; commit(); }} aria-pressed={on}>
+                <strong>{t.emoji} {t.label} {on ? "✓" : ""}</strong><span>{t.hint}</span>
+              </button>
+            {/each}
+          </div>
+        </div>
+      {/if}
       <div class="soon">
         {#if worn && spsTooNew(worn.params)}
           <span class="small cant">⚠️ The avatar you're wearing uses {spsNewerText(worn.params)}, so WooHoo detection may not work. Check Updates below for a newer app.</span>
         {/if}
-        {#if !status?.spsFound?.length}
-          <span class="muted small">{!status?.vrchatRunning ? "Open VRChat to find the sockets on your avatar." : worn?.params.includes(HAPTICS_DISABLED) ? "VRCFury's haptics were off when the avatar you're wearing was uploaded, so its sockets can't be read. Turn on Tools > VRCFury > Settings > Enable SPS Haptics in Unity and upload again." : "No SPS sockets found on the avatar you're wearing. Sockets need VRCFury haptics turned on."}</span>
+        {#if !status?.vrchatRunning}
+          <span class="muted small">Open VRChat to find the {s.sps.enabled && s.sps.plugs ? "sockets and plugs" : s.sps.enabled ? "sockets" : "plugs"} on your avatar.</span>
         {:else}
-          <strong class="small">Sockets on the avatar you're wearing</strong>
-          {#each status.spsLive as live (live.name)}
-            {@const ht = HOLE_TYPES.find((h) => h.id === live.holeType)}
-            <div class="socket">
-              <span class="row grow small">
-                <span>{live.name}</span>
-                <span class="pill" class:ok={live.counts} class:off={!live.counts} title={live.counts ? "Counts" : "Doesn't count"}>{ht?.emoji} {ht?.label}</span>
-              </span>
-              <div class="meter" title="How deep right now"><div style="width:{Math.round(live.value * 100)}%" class:over={live.value >= s.sps.depth && live.counts}></div><span class="line" style="left:{s.sps.depth * 100}%"></span></div>
-            </div>
-          {/each}
-          <span class="muted small">Change a socket's type, or pick sockets for one avatar, on its page under Avatars.</span>
+          {#if s.sps.enabled}
+            {#if !status.spsFound?.length}
+              <span class="muted small">{worn?.params.includes(HAPTICS_DISABLED) ? "VRCFury's haptics were off when the avatar you're wearing was uploaded, so its sockets and plugs can't be read. Turn on Tools > VRCFury > Settings > Enable SPS Haptics in Unity and upload again." : "No SPS sockets found on the avatar you're wearing. Sockets need VRCFury haptics turned on."}</span>
+            {:else}
+              <strong class="small">Sockets on the avatar you're wearing</strong>
+              {#each status.spsLive as live (live.name)}
+                {@const ht = HOLE_TYPES.find((h) => h.id === live.holeType)}
+                <div class="socket">
+                  <span class="row grow small">
+                    <span>{live.name}</span>
+                    <span class="pill" class:ok={live.counts} class:off={!live.counts} title={live.counts ? "Counts" : "Doesn't count"}>{ht?.emoji} {ht?.label}</span>
+                  </span>
+                  <div class="meter" title="How deep right now"><div style="width:{Math.round(live.value * 100)}%" class:over={live.value >= s.sps.depth && live.counts}></div><span class="line" style="left:{s.sps.depth * 100}%"></span></div>
+                </div>
+              {/each}
+            {/if}
+          {/if}
+          {#if s.sps.plugs}
+            {#if !status.spsPlugs?.length}
+              <span class="muted small">No SPS plugs found on the avatar you're wearing.</span>
+            {:else}
+              <strong class="small">Plugs on the avatar you're wearing</strong>
+              {#each status.spsPlugs as plug (plug.name)}
+                {@const pt = PLUG_TYPES.find((t) => t.id === plug.plugType)}
+                <div class="socket">
+                  <span class="row grow small">
+                    <span>{plug.name}</span>
+                    <span class="pill" class:ok={plug.counts} class:off={!plug.counts} title={plug.counts ? "Counts" : "Doesn't count"}>{pt?.emoji} {pt?.label}</span>
+                  </span>
+                  <div class="meter" title="How deep right now"><div style="width:{Math.round(plug.value * 100)}%" class:over={plug.value >= s.sps.depth && plug.counts}></div><span class="line" style="left:{s.sps.depth * 100}%"></span></div>
+                </div>
+              {/each}
+            {/if}
+          {/if}
+          {#if status.spsFound?.length || status.spsPlugs?.length}
+            <span class="muted small">Change a {s.sps.enabled && s.sps.plugs ? "socket's or plug's" : s.sps.enabled ? "socket's" : "plug's"} type{s.sps.enabled ? ", or pick sockets for one avatar," : ""} on its page under Avatars.</span>
+          {/if}
           {#if (status.spsProgress ?? 0) > 0}
             <span class="small">💕 {status.spsProgress >= 1 ? "Counted as a WooHoo this session" : `${Math.round(status.spsProgress * 100)}% of the way to a WooHoo`}</span>
           {/if}
@@ -650,7 +709,23 @@
     <Toggle bind:checked={s.fertility} label="Fertility cycle and grace period" hint="Off: a pregnancy starts the moment you WooHoo" onchange={() => commit()} />
     {#if s.fertility}
       <div class="field">
-        <strong>Chance on your most fertile day</strong>
+        <strong>When you're fertile</strong>
+        <div class="segmented">
+          <button class:on={!s.fertileHours} onclick={() => { if (s.fertileHours) setHours(false); }}>A cycle</button>
+          <button class:on={!!s.fertileHours} onclick={() => { if (!s.fertileHours) setHours(true); }}>Set hours</button>
+        </div>
+        {#if s.fertileHours}
+          <div class="row hours">
+            <label class="field grow">From<input type="time" value={toTime(s.fertileHours.startMin)} onchange={(e) => setHour("startMin", e.currentTarget.value)} /></label>
+            <label class="field grow">To<input type="time" value={toTime(s.fertileHours.endMin)} onchange={(e) => setHour("endMin", e.currentTarget.value)} /></label>
+          </div>
+          <span class="hint">Fertile every day between these times (your PC's clock), strongest in the middle. The rest of the day the chance is low.</span>
+        {:else}
+          <span class="hint">A cycle lasts 1/10 of the pregnancy length you picked last ({humanDuration(cycleMs(s))}), with a fertile window in the middle.</span>
+        {/if}
+      </div>
+      <div class="field">
+        <strong>{s.fertileHours ? "Chance at the best time" : "Chance on your most fertile day"}</strong>
         <div class="choices three">
           {#each PEAKS as pk}
             <button class="opt" class:on={Math.abs(s.fertilityPeak - pk.v) < 0.01} onclick={() => { s.fertilityPeak = pk.v; commit(); }}>
@@ -668,7 +743,9 @@
         </div>
         <span class="hint">You'd wait {humanDuration(graceMs(s))} of real time. {s.graceMinutes == null ? `That's 1/20 of the pregnancy length you picked last (${humanDuration(termMs(s))}).` : s.graceMinutes * 60_000 > termMs(s) / 4 ? `Shortened to 1/4 of the pregnancy length you picked last (${humanDuration(termMs(s))}).` : ""} A wait already running switches to this at your next WooHoo, if that ends it sooner.</span>
       </div>
-      <button class="small soft" style="align-self:flex-start" onclick={newCycle}>Start a new cycle today</button>
+      {#if !s.fertileHours}
+        <button class="small soft" style="align-self:flex-start" onclick={newCycle}>Start a new cycle today</button>
+      {/if}
     {/if}
   </Section>
 
@@ -715,6 +792,8 @@
         <span class="hint">Twins and more kick more often.</span>
       </div>
       <Toggle bind:checked={s.kicksWithPartner} disabled={!s.readLogs} label="More active with the other parent here" hint={s.readLogs ? "Kicks come twice as often (and stronger) while the other parent (the one you're pregnant by) is in the instance" : "Needs log reading (Logs and pictures)"} onchange={() => commit()} />
+      <Toggle bind:checked={s.kickMoods} label="Every baby is different" hint="Each pregnancy gets its own personality, from sleepy to bouncy, and busy or quiet spells through the day. Off: every pregnancy kicks the same." onchange={() => commit()} />
+      <Toggle bind:checked={s.woohooWakes} label="WooHoos wake the baby up" hint="Giving or receiving while pregnant: a kick comes within seconds and the baby stays busy for 15 minutes. Giving counts even with Use SPS plugs off (then it only wakes the baby)." onchange={() => commit()} />
       <div class="field">
         <strong>Kinds of kicks</strong>
         <Toggle bind:checked={s.allowedKicks.weak} label="Little kicks" hint="From week 16" onchange={() => commit()} />

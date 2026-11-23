@@ -169,6 +169,17 @@ pub fn set_partner(app: AppHandle, s: S, pregnancy_id: String, person: Option<Pe
     changed(&app, &s, true);
 }
 
+/// The baby's personality (None: back to the one it was born with).
+#[tauri::command]
+pub fn set_kick_mood(app: AppHandle, s: S, pregnancy_id: String, mood: Option<pregsys_core::movement::KickMood>) {
+    let mut d = s.data.lock().unwrap();
+    if let Some(p) = d.pregnancy_mut(&pregnancy_id) {
+        p.kick_mood = mood;
+    }
+    drop(d);
+    changed(&app, &s, true);
+}
+
 /// Who it was, while waiting to find out (the WooHoo by its time).
 #[tauri::command]
 pub fn set_waiting_partner(app: AppHandle, s: S, time_ms: i64, person: Option<Person>, name: Option<String>, random: Option<bool>) {
@@ -505,6 +516,7 @@ pub fn copy_details(app: AppHandle, s: S) -> String {
         own_names: &own,
         mapping: &mapping,
         sps_sockets: st.sps_found.len(),
+        sps_plugs: st.sps_plugs.len(),
         instance_kind: st.instance_kind,
         hide_belly: mapping.sync_role(SyncRole::HideBelly).and_then(|r| d.sync_values.get(&r.name)).is_some_and(|&v| v > 0.5),
         auto_hidden: st.auto_hidden,
@@ -529,6 +541,12 @@ pub fn open_feedback_page(app: AppHandle, bug: bool) -> R<()> {
 pub fn open_troubleshooting(app: AppHandle) -> R<()> {
     use tauri_plugin_opener::OpenerExt;
     app.opener().open_url(TROUBLESHOOTING_PAGE, None::<&str>).map_err(|e| e.to_string())
+}
+
+/// Debug: pretend giving (your plug inside someone): wakes the baby up.
+#[tauri::command]
+pub fn debug_give(s: S) {
+    s.send(EngineCmd::DebugGive);
 }
 
 /// Debug: pretend a WooHoo happened. `outcome`: None = roll with your

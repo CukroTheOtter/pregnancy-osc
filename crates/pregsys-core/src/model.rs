@@ -286,6 +286,8 @@ pub struct Settings {
     pub grace_minutes: Option<u32>,
     /// When the current cycle started (day 1).
     pub cycle_anchor_ms: Option<i64>,
+    /// Fertile at set hours every day instead of the cycle (None = the cycle).
+    pub fertile_hours: Option<FertileHours>,
     pub multiples: Multiples,
     /// Litter mode (used instead of `multiples` when set). A separate field so
     /// older versions still read the file.
@@ -301,6 +303,11 @@ pub struct Settings {
     pub allowed_kicks: AllowedKicks,
     /// Kicks come more often (and stronger) while the partner is here.
     pub kicks_with_partner: bool,
+    /// Each baby has its own personality and busy or quiet spells (off: the
+    /// same every time).
+    pub kick_moods: bool,
+    /// A WooHoo while pregnant (given or received) wakes the baby up for a while.
+    pub woohoo_wakes: bool,
     /// When labor starts, how long it takes, and whether it waits for the partner.
     pub labor: crate::labor::LaborSettings,
     /// Hiding the belly and holding off labor in some instance types (public, ...).
@@ -367,6 +374,7 @@ impl Default for Settings {
             fertility_peak: 0.6,
             grace_minutes: None,
             cycle_anchor_ms: None,
+            fertile_hours: None,
             multiples: Multiples::Playful,
             litter: None,
             bigger_for_multiples: true,
@@ -376,6 +384,8 @@ impl Default for Settings {
             kick_frequency: KickFrequency::Normal,
             allowed_kicks: AllowedKicks::default(),
             kicks_with_partner: false,
+            kick_moods: true,
+            woohoo_wakes: true,
             labor: Default::default(),
             safety: Default::default(),
             sps: SpsSettings::default(),
@@ -476,6 +486,15 @@ pub struct OscHints {
     pub species_index: Option<i32>,
 }
 
+/// The fertile window at set hours every day, in local time (minutes after
+/// midnight). `end` before `start` crosses midnight; the same is all day.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FertileHours {
+    pub start_min: u16,
+    pub end_min: u16,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub enum PregnancySource {
@@ -516,6 +535,8 @@ pub struct Pregnancy {
     pub genders: Vec<String>,
     /// Recent kicks (newest last, capped).
     pub kicks: Vec<KickEvent>,
+    /// The baby's personality, if picked by hand (None: from the ID, `kick_mood()`).
+    pub kick_mood: Option<crate::movement::KickMood>,
     /// Milestone keys already announced.
     pub milestones: Vec<String>,
     pub osc_hints: OscHints,
@@ -551,6 +572,7 @@ impl Default for Pregnancy {
             conceived_ms: None,
             genders: Vec::new(),
             kicks: Vec::new(),
+            kick_mood: None,
             milestones: Vec::new(),
             osc_hints: OscHints::default(),
             labor: None,
@@ -564,6 +586,11 @@ impl Default for Pregnancy {
 impl Pregnancy {
     pub fn is_active(&self) -> bool {
         self.ended_ms.is_none()
+    }
+
+    /// The baby's personality: picked by hand, or from the ID.
+    pub fn kick_mood(&self) -> crate::movement::KickMood {
+        self.kick_mood.unwrap_or_else(|| crate::movement::mood_for(&self.id))
     }
 
     /// An egg pregnancy (the avatar's Eggs switch): no water breaking, the

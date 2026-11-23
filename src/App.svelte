@@ -192,10 +192,43 @@
   </main>
 </div>
 
+<!-- Easter egg: stretch the window wide and someone peeks in from the corner. -->
+<img class="peek" src="/pooky.webp" alt="" aria-hidden="true" width="400" height="400" draggable="false" />
+
 <ConfirmDialog />
 <Toasts />
 
 <style>
+  /* Tucked below the window until it leaves a wide empty gap beside the
+     content; it ducks back down (and fades) as soon as the window narrows. */
+  .peek {
+    position: fixed;
+    left: 8px;
+    bottom: 0;
+    width: clamp(190px, calc((100vw - 620px) / 2), 220px);
+    height: auto;
+    pointer-events: none;
+    user-select: none;
+    z-index: 0;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(105%);
+    transition:
+      transform 0.25s ease-in,
+      opacity 0.2s ease-in,
+      visibility 0s linear 0.25s;
+  }
+  @media (min-width: 1000px) and (min-height: 500px) {
+    .peek {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0);
+      transition:
+        transform 0.7s cubic-bezier(0.2, 0.9, 0.3, 1.15) 0.3s,
+        opacity 0.3s ease-out 0.3s,
+        visibility 0s;
+    }
+  }
   .shell {
     display: flex;
     flex-direction: column;

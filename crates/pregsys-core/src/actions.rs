@@ -250,7 +250,7 @@ pub fn record_fun_with(data: &mut AppData, now_ms: i64, roll: f64, debug: bool) 
     }
     ensure_cycle(data, now_ms);
     let s = &data.settings;
-    let day = fertility::cycle_day(now_ms, s.cycle_anchor_ms.unwrap_or(now_ms), fertility::cycle_ms(s));
+    let day = fertility::day_now(s, now_ms);
     let chance = fertility::chance(day, s.fertility_peak);
     let positive = roll < chance;
     let (babies, litter) = fertility::roll_count(data.baby_odds(data.current_avatar_id.as_deref()), fertility::roll());

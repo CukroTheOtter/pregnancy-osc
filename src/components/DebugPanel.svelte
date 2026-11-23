@@ -258,15 +258,23 @@
       <button class="small soft" onclick={() => run("Strong kick", () => api.debugKick("strong"))}>Strong</button>
       <button class="small soft" onclick={() => run("Big kick", () => api.debugKick("extreme"))}>Big</button>
     </div>
+    <span class="muted small">Pretend giving (your plug inside someone): wakes the baby up, if WooHoos wake the baby up is on.</span>
+    <div class="row">
+      <button class="small soft" onclick={() => run("Giving", () => api.debugGive())}>Giving</button>
+    </div>
   </div>
 
   <div class="group">
     <strong>🌸 Cycle</strong>
-    <span class="muted small">Today is day {nowDay ?? "-"}. Days 11 to 14 are high/peak.</span>
-    <div class="row">
-      <input type="range" min="1" max="28" bind:value={day} class="grow" aria-label="Cycle day" />
-      <button class="small soft" onclick={() => run(`Cycle day ${day}`, () => api.debugSetCycleDay(day))}>Set day {day}</button>
-    </div>
+    {#if d.settings.fertileHours}
+      <span class="muted small">Set hours are on: to test, move them around now in Settings &gt; Fertility.</span>
+    {:else}
+      <span class="muted small">Today is day {nowDay ?? "-"}. Days 11 to 14 are high/peak.</span>
+      <div class="row">
+        <input type="range" min="1" max="28" bind:value={day} class="grow" aria-label="Cycle day" />
+        <button class="small soft" onclick={() => run(`Cycle day ${day}`, () => api.debugSetCycleDay(day))}>Set day {day}</button>
+      </div>
+    {/if}
   </div>
 
   {#if p}

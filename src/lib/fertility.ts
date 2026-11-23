@@ -1,6 +1,6 @@
 // Fertility cycle maths, mirroring crates/pregsys-core/src/fertility.rs.
 
-import type { Litter, LitterSpread, Settings } from "./types";
+import type { FertileHours, Litter, LitterSpread, Settings } from "./types";
 import { durationFor } from "./timeline";
 
 export const CYCLE_DAYS = 28;
@@ -61,6 +61,83 @@ export function untilFertile(now: number, anchor: number, cycle: number, peak: n
 
 /** Days 9 to 16 are the fertile window (for drawing the ring). */
 export const WINDOW = { start: 9, end: 16 };
+
+/** How strong a cycle day is, 0 to 1 (1 on the peak day): for shading. */
+export const strength = (day: number) => chance(day, 1);
+
+const DAY_MIN = 1440;
+const OFF_DAY = 4;
+
+/** Set hours: where a time of day (minutes after local midnight) falls on the cycle curve (fertility.rs `hours_day`). */
+export function hoursDay(minute: number, h: FertileHours): number {
+  const start = h.startMin % DAY_MIN;
+  const mod = (x: number) => ((x % DAY_MIN) + DAY_MIN) % DAY_MIN;
+  const len = mod(h.endMin - start) || DAY_MIN;
+  const into = mod(minute - start);
+  return into < len ? WINDOW.start + (into / len) * (WINDOW.end - WINDOW.start + 1) : OFF_DAY;
+}
+
+/** Minutes the set-hours window lasts (the same start and end is all day). */
+export const hoursLen = (h: FertileHours) => ((((h.endMin - h.startMin) % DAY_MIN) + DAY_MIN) % DAY_MIN) || DAY_MIN;
+
+const minuteOf = (t: number) => {
+  const d = new Date(t);
+  return d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60;
+};
+
+/** The cycle day (or, with set hours, where the time of day falls) at `now` (fertility.rs `day_now`). */
+export function dayNow(s: Settings, now: number): number {
+  return s.fertileHours ? hoursDay(minuteOf(now), s.fertileHours) : cycleDay(now, s.cycleAnchorMs ?? now, cycleMs(s));
+}
+
+/** Real time until the chance is at least "high" (0: it is now), cycle or set hours. */
+export function untilFertileNow(s: Settings, now: number): number {
+  const h = s.fertileHours;
+  if (!h) return untilFertile(now, s.cycleAnchorMs ?? now, cycleMs(s), s.fertilityPeak);
+  const good = (t: number) => ["high", "peak"].includes(level(chance(hoursDay(minuteOf(t), h), 1), 1));
+  if (good(now)) return 0;
+  for (let m = 1; m <= DAY_MIN; m++) {
+    const t = Math.floor(now / 60_000) * 60_000 + m * 60_000;
+    if (good(t)) return t - now;
+  }
+  return 0;
+}
+
+/** Real time until the chance drops below "high" again (set hours). */
+export function untilWindowEnds(h: FertileHours, now: number): number {
+  const good = (t: number) => ["high", "peak"].includes(level(chance(hoursDay(minuteOf(t), h), 1), 1));
+  for (let m = 1; m <= DAY_MIN; m++) {
+    const t = Math.floor(now / 60_000) * 60_000 + m * 60_000;
+    if (!good(t)) return t - now;
+  }
+  return 0;
+}
+
+/** "20:00" from minutes after midnight. */
+export const hhmm = (m: number) => `${String(Math.floor(m / 60) % 24).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+
+/** Pieces of a ring (0 to 1 from the top, clockwise) shaded by how fertile they are. */
+export interface Shade {
+  from: number;
+  to: number;
+  strength: number;
+}
+
+/** The cycle ring: one piece per fertile-ish day. */
+export function cycleShades(): Shade[] {
+  const out: Shade[] = [];
+  for (let d = WINDOW.start - 1; d <= WINDOW.end; d++) out.push({ from: (d - 1) / CYCLE_DAYS, to: d / CYCLE_DAYS, strength: strength(d) });
+  return out;
+}
+
+/** The 24-hour ring (midnight at the top): the window in slices. */
+export function hourShades(h: FertileHours, slices = 24): Shade[] {
+  const len = hoursLen(h);
+  return Array.from({ length: slices }, (_, i) => {
+    const m = h.startMin + ((i + 0.5) / slices) * len;
+    return { from: (h.startMin + (i / slices) * len) / DAY_MIN, to: (h.startMin + ((i + 1) / slices) * len) / DAY_MIN, strength: strength(hoursDay(m, h)) };
+  });
+}
 
 export const MULTIPLES_LABEL = {
   realistic: { name: "Realistic", hint: "Twins about 3%" },

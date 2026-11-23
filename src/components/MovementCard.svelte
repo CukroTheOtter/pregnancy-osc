@@ -1,8 +1,12 @@
 <script lang="ts">
   import KickChart from "./KickChart.svelte";
   import { app } from "../lib/app.svelte";
+  import { api } from "../lib/api";
+  import { errorToast } from "../lib/app.svelte";
+  import { isEggs } from "../lib/fertility";
+  import { KICK_MOODS, kickMood, moodInfo } from "../lib/kickMood";
   import { humanDuration, progress, TERM_WEEKS } from "../lib/timeline";
-  import type { Pregnancy } from "../lib/types";
+  import type { KickMood, Pregnancy } from "../lib/types";
 
   let { p }: { p: Pregnancy } = $props();
 
@@ -21,13 +25,45 @@
   const enabled = $derived(!!app.data?.settings.kicks);
   // The chart shows once there's been a kick in the last day.
   const recent = $derived(!!last && app.now - last.timeMs < 24 * 3_600_000);
+  // The baby's personality, and whether a WooHoo just woke it up.
+  const moods = $derived(!!app.data?.settings.kickMoods);
+  const mood = $derived(moodInfo(kickMood(p)));
+  const awakeFor = $derived(Math.max(0, (app.status?.awakeUntilMs ?? 0) - app.now));
+  let picking = $state(false);
+
+  async function pickMood(m: KickMood | null) {
+    try {
+      await api.setKickMood(p.id, m);
+      picking = false;
+    } catch (e) {
+      errorToast(e);
+    }
+  }
 </script>
 
 <section class="card movement" class:fresh>
   <div class="row">
     <h2 class="grow">💓 Movement</h2>
+    {#if enabled && week >= FIRST_KICK_WEEK && awakeFor > 0}<span class="pill awake" title="Woken up by a WooHoo">👀 Awake</span>{/if}
     {#if enabled && week >= FIRST_KICK_WEEK}<span class="pill">{today} {today === 1 ? "kick" : "kicks"} today</span>{/if}
   </div>
+  {#if enabled && moods && week >= FIRST_KICK_WEEK}
+    <div class="mood">
+      <span class="small"><strong>{mood.emoji} {mood.name}</strong> <span class="muted">· {mood.hint}</span></span>
+      <button class="link small" onclick={() => (picking = !picking)} aria-expanded={picking}>{picking ? "Done" : "Change"}</button>
+    </div>
+    {#if picking}
+      <div class="moods">
+        {#each KICK_MOODS as m (m.k)}
+          <button class="soft small" class:on={mood.k === m.k} onclick={() => pickMood(m.k)}>{m.emoji} {m.name}</button>
+        {/each}
+        {#if p.kickMood}<button class="ghost small" onclick={() => pickMood(null)}>As it was</button>{/if}
+      </div>
+    {/if}
+  {/if}
+  {#if enabled && week >= FIRST_KICK_WEEK && awakeFor > 0}
+    <p class="muted small">A WooHoo woke {isEggs(p) ? (p.babyCount > 1 ? "your eggs" : "your egg") : p.babyCount > 1 ? "your babies" : "your baby"} up: busy for {humanDuration(awakeFor)} more.</p>
+  {/if}
   {#if !enabled}
     <p class="muted small">Kicks are off (Settings > Kicks).</p>
   {:else if week < FIRST_KICK_WEEK}
@@ -49,6 +85,29 @@
 </section>
 
 <style>
+  .mood {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 2px 0 8px;
+  }
+  .mood .link {
+    background: none;
+    color: var(--accent);
+    padding: 0;
+  }
+  .moods {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+  .moods .on {
+    background: color-mix(in srgb, var(--accent) 35%, var(--bg-2));
+  }
+  .awake {
+    background: color-mix(in srgb, var(--accent) 30%, var(--bg-2));
+  }
   .kick {
     display: flex;
     align-items: center;

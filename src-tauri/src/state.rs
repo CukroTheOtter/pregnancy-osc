@@ -27,10 +27,22 @@ pub enum EngineCmd {
     DebugNewSession,
     /// Debug: kick right now.
     DebugKick(pregsys_core::movement::KickStrength),
+    /// Debug: pretend your plug was inside someone long enough (giving).
+    DebugGive,
     /// Show the belly in this instance (Settings > Safety hides it here).
     ShowHere,
     /// Exit: hand off to the avatar, save, then reply.
     Shutdown(Sender<()>),
+}
+
+/// One of your SPS plugs and how far inside someone it is (0 to 1).
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlugLive {
+    pub name: String,
+    pub value: f32,
+    pub plug_type: pregsys_core::sps::PlugType,
+    pub counts: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -75,8 +87,12 @@ pub struct Status {
     pub sps_found: Vec<String>,
     pub sps_live: Vec<SocketLive>,
     pub sps_progress: f64,
+    /// Your SPS plugs, how far inside someone (0 to 1).
+    pub sps_plugs: Vec<PlugLive>,
     /// A WooHoo that didn't start labor, and why (until another one can count).
     pub woohoo_note: Option<String>,
+    /// A WooHoo woke the baby up: busy until then.
+    pub awake_until_ms: Option<i64>,
     /// VRChat says you're AFK (labor waits).
     pub afk: bool,
     /// Standing up (not seated or lying down), for "resting holds off labor".

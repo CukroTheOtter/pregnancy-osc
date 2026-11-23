@@ -3,8 +3,9 @@
 //! Everything scales with the pregnancy length the user picked: a cycle is
 //! 1/10 of it (28 days vs 280, like real life) and the grace period before
 //! you find out is 1/20 (two pregnancy weeks), unless a fixed wait is picked.
+//! Or the fertile window comes at set hours every day (`Settings::fertile_hours`).
 
-use crate::model::{AppData, BabyOdds, Litter, LitterSpread, Multiples, Settings};
+use crate::model::{AppData, BabyOdds, FertileHours, Litter, LitterSpread, Multiples, Settings};
 use crate::timeline::duration_for;
 
 pub const CYCLE_DAYS: f64 = 28.0;
@@ -70,6 +71,43 @@ pub fn level(chance: f64, peak: f64) -> Level {
         Level::Medium
     } else {
         Level::Low
+    }
+}
+
+/// Days 9 to 16 are the fertile window (set hours map onto them).
+pub const WINDOW_START: f64 = 9.0;
+pub const WINDOW_DAYS: f64 = 8.0;
+/// A cycle day outside the window (the lowest chance), for set hours.
+const OFF_DAY: f64 = 4.0;
+const DAY_MIN: f64 = 1440.0;
+
+/// Set hours: where a time of day (minutes after local midnight) falls on the
+/// cycle curve. The window is stretched over days 9 to 16, so it rises to the
+/// peak a little past its middle and falls again; outside it the chance is low.
+pub fn hours_day(minute: f64, h: FertileHours) -> f64 {
+    let start = h.start_min as f64 % DAY_MIN;
+    let mut len = (h.end_min as f64 - start).rem_euclid(DAY_MIN);
+    if len == 0.0 {
+        len = DAY_MIN;
+    }
+    let into = (minute - start).rem_euclid(DAY_MIN);
+    if into < len { WINDOW_START + into / len * WINDOW_DAYS } else { OFF_DAY }
+}
+
+/// The cycle day (or, with set hours, where the time of day falls) now.
+pub fn day_now(s: &Settings, now_ms: i64) -> f64 {
+    match s.fertile_hours {
+        Some(h) => hours_day(local_minute(now_ms), h),
+        None => cycle_day(now_ms, s.cycle_anchor_ms.unwrap_or(now_ms), cycle_ms(s)),
+    }
+}
+
+/// Minutes after local midnight.
+fn local_minute(now_ms: i64) -> f64 {
+    use chrono::{Local, TimeZone, Timelike};
+    match Local.timestamp_millis_opt(now_ms).single() {
+        Some(t) => t.num_seconds_from_midnight() as f64 / 60.0,
+        None => 0.0,
     }
 }
 
@@ -151,8 +189,10 @@ pub fn level_now(data: &AppData, avatar_id: Option<&str>, now_ms: i64) -> u8 {
     if !s.fertility || data.current_pregnancy(avatar_id).is_some() || data.pending_for(avatar_id).is_some() {
         return 0;
     }
-    let Some(anchor) = s.cycle_anchor_ms else { return 0 };
-    let c = chance(cycle_day(now_ms, anchor, cycle_ms(s)), s.fertility_peak);
+    if s.fertile_hours.is_none() && s.cycle_anchor_ms.is_none() {
+        return 0;
+    }
+    let c = chance(day_now(s, now_ms), s.fertility_peak);
     match level(c, s.fertility_peak) {
         Level::Low => 0,
         Level::Medium => 1,
@@ -220,6 +260,26 @@ mod tests {
         assert_eq!(level(chance(11.0, 0.6), 0.6), Level::High);
         assert_eq!(level(chance(9.0, 0.6), 0.6), Level::Medium);
         assert_eq!(level(chance(3.0, 0.6), 0.6), Level::Low);
+    }
+
+    #[test]
+    fn set_hours_peak_inside_the_window() {
+        let h = FertileHours { start_min: 20 * 60, end_min: 23 * 60 };
+        let lv = |m: f64| level(chance(hours_day(m, h), 0.6), 0.6);
+        assert_eq!(lv(12.0 * 60.0), Level::Low, "midday is outside");
+        assert_eq!(lv(20.0 * 60.0 + 1.0), Level::Medium, "it starts low");
+        assert_eq!(lv(21.0 * 60.0 + 40.0), Level::Peak, "past the middle is the peak");
+        assert_eq!(lv(23.0 * 60.0), Level::Low, "over at the end");
+    }
+
+    #[test]
+    fn set_hours_cross_midnight() {
+        let h = FertileHours { start_min: 22 * 60, end_min: 2 * 60 };
+        assert_eq!(hours_day(23.0 * 60.0, h), 11.0);
+        assert_eq!(hours_day(60.0, h), 15.0);
+        assert_eq!(hours_day(3.0 * 60.0, h), OFF_DAY);
+        let all_day = FertileHours { start_min: 0, end_min: 0 };
+        assert_eq!(hours_day(720.0, all_day), 13.0);
     }
 
     #[test]

@@ -179,6 +179,10 @@ pub struct Driver {
     next_contraction_ms: Option<i64>,
     /// The partner was here last tick (their arrival gets a kick).
     partner_was_here: bool,
+    /// A WooHoo while pregnant woke the baby up then (`wake_baby`).
+    woke_ms: Option<i64>,
+    /// That WooHoo was a debug one: the kicks it brings are marked debug.
+    woke_debug: bool,
     /// Just born: the belly goes down from (when, belly, extra size).
     birth: Option<(i64, f32, f32)>,
     /// A pregnancy this avatar showed ended while it wasn't worn: VRChat kept
@@ -229,6 +233,8 @@ impl Driver {
             forced_kick: None,
             next_contraction_ms: None,
             partner_was_here: false,
+            woke_ms: None,
+            woke_debug: false,
             birth: None,
             flatten_left: false,
             extra: Vec::new(),
@@ -774,6 +780,19 @@ impl Driver {
         Some(Send { key: "fetalMovement".into(), name, value: ParamValue::Int(self.mapping.kicks.contraction) })
     }
 
+    /// A WooHoo while pregnant (given or received): the baby wakes up, kicks
+    /// in a few seconds, and stays busy for `movement::WAKE_MS`.
+    pub fn wake_baby(&mut self, now_ms: i64, debug: bool) {
+        self.woke_ms = Some(now_ms);
+        self.woke_debug = debug;
+        self.next_kick_ms = Some(now_ms + 3_000 + (7_000.0 * fertility::roll()) as i64);
+    }
+
+    /// Whether the baby is still awake from a WooHoo (for the Movement card).
+    pub fn awake_until(&self) -> Option<i64> {
+        self.woke_ms.map(|w| w + movement::WAKE_MS)
+    }
+
     fn tick_kicks(&mut self, now_ms: i64, data: &AppData, preg: Option<&crate::model::Pregnancy>) -> Option<()> {
         // The partner being here makes the baby busier (if that's on).
         let boost = data.settings.kicks_with_partner && preg.and_then(|p| labor::partner_here(data, p, now_ms)) == Some(true);
@@ -832,17 +851,32 @@ impl Driver {
             self.next_kick_ms = None;
             return None;
         }
-        // Busier with the partner here: twice as often, and stronger.
-        let delay = || movement::next_kick_delay_ms(s.kick_frequency, p.baby_count, fertility::roll()) / if boost { 2 } else { 1 };
+        // Busier with the partner here (twice as often) or just after a
+        // WooHoo (three times), and stronger; the baby's personality and its
+        // busy or quiet spells on top.
+        let awake = self.woke_ms.is_some_and(|w| now_ms < w + movement::WAKE_MS);
+        let busy = if awake { 3.0 } else if boost { 2.0 } else { 1.0 };
+        let mood = s.kick_moods.then(|| p.kick_mood());
+        let rate = busy * mood.map_or(1.0, |m| m.rate() * movement::spell(&p.id, now_ms));
+        let delay = || (movement::next_kick_delay_ms(s.kick_frequency, p.baby_count, fertility::roll()) as f64 / rate) as i64;
         let due = *self.next_kick_ms.get_or_insert_with(|| now_ms + delay());
         if now_ms < due {
             return Some(());
         }
         self.next_kick_ms = Some(now_ms + delay());
-        let roll = if boost { fertility::roll().sqrt() } else { fertility::roll() };
+        let mut roll = fertility::roll().powf(mood.map_or(1.0, |m| m.strength_bend()));
+        if boost || awake {
+            roll = roll.sqrt();
+        }
         let strength = movement::pick_strength(week, s.allowed_kicks, roll)?;
         if let Some(k) = self.send_kick(now_ms, strength) {
             self.extra.push(k);
+            // Woken by a debug WooHoo: not a real kick for achievements.
+            if awake && self.woke_debug {
+                if let Some(last) = self.kicks_sent.last_mut() {
+                    last.1 = true;
+                }
+            }
         }
         Some(())
     }

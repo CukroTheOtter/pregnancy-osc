@@ -11,6 +11,13 @@ export type SpeciesSource = "guess" | "confirmed" | "fallback" | "manual";
 export type BabyMode = "rolled" | "manual";
 export type PregnancySource = "manual" | "conception";
 export type Multiples = "realistic" | "playful" | "lots";
+/** The fertile window at set hours every day, local time, minutes after midnight (end before start crosses midnight). */
+export interface FertileHours {
+  startMin: number;
+  endMin: number;
+}
+/** A baby's personality (pregsys-core `movement::KickMood`). */
+export type KickMood = "sleepy" | "calm" | "wiggly" | "bouncy";
 export type LitterSpread = "little" | "some" | "lots";
 /** Litter mode: litters of about `usual` (1 to 8), varying by `spread` (pregsys-core `Litter`). */
 export interface Litter {
@@ -21,6 +28,8 @@ export type GenderMode = "off" | "random";
 export type KickStrength = "weak" | "strong" | "extreme";
 export type KickFrequency = "calm" | "normal" | "active";
 export type HoleType = "vaginal" | "anal" | "oral" | "other";
+/** What kind of SPS plug it is, guessed from its name (pregsys-core `sps::PlugType`). */
+export type PlugType = "body" | "toy" | "other";
 
 export interface Timeline {
   startMs: number;
@@ -170,6 +179,8 @@ export interface Settings {
   /** Minutes from a WooHoo until you find out (null = match the pregnancy length). */
   graceMinutes?: number | null;
   cycleAnchorMs: number | null;
+  /** Fertile at set hours every day instead of the cycle (null = the cycle). */
+  fertileHours?: FertileHours | null;
   multiples: Multiples;
   /** Litter mode, used instead of `multiples` when set. */
   litter?: Litter | null;
@@ -181,9 +192,14 @@ export interface Settings {
   kickFrequency: KickFrequency;
   allowedKicks: { weak: boolean; strong: boolean; extreme: boolean };
   kicksWithPartner: boolean;
+  /** Each baby has its own personality and busy or quiet spells. */
+  kickMoods: boolean;
+  /** A WooHoo while pregnant (given or received) wakes the baby up. */
+  woohooWakes: boolean;
   labor: LaborSettings;
   safety?: SafetySettings;
-  sps: { enabled: boolean; types: Record<HoleType, boolean>; depth: number; seconds: number; gapSeconds: number };
+  /** `plugs`: your own plug inside someone counts as a WooHoo too. */
+  sps: { enabled: boolean; types: Record<HoleType, boolean>; depth: number; seconds: number; gapSeconds: number; plugs?: boolean; plugTypes?: Record<PlugType, boolean> };
   /** Old saves only: pins, turned into `AppData.myPartners` on load (pins_to_partners in actions.rs). */
   pinnedPartners?: string[];
   /** Only WooHoos with one of your partners (`AppData.myPartners`) count. */
@@ -250,6 +266,8 @@ export interface Pregnancy {
   genders: string[];
   /** partnerHere and world: for journal moments (pregsys-core/src/moments.rs). */
   kicks: { timeMs: number; strength: KickStrength; partnerHere?: boolean; world?: string | null; debug?: boolean }[];
+  /** The baby's personality, if picked by hand (null: from the ID, `kickMood()` in kickMood.ts). */
+  kickMood?: KickMood | null;
   milestones: string[];
   oscHints: { speciesIndex: number | null };
   labor?: Labor | null;
@@ -277,7 +295,7 @@ export interface AvatarProfile {
   /** The group it's in (avatars in a group share one pregnancy). */
   groupId: string | null;
   paramNames: Record<string, string>;
-  sps: { custom: boolean; sockets: string[]; types: Record<string, HoleType> };
+  sps: { custom: boolean; sockets: string[]; types: Record<string, HoleType>; plugTypes?: Record<string, PlugType> };
   lastSeenMs: number;
   params: string[];
 }
@@ -452,8 +470,12 @@ export interface Status {
   spsFound: string[];
   spsLive: { name: string; channel: string; value: number; holeType: HoleType; counts: boolean }[];
   spsProgress: number;
+  /** Your SPS plugs, how far inside someone (0 to 1). */
+  spsPlugs?: { name: string; value: number; plugType: PlugType; counts: boolean }[];
   /** A WooHoo that didn't start labor, and why (until another one can count). */
   woohooNote?: string | null;
+  /** A WooHoo woke the baby up: busy until then. */
+  awakeUntilMs?: number | null;
   /** VRChat says you're AFK (labor waits). */
   afk?: boolean;
   /** Standing up (not seated or lying down). */

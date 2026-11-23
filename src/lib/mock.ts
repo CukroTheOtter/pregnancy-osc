@@ -1,10 +1,10 @@
 // Browser-only stand-in for the Rust backend, so the UI can be previewed
 // with `npm run dev` in any browser. Data lives in localStorage.
 
-import type { AppData, AvatarProfile, InstanceKind, JournalEntry, Keepsake, Mapping, MappingInfo, NewPregnancy, Partner, Person, Pregnancy, Problem, ResetKind, Settings, Status } from "./types";
+import type { AppData, AvatarProfile, InstanceKind, JournalEntry, Keepsake, KickMood, Mapping, MappingInfo, NewPregnancy, Partner, Person, Pregnancy, Problem, ResetKind, Settings, Status } from "./types";
 import { emptyData, baby, defaultSettings } from "./testdata";
 import { newTimeline, progress } from "./timeline";
-import { chance, cycleDay, cycleMs, graceMs, isEggs, isIncubating, MAX_BABIES, rollLitter } from "./fertility";
+import { chance, cycleMs, dayNow, graceMs, isEggs, isIncubating, MAX_BABIES, rollLitter } from "./fertility";
 import { groupMembers, isMyPartner, owner, pendingFor, pregnancyFor, pregnancyIdOf, samePartner } from "./scope";
 import { socketCounts, typeOf } from "./sps";
 import { FIXED } from "./params";
@@ -152,6 +152,7 @@ function status(): Status {
       return { name, channel: "PenOthersNewRoot", value: 0, holeType: typeOf(a, name), counts: socketCounts(data.settings, a, name) };
     }),
     spsProgress: 0,
+    awakeUntilMs: awakeUntil > Date.now() ? awakeUntil : null,
     woohooNote: woohooNote && Date.now() - woohooNote.at < data.settings.sps.gapSeconds * 1000 ? woohooNote.text : null,
     up: true,
     upright: null,
@@ -552,6 +553,12 @@ export const mock = {
     if (p.conceivedMs != null) creditFun(p.conceivedMs, p.partner);
     changed();
   },
+  async set_kick_mood({ pregnancyId, mood }: { pregnancyId: string; mood: KickMood | null }) {
+    const p = data.pregnancies.find((x) => x.id === pregnancyId);
+    if (!p) return;
+    p.kickMood = mood;
+    changed();
+  },
   async set_waiting_partner({ timeMs, person, name, random }: { timeMs: number; person: Person | null; name: string | null; random?: boolean }) {
     const w = data.waiting.find((x) => x.timeMs === timeMs);
     if (!w) return;
@@ -754,7 +761,7 @@ export const mock = {
       `VRChat live list: ${line(st.avatarParams)}`,
       "VRChat's saved file: not found",
       `Saved in the app: ${line(a?.params)}`,
-      `SPS sockets: ${st.spsFound.length}`,
+      `SPS sockets: ${st.spsFound.length} · plugs: ${st.spsPlugs?.length ?? 0}`,
       `Instance type: ${st.instanceKind ?? "unknown"}`,
       `Safety: belly hidden ${st.autoHidden ? "yes" : "no"}${st.safeMode ? " (VRChat Safe Mode)" : st.shownHere ? " (shown here)" : ""}, labor waiting ${st.laborHeld ? "yes" : "no"}`,
     ].join("\n");
@@ -916,6 +923,11 @@ export const mock = {
     }
     emit("kick", strength);
   },
+  /** engine.rs `gave`: giving while pregnant wakes the baby up. */
+  async debug_give() {
+    const p = pregnancyFor(data, data.currentAvatarId);
+    if (p && !p.labor && data.settings.woohooWakes) awakeUntil = Date.now() + 15 * 60_000;
+  },
   async debug_reveal_now() {
     data.waiting.forEach((w) => (w.revealMs = Date.now()));
     changed();
@@ -976,6 +988,8 @@ function scopeChanged(old: Settings["syncScope"], share: string | null) {
 
 /** A WooHoo that didn't start labor (the engine's woohoo_note). */
 let woohooNote: { text: string; at: number } | null = null;
+/** A WooHoo while pregnant woke the baby up (driver.rs `wake_baby`, 15 min). */
+let awakeUntil = 0;
 
 async function woohoo(forced: boolean | null) {
   {
@@ -993,6 +1007,7 @@ async function woohoo(forced: boolean | null) {
       const roll = forced === null ? Math.random() : forced ? 0 : 1;
       const partnerAway = !!s.labor.waitsForPartner && !!preg.partner.name && !data.instance.present.some((x) => x.name === preg.partner.name);
       woohooNote = null;
+      if (s.woohooWakes) awakeUntil = now + 15 * 60_000;
       if (s.labor.woohooStarts && !preg.labor && !partnerAway && roll < chance) {
         preg.labor = newLabor(preg, now, "wooHoo");
         changed();
@@ -1019,7 +1034,7 @@ async function woohoo(forced: boolean | null) {
       return;
     }
     s.cycleAnchorMs ??= now;
-    const day = cycleDay(now, s.cycleAnchorMs, cycleMs(s));
+    const day = dayNow(s, now);
     const c = chance(day, s.fertilityPeak);
     const existing = pendingFor(data, data.currentAvatarId);
     const positive = forced ?? Math.random() < c;

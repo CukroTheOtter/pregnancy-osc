@@ -45,7 +45,7 @@ Found in the avatar's Settings > App Controls menu. These names can't be changed
 
 | Parameter | Type | Who sets it | What it does |
 |---|---|---|---|
-| `Pregnancy/FertileLevel` | int, synced | App | **How fertile you are right now.** 0 low, 1 medium, 2 high, 3 peak. Always 0 while pregnant or waiting. Use it for a fertility indicator. |
+| `Pregnancy/FertileLevel` | int, synced | App | **How fertile you are right now.** 0 low, 1 medium, 2 high, 3 peak, from the cycle or the set hours (Settings > Fertility). Always 0 while pregnant or waiting. Use it for a fertility indicator. |
 | `Pregnancy/Waiting` | bool, synced | App | **"Waiting to find out."** On during the grace period after a WooHoo, before the app reveals whether it took. |
 | `Pregnancy/BabyCount` | int, synced | App | **How many babies.** 0 until they can be seen (week 12), then 1 to 4. |
 | `Pregnancy/FetalMovement` | int, synced | App | **A kick.** 1 little, 2 strong, 3 big (editable in Settings > Advanced), then back to 0 after 1.5 s. Kicks start at week 16, strong from 24, big from 32. During labor: **4 = a contraction**, held 30 s. |

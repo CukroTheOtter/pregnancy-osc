@@ -1,7 +1,7 @@
 // One API for the UI. Inside the app it calls Rust; in a plain browser
 // (npm run dev) it uses the mock so the UI can still be previewed.
 
-import type { AppData, AvatarProfile, JournalEntry, Keepsake, Mapping, MappingInfo, NewPregnancy, Person, Pregnancy, Settings, Status } from "./types";
+import type { AppData, AvatarProfile, JournalEntry, Keepsake, Mapping, MappingInfo, KickMood, NewPregnancy, Person, Pregnancy, Settings, Status } from "./types";
 
 export const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -37,6 +37,7 @@ export const api = {
   endPregnancy: (id: string) => call<void>("end_pregnancy", { id }),
   deletePregnancy: (id: string) => call<void>("delete_pregnancy", { id }),
   setCurrentPregnancy: (avatarId: string | null, id: string | null) => call<void>("set_current_pregnancy", { avatarId, id }),
+  setKickMood: (pregnancyId: string, mood: KickMood | null) => call<void>("set_kick_mood", { pregnancyId, mood }),
   setPartner: (pregnancyId: string, person: Person | null, name: string | null, random = false) => call<void>("set_partner", { pregnancyId, person, name, random }),
   setWaitingPartner: (timeMs: number, person: Person | null, name: string | null, random = false) =>
     call<void>("set_waiting_partner", { timeMs, person, name, random }),
@@ -105,6 +106,7 @@ export const api = {
   debugNewWoohooSession: () => call<void>("debug_new_woohoo_session"),
   /** Debug: how many babies (1 to 4) on this pregnancy or grace period. */
   debugSetBabies: (count: number) => call<void>("debug_set_babies", { count }),
+  debugGive: () => call<void>("debug_give"),
   debugKick: (strength: import("./types").KickStrength) => call<void>("debug_kick", { strength }),
   debugClearTestAchievements: () => call<void>("debug_clear_test_achievements"),
   debugAddPerson: (name: string, userId: string | null) => call<void>("debug_add_person", { name, userId }),

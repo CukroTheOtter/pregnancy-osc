@@ -1,6 +1,6 @@
 // SPS socket helpers, mirroring crates/pregsys-core/src/sps.rs.
 
-import type { AvatarProfile, HoleType, Settings } from "./types";
+import type { AvatarProfile, HoleType, PlugType, Settings } from "./types";
 
 const PREFIX = "OGB/Orf/";
 const OTHERS = ["PenOthersNewRoot", "PenOthers", "PenOthersNewTip"];
@@ -75,6 +75,43 @@ export function socketsFrom(params: string[]): string[] {
 
 export function typeOf(a: AvatarProfile | undefined, socket: string): HoleType {
   return a?.sps?.types?.[socket] ?? classify(socket);
+}
+
+const TOY = ["dildo", "strap", "toy", "vibe", "vibrator", "fleshlight", "lollipop"];
+const NOT_BODY = ["tail", "tongue", "finger", "hand", "paw", "foot", "tentacle", "nose"];
+
+export const PLUG_TYPES: { id: PlugType; label: string; emoji: string; hint: string }[] = [
+  { id: "body", label: "Body", emoji: "🍆", hint: "penis, cock… and plain names" },
+  { id: "toy", label: "Toy", emoji: "🧸", hint: "dildo, strap-on, vibe…" },
+  { id: "other", label: "Other", emoji: "🐾", hint: "tail, tongue, finger…" },
+];
+
+/** Default plug types that count (sps.rs `PlugTypes::default`). */
+export const DEFAULT_PLUG_TYPES: Record<PlugType, boolean> = { body: true, toy: false, other: false };
+
+/** Guesses a plug's type from its name; names it doesn't know are body (sps.rs `classify_plug`). */
+export function classifyPlug(plug: string): PlugType {
+  const n = plug.toLowerCase();
+  return TOY.some((w) => n.includes(w)) ? "toy" : NOT_BODY.some((w) => n.includes(w)) ? "other" : "body";
+}
+
+/** Plug names found among an avatar's parameters (`OGB/Pen/<plug>/PenOthers`, `OGB/Plug/<plug>/DepthOthers`). */
+export function plugsFrom(params: string[]): string[] {
+  const out = new Set<string>();
+  for (const p of params) {
+    const m = /^OGB\/(Pen|Plug)\/([^/]+)\/(.+)$/.exec(p);
+    if (m && (m[1] === "Pen" ? m[3] === "PenOthers" : m[3] === V3_CHANNEL)) out.add(m[2]);
+  }
+  return [...out].sort();
+}
+
+export function plugTypeOf(a: AvatarProfile | undefined, plug: string): PlugType {
+  return a?.sps?.plugTypes?.[plug] ?? classifyPlug(plug);
+}
+
+/** Does this plug count on this avatar (sps.rs `plug_counts`)? */
+export function plugCounts(s: Settings, a: AvatarProfile | undefined, plug: string): boolean {
+  return (s.sps.plugTypes ?? DEFAULT_PLUG_TYPES)[plugTypeOf(a, plug)];
 }
 
 export function socketCounts(s: Settings, a: AvatarProfile | undefined, socket: string): boolean {

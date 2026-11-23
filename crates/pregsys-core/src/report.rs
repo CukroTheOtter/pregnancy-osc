@@ -27,6 +27,7 @@ pub struct Input<'a> {
     pub own_names: &'a BTreeMap<String, String>,
     pub mapping: &'a Mapping,
     pub sps_sockets: usize,
+    pub sps_plugs: usize,
     pub instance_kind: Option<InstanceKind>,
     pub hide_belly: bool,
     pub auto_hidden: bool,
@@ -77,7 +78,7 @@ pub fn render(i: &Input) -> String {
         format!("VRChat live list: {}", list_line(i.live, "not read yet", i.own_names, i.mapping)),
         format!("VRChat's saved file: {}", list_line(i.file, "not found", i.own_names, i.mapping)),
         format!("Saved in the app: {}", list_line(i.saved, "not read yet", i.own_names, i.mapping)),
-        format!("SPS sockets: {}", i.sps_sockets),
+        format!("SPS sockets: {} · plugs: {}", i.sps_sockets, i.sps_plugs),
         format!("Instance type: {}", i.instance_kind.map_or("unknown", kind_name)),
         format!("Hide Belly: {}", if i.hide_belly { "on" } else { "off" }),
         format!("Safety: belly hidden {}{}, labor waiting {}", yes(i.auto_hidden), if i.safe_mode { " (VRChat Safe Mode)" } else if i.shown_here { " (shown here)" } else { "" }, yes(i.labor_held)),
@@ -111,6 +112,7 @@ mod tests {
             own_names: &own,
             mapping: &mapping,
             sps_sockets: 2,
+            sps_plugs: 1,
             instance_kind: Some(InstanceKind::FriendsPlus),
             hide_belly: false,
             auto_hidden: false,
@@ -120,7 +122,7 @@ mod tests {
         });
         assert_eq!(
             text,
-            "Pregnancy OSC 1.2.3\nVRChat running: yes\nLinked: yes (OSCQuery)\nLast heard from VRChat: 3 s ago\nReading VRChat logs: on\nAvatar: Bunny (avtr_1)\nLoading: no\nVRChat live list: 2 parameters, belly missing, 0 for the app\nVRChat's saved file: 3 parameters, belly found, 2 for the app\nSaved in the app: not read yet\nSPS sockets: 2\nInstance type: Friends+\nHide Belly: off\nSafety: belly hidden no, labor waiting yes"
+            "Pregnancy OSC 1.2.3\nVRChat running: yes\nLinked: yes (OSCQuery)\nLast heard from VRChat: 3 s ago\nReading VRChat logs: on\nAvatar: Bunny (avtr_1)\nLoading: no\nVRChat live list: 2 parameters, belly missing, 0 for the app\nVRChat's saved file: 3 parameters, belly found, 2 for the app\nSaved in the app: not read yet\nSPS sockets: 2 · plugs: 1\nInstance type: Friends+\nHide Belly: off\nSafety: belly hidden no, labor waiting yes"
         );
     }
 

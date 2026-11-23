@@ -7,6 +7,11 @@
 //! SPS3 (VRCFury 1.1442 betas) uses `OGB/Socket/<socket>/...` instead: no
 //! ready-made depth, but how far the plug tip is (`DepthOthers_PointSeparation`,
 //! meters) and the plug's length, worked out here like OGB 2.1.31 does.
+//!
+//! Plugs (giving: wakes the baby up, or a WooHoo with "Use SPS plugs"): `OGB/Pen/<plug>/PenOthers` is
+//! already a depth; SPS3's `OGB/Plug/<plug>/...` is worked out like OGB's
+//! `getAdvancedDepth` (main f045afe, 2026-11-20): `1 - separation / length`,
+//! the length being `LengthMult1 * LengthMult2`.
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -75,6 +80,66 @@ pub fn split_v3(name: &str) -> Option<(&str, &str)> {
     (!socket.is_empty() && !key.is_empty()).then_some((socket, key))
 }
 
+/// Plugs: `OGB/Pen/<plug>/<channel>` (older) and `OGB/Plug/<plug>/<key>` (SPS3).
+pub const PLUG_PREFIX: &str = "OGB/Pen/";
+pub const PLUG_V3_PREFIX: &str = "OGB/Plug/";
+const PLUG_OTHERS: &str = "PenOthers";
+const PLUG_V3_KEYS: [&str; 4] = [V3_CHANNEL, V3_SEPARATION, "LengthMult1", "LengthMult2"];
+
+/// Splits a plug parameter into (plug, key, SPS3?), for the keys about another player.
+pub fn split_plug(name: &str) -> Option<(&str, &str, bool)> {
+    let (rest, v3) = match name.strip_prefix(PLUG_V3_PREFIX) {
+        Some(r) => (r, true),
+        None => (name.strip_prefix(PLUG_PREFIX)?, false),
+    };
+    let (plug, key) = rest.split_once('/')?;
+    let ok = if v3 { PLUG_V3_KEYS.contains(&key) } else { key == PLUG_OTHERS };
+    (ok && !plug.is_empty()).then_some((plug, key, v3))
+}
+
+/// Plugs found among an avatar's parameter names.
+pub fn plugs(params: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = params.iter().filter_map(|p| split_plug(p).map(|(plug, _, _)| plug.to_string())).collect();
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// What an SPS3 plug has heard about another player's socket.
+#[derive(Debug, Default)]
+struct V3Plug {
+    proximity: Option<f32>,
+    separation: Option<f32>,
+    mult1: Option<f32>,
+    mult2: Option<f32>,
+}
+
+impl V3Plug {
+    fn set(&mut self, key: &str, v: f32) {
+        let v = v.is_finite().then_some(v);
+        match key {
+            V3_CHANNEL => self.proximity = v,
+            V3_SEPARATION => self.separation = v,
+            "LengthMult1" => self.mult1 = v,
+            "LengthMult2" => self.mult2 = v,
+            _ => {}
+        }
+    }
+
+    /// 0 to 1: how much of the plug is inside (OGB `getAdvancedDepth`).
+    fn depth(&self) -> f32 {
+        let (Some(p), Some(sep)) = (self.proximity, self.separation) else { return 0.0 };
+        if p <= 0.0 || sep < 0.0 {
+            return 0.0;
+        }
+        let len = self.mult1.unwrap_or(0.0) * self.mult2.unwrap_or(0.0);
+        if !len.is_finite() || len <= 0.0 {
+            return 0.0;
+        }
+        (1.0 - sep / len).clamp(0.0, 1.0)
+    }
+}
+
 /// True if this channel means another player (not you) is inside.
 pub fn is_others_channel(channel: &str) -> bool {
     OTHERS_CHANNELS.contains(&channel)
@@ -87,12 +152,12 @@ fn is_v3_others_key(key: &str) -> bool {
 
 /// Parameters VRChat should send the app for detecting WooHoos (both formats).
 pub fn wanted(name: &str) -> bool {
-    split(name).is_some_and(|(_, c)| is_others_channel(c)) || split_v3(name).is_some_and(|(_, k)| is_v3_others_key(k))
+    split(name).is_some_and(|(_, c)| is_others_channel(c)) || split_v3(name).is_some_and(|(_, k)| is_v3_others_key(k)) || split_plug(name).is_some()
 }
 
 /// Parameters only worth reading from OSCQuery: they never change, so VRChat never sends them.
 pub fn is_constant(name: &str) -> bool {
-    split_v3(name).is_some_and(|(_, k)| k == V3_RADIUS)
+    split_v3(name).is_some_and(|(_, k)| k == V3_RADIUS) || split_plug(name).is_some_and(|(_, k, v3)| v3 && k.starts_with("LengthMult"))
 }
 
 /// Sockets found among an avatar's parameter names, each with the
@@ -242,6 +307,59 @@ impl HoleTypes {
     }
 }
 
+/// What kind of plug it is, guessed from its name (SPS doesn't say).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum PlugType {
+    /// A body part: also any name the app doesn't recognise ("SPS Plug").
+    #[default]
+    Body,
+    Toy,
+    /// Tails, tongues, fingers and the like.
+    Other,
+}
+
+const TOY: [&str; 7] = ["dildo", "strap", "toy", "vibe", "vibrator", "fleshlight", "lollipop"];
+const NOT_BODY: [&str; 8] = ["tail", "tongue", "finger", "hand", "paw", "foot", "tentacle", "nose"];
+
+/// Guesses the plug type from its name ("Dildo", "Tail", "SPS Penis"...).
+pub fn classify_plug(plug: &str) -> PlugType {
+    let n = plug.to_lowercase();
+    if TOY.iter().any(|w| n.contains(w)) {
+        PlugType::Toy
+    } else if NOT_BODY.iter().any(|w| n.contains(w)) {
+        PlugType::Other
+    } else {
+        PlugType::Body
+    }
+}
+
+/// Which plug types count (global, for every avatar): for Use SPS plugs,
+/// and for giving waking the baby.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct PlugTypes {
+    pub body: bool,
+    pub toy: bool,
+    pub other: bool,
+}
+
+impl Default for PlugTypes {
+    fn default() -> Self {
+        Self { body: true, toy: false, other: false }
+    }
+}
+
+impl PlugTypes {
+    pub fn allows(&self, t: PlugType) -> bool {
+        match t {
+            PlugType::Body => self.body,
+            PlugType::Toy => self.toy,
+            PlugType::Other => self.other,
+        }
+    }
+}
+
 /// Per-avatar SPS choices.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
@@ -252,12 +370,23 @@ pub struct AvatarSps {
     pub sockets: Vec<String>,
     /// Hole type fixes for sockets with odd names.
     pub types: BTreeMap<String, HoleType>,
+    /// Plug type fixes for plugs with odd names.
+    pub plug_types: BTreeMap<String, PlugType>,
 }
 
 impl AvatarSps {
     pub fn type_of(&self, socket: &str) -> HoleType {
         self.types.get(socket).copied().unwrap_or_else(|| classify(socket))
     }
+
+    pub fn plug_type_of(&self, plug: &str) -> PlugType {
+        self.plug_types.get(plug).copied().unwrap_or_else(|| classify_plug(plug))
+    }
+}
+
+/// Does this plug count on this avatar (its type is on)?
+pub fn plug_counts(s: &SpsSettings, avatar: Option<&AvatarSps>, plug: &str) -> bool {
+    s.plug_types.allows(avatar.map_or_else(|| classify_plug(plug), |a| a.plug_type_of(plug)))
 }
 
 /// Does this socket count on this avatar?
@@ -281,11 +410,17 @@ pub struct SpsSettings {
     pub seconds: u32,
     /// Quiet seconds that end a session (and allow another WooHoo).
     pub gap_seconds: u32,
+    /// "Use SPS plugs": your own plug inside someone for long enough is a
+    /// WooHoo too (it can start a pregnancy for you). Off by default. Off,
+    /// giving still wakes the baby (`Detector::tick_giving`).
+    pub plugs: bool,
+    /// Plug types that count (for Use SPS plugs and for giving).
+    pub plug_types: PlugTypes,
 }
 
 impl Default for SpsSettings {
     fn default() -> Self {
-        Self { enabled: true, types: HoleTypes::default(), depth: 0.3, seconds: 20, gap_seconds: 120 }
+        Self { enabled: true, types: HoleTypes::default(), depth: 0.3, seconds: 20, gap_seconds: 120, plugs: false, plug_types: PlugTypes::default() }
     }
 }
 
@@ -300,6 +435,31 @@ pub struct SocketLive {
     pub counts: bool,
 }
 
+/// Time inside: enough of it counts once, until a quiet gap ends the session.
+#[derive(Debug, Default)]
+struct Session {
+    inside_ms: i64,
+    last_inside_ms: Option<i64>,
+    fired: bool,
+}
+
+impl Session {
+    fn step(&mut self, inside: bool, dt: i64, now_ms: i64, s: &SpsSettings) -> bool {
+        if inside {
+            self.inside_ms += dt;
+            self.last_inside_ms = Some(now_ms);
+        } else if self.last_inside_ms.is_some_and(|t| now_ms - t >= s.gap_seconds as i64 * 1000) {
+            // Quiet long enough: the session is over.
+            *self = Session::default();
+        }
+        if !self.fired && self.inside_ms >= s.seconds as i64 * 1000 {
+            self.fired = true;
+            return true;
+        }
+        false
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct Detector {
     /// socket -> (channel, value, when it last changed; None = since the last tick).
@@ -307,9 +467,12 @@ pub struct Detector {
     /// SPS3 sockets' raw values, turned into a depth in `values`.
     v3: BTreeMap<String, V3Socket>,
     last_ms: Option<i64>,
-    inside_ms: i64,
-    last_inside_ms: Option<i64>,
-    fired: bool,
+    session: Session,
+    /// Your plugs: plug -> (depth, when it last changed; None = since the last tick).
+    plugs: BTreeMap<String, (f32, Option<i64>)>,
+    v3_plugs: BTreeMap<String, V3Plug>,
+    giving: Session,
+    give_last_ms: Option<i64>,
 }
 
 impl Detector {
@@ -320,13 +483,28 @@ impl Detector {
 
     /// End the current session, so the next WooHoo counts again (after a reveal).
     pub fn end_session(&mut self) {
-        self.inside_ms = 0;
-        self.last_inside_ms = None;
-        self.fired = false;
+        self.session = Session::default();
     }
 
-    /// A socket value from VRChat. Returns true if this name was an SPS channel.
+    /// A socket (or plug) value from VRChat. Returns true if this name was an SPS channel.
     pub fn on_param(&mut self, name: &str, v: f32) -> bool {
+        if let Some((plug, key, v3)) = split_plug(name) {
+            let depth = if v3 {
+                let p = self.v3_plugs.entry(plug.to_string()).or_default();
+                p.set(key, v);
+                p.depth()
+            } else {
+                v.clamp(0.0, 1.0)
+            };
+            // The lengths are read again on every OSCQuery poll: the same depth isn't news.
+            if self.plugs.get(plug).is_none_or(|(d, _)| *d != depth) {
+                self.plugs.insert(plug.to_string(), (depth, None));
+            }
+            return true;
+        }
+        if name.starts_with(PLUG_PREFIX) || name.starts_with(PLUG_V3_PREFIX) {
+            return true;
+        }
         if let Some((socket, key)) = split_v3(name) {
             if is_v3_others_key(key) {
                 let s = self.v3.entry(socket.to_string()).or_default();
@@ -359,7 +537,7 @@ impl Detector {
     pub fn tick(&mut self, now_ms: i64, s: &SpsSettings, avatar: Option<&AvatarSps>) -> bool {
         let dt = self.last_ms.map(|t| (now_ms - t).clamp(0, 5_000)).unwrap_or(0);
         self.last_ms = Some(now_ms);
-        if !s.enabled {
+        if !s.enabled && !s.plugs {
             return false;
         }
         for (_, _, t) in self.values.values_mut() {
@@ -368,31 +546,56 @@ impl Detector {
         // VRChat only sends changes: a value stuck for a whole gap (its 0 got
         // lost, or the partner left) doesn't count, so the session can end.
         let gap_ms = s.gap_seconds as i64 * 1000;
-        let inside = self.values.iter().any(|(sock, (_, v, t))| {
-            socket_counts(s, avatar, sock) && *v as f64 >= s.depth && t.is_some_and(|t| now_ms - t < gap_ms)
-        });
-        if inside {
-            self.inside_ms += dt;
-            self.last_inside_ms = Some(now_ms);
-        } else if self.last_inside_ms.is_some_and(|t| now_ms - t >= s.gap_seconds as i64 * 1000) {
-            // Quiet long enough: the session is over.
-            self.inside_ms = 0;
-            self.last_inside_ms = None;
-            self.fired = false;
+        let sockets = s.enabled
+            && self.values.iter().any(|(sock, (_, v, t))| {
+                socket_counts(s, avatar, sock) && *v as f64 >= s.depth && t.is_some_and(|t| now_ms - t < gap_ms)
+            });
+        // "Use SPS plugs": your plug inside someone is a WooHoo too.
+        let plugs = s.plugs && self.plug_inside(now_ms, s, avatar);
+        self.session.step(sockets || plugs, dt, now_ms, s)
+    }
+
+    /// One of your plugs that counts is inside someone, deep enough and not stuck.
+    fn plug_inside(&mut self, now_ms: i64, s: &SpsSettings, avatar: Option<&AvatarSps>) -> bool {
+        for (_, t) in self.plugs.values_mut() {
+            t.get_or_insert(now_ms);
         }
-        if !self.fired && self.inside_ms >= s.seconds as i64 * 1000 {
-            self.fired = true;
-            return true;
+        let gap_ms = s.gap_seconds as i64 * 1000;
+        self.plugs
+            .iter()
+            .any(|(plug, (v, t))| plug_counts(s, avatar, plug) && *v as f64 >= s.depth && t.is_some_and(|t| now_ms - t < gap_ms))
+    }
+
+    /// Advances time for your plugs. Returns true once per session of giving
+    /// (same depth, time and gap as for sockets): it wakes the baby, like a
+    /// WooHoo. Not with "Use SPS plugs" on: then giving is a WooHoo itself.
+    pub fn tick_giving(&mut self, now_ms: i64, s: &SpsSettings, avatar: Option<&AvatarSps>) -> bool {
+        let dt = self.give_last_ms.map(|t| (now_ms - t).clamp(0, 5_000)).unwrap_or(0);
+        self.give_last_ms = Some(now_ms);
+        if s.plugs {
+            return false;
         }
-        false
+        let inside = self.plug_inside(now_ms, s, avatar);
+        self.giving.step(inside, dt, now_ms, s)
+    }
+
+    /// Your plugs now: (plug, 0 to 1 how far inside someone, its type, counts).
+    pub fn plugs_live(&self, s: &SpsSettings, avatar: Option<&AvatarSps>) -> Vec<(String, f32, PlugType, bool)> {
+        self.plugs
+            .iter()
+            .map(|(n, (v, _))| {
+                let t = avatar.map_or_else(|| classify_plug(n), |a| a.plug_type_of(n));
+                (n.clone(), *v, t, plug_counts(s, avatar, n))
+            })
+            .collect()
     }
 
     /// 0 to 1: how close the current session is to counting.
     pub fn progress(&self, s: &SpsSettings) -> f64 {
-        if self.fired {
+        if self.session.fired {
             return 1.0;
         }
-        (self.inside_ms as f64 / (s.seconds.max(1) as f64 * 1000.0)).min(1.0)
+        (self.session.inside_ms as f64 / (s.seconds.max(1) as f64 * 1000.0)).min(1.0)
     }
 
     pub fn live(&self, s: &SpsSettings, avatar: Option<&AvatarSps>) -> Vec<SocketLive> {
@@ -415,6 +618,86 @@ mod tests {
 
     fn names(v: &[&str]) -> Vec<String> {
         v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn plugs_are_found_and_wanted() {
+        let p = names(&["OGB/Pen/Old/PenOthers", "OGB/Pen/Old/PenSelf", "OGB/Plug/New/DepthOthers", "OGB/Plug/New/LengthMult1", "OGB/Orf/A/PenOthers"]);
+        assert_eq!(plugs(&p), vec!["New".to_string(), "Old".to_string()]);
+        assert!(wanted("OGB/Pen/Old/PenOthers"));
+        assert!(!wanted("OGB/Pen/Old/PenSelf"), "your own touch never counts");
+        assert!(wanted("OGB/Plug/New/DepthOthers_PointSeparation"));
+        assert!(is_constant("OGB/Plug/New/LengthMult2"));
+        assert!(sockets(&p).keys().all(|k| k == "A"), "plugs aren't sockets");
+    }
+
+    #[test]
+    fn sps3_plug_depth_like_ogb() {
+        let mut p = V3Plug::default();
+        for (k, v) in [("LengthMult1", 0.5), ("LengthMult2", 0.4), ("DepthOthers", 0.8), ("DepthOthers_PointSeparation", 0.05)] {
+            p.set(k, v);
+        }
+        // Length 0.2 m, tip 5 cm from the socket: three quarters in.
+        assert!((p.depth() - 0.75).abs() < 1e-5);
+        p.set("DepthOthers", 0.0);
+        assert_eq!(p.depth(), 0.0, "out of range");
+    }
+
+    #[test]
+    fn giving_wakes_without_being_a_woohoo() {
+        let s = SpsSettings { seconds: 2, ..Default::default() };
+        let mut d = Detector::default();
+        d.on_param("OGB/Pen/Old/PenOthers", 0.9);
+        assert!((0..=6).any(|i| d.tick_giving(i * 500, &s, None)));
+        assert!(!d.tick(4_000, &s, None), "with Use SPS plugs off, giving is never a WooHoo");
+        // Even with sockets off: giving and receiving wake the baby alike.
+        let mut d = Detector::default();
+        d.on_param("OGB/Pen/Old/PenOthers", 0.9);
+        let no_sockets = SpsSettings { enabled: false, ..s };
+        assert!((0..=6).any(|i| d.tick_giving(i * 500, &no_sockets, None)));
+    }
+
+    #[test]
+    fn plug_types_from_names() {
+        // Names seen on real avatars (OSC configs, 2026-11-22).
+        assert_eq!(classify_plug("Zcanine Cock"), PlugType::Body);
+        assert_eq!(classify_plug("Penis Body"), PlugType::Body);
+        assert_eq!(classify_plug("zw_ris_sps"), PlugType::Body, "unknown names are body");
+        assert_eq!(classify_plug("Dildo"), PlugType::Toy);
+        assert_eq!(classify_plug("Actual Wsome Lollipop"), PlugType::Toy);
+        assert_eq!(classify_plug("Tail"), PlugType::Other);
+        let s = SpsSettings::default();
+        assert!(plug_counts(&s, None, "Zcanine Cock"));
+        assert!(!plug_counts(&s, None, "Dildo"), "toys are off by default");
+        let fixed = AvatarSps { plug_types: [("Dildo".to_string(), PlugType::Body)].into(), ..Default::default() };
+        assert!(plug_counts(&s, Some(&fixed), "Dildo"), "a per-avatar fix wins");
+    }
+
+    #[test]
+    fn a_plug_type_thats_off_never_counts() {
+        let s = SpsSettings { seconds: 2, plugs: true, ..Default::default() };
+        let mut d = Detector::default();
+        d.on_param("OGB/Pen/Dildo/PenOthers", 0.9);
+        assert!(!(0..=6).any(|i| d.tick(i * 500, &s, None)));
+        assert!(!(0..=6).any(|i| d.tick_giving(i * 500, &SpsSettings { plugs: false, ..s.clone() }, None)));
+    }
+
+    #[test]
+    fn plugs_count_as_woohoos_when_on() {
+        let run = |s: &SpsSettings| {
+            let mut d = Detector::default();
+            d.on_param("OGB/Pen/Old/PenOthers", 0.9);
+            (0..=6).any(|i| d.tick(i * 500, s, None))
+        };
+        let s = SpsSettings { seconds: 2, ..Default::default() };
+        assert!(!run(&s), "off by default");
+        assert!(run(&SpsSettings { plugs: true, ..s.clone() }));
+        assert!(run(&SpsSettings { plugs: true, enabled: false, ..s.clone() }), "without sockets too");
+        // Then giving isn't a separate wake-up (the WooHoo wakes the baby).
+        let mut d = Detector::default();
+        d.on_param("OGB/Pen/Old/PenOthers", 0.9);
+        let both = SpsSettings { plugs: true, ..s };
+        assert!(!(0..=6).any(|i| d.tick_giving(i * 500, &both, None)));
     }
 
     #[test]

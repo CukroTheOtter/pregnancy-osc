@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { birthTitle, chance, cycleDay, cycleMs, genderEmoji, graceMs, kidWord, level, litterOdds, rollLitter, untilFertile } from "./fertility";
+import { birthTitle, chance, cycleDay, cycleMs, cycleShades, genderEmoji, graceMs, hourShades, hoursDay, kidWord, level, litterOdds, rollLitter, untilFertile } from "./fertility";
 import { funRows, linkedGroup, owner, partnerStats, pregnancyFor } from "./scope";
 import { defaultSettings, emptyData, pregnancy } from "./testdata";
 import type { AvatarProfile } from "./types";
@@ -124,5 +124,36 @@ describe("litters", () => {
     expect(genderEmoji(["girl", "boy"])).toBe("👧👦");
     expect(genderEmoji(["girl", "boy", "girl", "girl", "boy", "girl"])).toBe("👧×4 👦×2");
     expect(genderEmoji(["boy", "boy", "boy", "boy", "boy"])).toBe("👦×5");
+  });
+});
+
+describe("set fertile hours", () => {
+  const h = { startMin: 20 * 60, endMin: 23 * 60 };
+  const lv = (m: number) => level(chance(hoursDay(m, h), 0.6), 0.6);
+  it("peaks inside the window, like fertility.rs", () => {
+    expect(lv(12 * 60)).toBe("low");
+    expect(lv(20 * 60 + 1)).toBe("medium");
+    expect(lv(21 * 60 + 40)).toBe("peak");
+    expect(lv(23 * 60)).toBe("low");
+  });
+  it("crosses midnight", () => {
+    const late = { startMin: 22 * 60, endMin: 2 * 60 };
+    expect(hoursDay(23 * 60, late)).toBe(11);
+    expect(hoursDay(60, late)).toBe(15);
+    expect(hoursDay(3 * 60, late)).toBe(4);
+    expect(hoursDay(720, { startMin: 0, endMin: 0 })).toBe(13);
+  });
+});
+
+describe("ring shades", () => {
+  it("are deepest on the peak", () => {
+    const top = (xs: { strength: number }[]) => xs.indexOf(xs.reduce((a, b) => (b.strength > a.strength ? b : a)));
+    const cyc = cycleShades();
+    expect(cyc[top(cyc)].strength).toBe(1);
+    expect(cyc[top(cyc)].from).toBeCloseTo(12 / 28);
+    const hrs = hourShades({ startMin: 20 * 60, endMin: 23 * 60 });
+    expect(hrs[0].from).toBeCloseTo((20 * 60) / 1440);
+    expect(hrs[hrs.length - 1].to).toBeCloseTo((23 * 60) / 1440);
+    expect(hrs[top(hrs)].strength).toBe(1);
   });
 });

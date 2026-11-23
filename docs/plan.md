@@ -8,7 +8,7 @@ Agreed layout and features. Built in the order at the bottom.
 ## Home (one avatar, or a linked group)
 | State | Shows |
 |---|---|
-| Not pregnant | **Cycle card**: ring "Day 12 of 28" with the real time left in the cycle, chance now (Low / Medium / High / Peak), "next fertile window in …". Length card. Small "start manually". |
+| Not pregnant | **Cycle card**: ring "Day 12 of 28" with the real time left in the cycle (the fertile window shaded deeper towards the peak; with set hours, a 24-hour clock instead), chance now (Low / Medium / High / Peak), "next fertile window in …". Length card. Small "start manually". |
 | Waiting | "💕 You WooHoo'd with **Ember** at Cozy Cabin." Countdown "You'll find out in 1 day 4 h" (real time, with the date and time). No hint of the outcome. Belly held flat. |
 | Any state | **💕 WooHoo history** (folds away, only with a result on this avatar or its group): one row per wait, since a wait has one result. Its first WooHoo's time and world, the partner ("Partner unknown" if nobody was picked), how many WooHoos, and ⏳ Waiting / 🤰 Pregnant / 🤍 Not this time. WooHoos from before results were saved aren't listed (the totals still count them). |
 | Reveal (once) | "You're pregnant! 💕" + **estimated due date**, or "Not this time 🤍". OK button. |
@@ -28,7 +28,8 @@ Everyone you've been with, with fun stats: WooHoos, times pregnant by them, kids
 ## Settings
 - **VRChat**: control the belly; start on in-game conception.
 - **Detecting WooHoos**: **from SPS sockets** (pick sockets, how deep, how long). The avatar's own fertility trigger isn't used.
-- **Fertility**: on/off, chance at peak, **how many babies** (Realistic / Playful / Lots / Litter: usually 1–8, varies a little / some / a lot; also per avatar), start a new cycle today.
+- **Kicks**: how often, a personality per pregnancy (😴 Sleepy / 🌙 Calm / 🐛 Wiggly / ⚡ Bouncy, from the pregnancy's ID unless picked on the Movement card; `movement::mood_for`, `kickMood.ts`) with busy or quiet 40-minute spells, more with the other parent here, and a WooHoo while pregnant wakes the baby for 15 min (kick in seconds, 3× as often). Giving (your own SPS plug, `OGB/Pen/` and `OGB/Plug/`, read like OGB's `getAdvancedDepth`) wakes it the same way, under the same setting, even with sockets off; it isn't a WooHoo. **Use SPS plugs** (Detecting WooHoos, off by default) makes your plug inside someone a full WooHoo (it can get you pregnant, or start labor late on), which wakes the baby as any WooHoo does. Plug types (`sps::PlugType`, guessed from the name like hole types: 🍆 Body, also any name it doesn't know; 🧸 Toy: dildo, strap, vibe, lollipop…; 🐾 Other: tail, tongue, finger…) decide which plugs count for both, Body only by default, fixable per avatar under Avatars. Names seen on real avatars: "Zcanine Cock", "Dildo", "Actual Wsome Lollipop", "Penis Body", "Body".
+- **Fertility**: on/off, a cycle or set hours every day (e.g. 20:00–23:00, local time, can cross midnight; mapped onto the cycle's fertile days so the chance rises and falls inside it), chance at peak, **how many babies** (Realistic / Playful / Lots / Litter: usually 1–8, varies a little / some / a lot; also per avatar), start a new cycle today.
 - **Avatar parameters** (shared names): each with name, on/off and a one-line explanation.
 - **Safety**: hide the belly / hold labor in picked instance types (default Public, Group Public), never changing your own Hide Belly.
 - **Look**: a palette, or Custom: an accent and (optionally) a background, picked on a color wheel (ring for the color, square for paler or vivid, brighter or darker). The rest of the theme is worked out from them (`src/lib/theme.ts`), and your own background decides light or dark by itself.
