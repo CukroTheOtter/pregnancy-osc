@@ -4,7 +4,7 @@ A small, cute desktop app that runs your avatar's pregnancy from outside VRChat:
 
 1. **Overrides the avatar's own counter.** The app writes the belly size over OSC, so it's in charge while it runs.
 2. **Speed and progress.** See the week, percent and time left. Pick real time, 1 day = 1 week, 1 hour = 1 week or a custom length. Pause, or jump to a week.
-3. **WooHoos and fertility.** A WooHoo in-game (SPS sockets, or your own SPS plug if you turn that on) starts a wait to find out, with a fertility cycle deciding the odds. Twins and more can happen.
+3. **WooHoos and fertility.** A WooHoo in-game (SPS sockets, or your own SPS plug if you turn that on) starts a wait to find out. You pick which hole and plug types count, and fix any oddly named ones per avatar. A fertility cycle decides the odds, or fertile hours you pick for every day (like 20:00 to 23:00); the fertile window glows deeper pink towards the peak. Twins and more can happen.
 4. **Other parent.** If it was just the two of you in the instance, the app guesses who you're pregnant by. Otherwise it lists who was in the instance at conception, and you pick (or type a name, or roll 🎲).
 5. **Movement.** Kicks on your avatar from week 16, and a chart of the last 24 hours, like a heart rate chart. Tap a bar to see that hour. Every baby has its own personality (sleepy to bouncy) and busy or quiet spells, and giving or receiving while pregnant wakes it up for a while.
 6. **Journal.** A timeline of each pregnancy, with your own notes:
@@ -149,7 +149,7 @@ npm run check            # type check the UI
 ```
 
 ### Debug mode (test in VRChat)
-Tap the **Pregnancy OSC** title 5 times. A 🛠 Debug section appears at the bottom of Settings: pretend a WooHoo (random, pregnant, or not), turn on up to 3 test buddies (pretend partners in your instance), end the grace period now, jump the cycle to a day or the pregnancy to a week, and see live readouts of what's being sent. Tap 5 times again (or "Turn off") to hide it.
+Tap the **Pregnancy OSC** title 5 times. A 🛠 Debug section appears at the bottom of Settings: pretend a WooHoo (random, pregnant, or not), turn on up to 3 test buddies (pretend partners in your instance), end the grace period now, jump the cycle to a day or the pregnancy to a week, send a kick or pretend giving (wakes the baby), and see live readouts of what's being sent. Tap 5 times again (or "Turn off") to hide it.
 
 While debug mode is on, the app also writes a `debug` folder in your data folder: `state.json` (what it's thinking right now, updated every second) and `trace.jsonl` (what came in, what went out and why, up to about 10 MB in all). Both include your avatars' names and IDs, but not who's in your instance.
 

@@ -85,6 +85,8 @@ Hours, days and dates are always **real time**. That includes the time left on t
 
 The wait after a WooHoo is 1/20 of your pregnancy length unless you pick your own under **Settings > Fertility > Find out after**. For example, it's 8 h 24 min on a 1-week pregnancy.
 
+With **Set hours** (Settings > Fertility), the chance is only high inside your hours, by your PC's clock, strongest in the middle; the rest of the day it's low.
+
 ## The chatbox status disappeared
 
 By default the status is off while your belly is hidden, including when it's hidden by **Safety** in a public instance. Turn off **Hide the status while my belly is hidden** under **Settings > Chatbox** to always show it.
