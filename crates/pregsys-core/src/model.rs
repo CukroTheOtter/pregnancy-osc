@@ -42,6 +42,19 @@ pub enum GenderMode {
     Random,
 }
 
+/// How the Movement chart on Home draws kicks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum KickChartStyle {
+    /// A smooth line, like a heart rate monitor.
+    #[default]
+    Line,
+    /// One dot per kick, sized by strength.
+    Dots,
+    /// One bar per stretch of time.
+    Bars,
+}
+
 /// How likely twins and more are.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -306,6 +319,8 @@ pub struct Settings {
     /// Each baby has its own personality and busy or quiet spells (off: the
     /// same every time).
     pub kick_moods: bool,
+    /// How the Movement chart draws kicks (picked on the chart).
+    pub kick_chart: KickChartStyle,
     /// A WooHoo while pregnant (given or received) wakes the baby up for a while.
     pub woohoo_wakes: bool,
     /// When labor starts, how long it takes, and whether it waits for the partner.
@@ -385,6 +400,7 @@ impl Default for Settings {
             allowed_kicks: AllowedKicks::default(),
             kicks_with_partner: false,
             kick_moods: true,
+            kick_chart: KickChartStyle::default(),
             woohoo_wakes: true,
             labor: Default::default(),
             safety: Default::default(),

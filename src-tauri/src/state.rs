@@ -49,6 +49,9 @@ pub struct PlugLive {
 #[serde(rename_all = "camelCase")]
 pub struct Status {
     pub vrchat_running: bool,
+    /// This (or the last) VRChat run: when it started and when it closed.
+    pub vrchat_since_ms: Option<i64>,
+    pub vrchat_until_ms: Option<i64>,
     pub steamvr_running: bool,
     /// XSOverlay is running, and OVR Toolkit's notification API answers.
     pub xsoverlay_running: bool,

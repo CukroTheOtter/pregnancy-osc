@@ -410,6 +410,18 @@ impl Engine {
             self.driver.set_connected(true);
             self.pending_params_fetch = Some(Instant::now() + Duration::from_secs(3));
         }
+        if r.vrchat {
+            // The Movement chart's "Current session" starts when VRChat did.
+            let mut d = self.shared.data.lock().unwrap();
+            // No start time from Windows: an open run stays, else it starts now.
+            let open = d.instance.vrchat_since_ms.filter(|_| d.instance.vrchat_until_ms.is_none());
+            let started = r.vrchat_started_ms.or(open).unwrap_or_else(now_ms);
+            let new = d.instance.vrchat_running(started);
+            drop(d);
+            if new {
+                self.shared.mark_dirty();
+            }
+        }
         self.vrchat = r.vrchat;
         self.steamvr = r.steamvr;
         {
@@ -1564,6 +1576,8 @@ impl Engine {
         {
             let d = self.shared.data.lock().unwrap();
             st.world_name = d.instance.world_name.clone();
+            st.vrchat_since_ms = d.instance.vrchat_since_ms;
+            st.vrchat_until_ms = d.instance.vrchat_until_ms;
             st.others = d.instance.others().into_iter().cloned().collect();
         }
         let snapshot = st.clone();

@@ -26,6 +26,7 @@ export interface Litter {
 }
 export type GenderMode = "off" | "random";
 export type KickStrength = "weak" | "strong" | "extreme";
+export type KickChartStyle = "line" | "dots" | "bars";
 export type KickFrequency = "calm" | "normal" | "active";
 export type HoleType = "vaginal" | "anal" | "oral" | "other";
 /** What kind of SPS plug it is, guessed from its name (pregsys-core `sps::PlugType`). */
@@ -194,6 +195,8 @@ export interface Settings {
   kicksWithPartner: boolean;
   /** Each baby has its own personality and busy or quiet spells. */
   kickMoods: boolean;
+  /** How the Movement chart draws kicks (picked on the chart). */
+  kickChart?: KickChartStyle;
   /** A WooHoo while pregnant (given or received) wakes the baby up. */
   woohooWakes: boolean;
   labor: LaborSettings;
@@ -438,6 +441,9 @@ export interface UpdateInfo {
 
 export interface Status {
   vrchatRunning: boolean;
+  /** This (or the last) VRChat run: when it started and when it closed (null while it runs). */
+  vrchatSinceMs?: number | null;
+  vrchatUntilMs?: number | null;
   steamvrRunning: boolean;
   /** XSOverlay is running, and OVR Toolkit's notification API answers. */
   xsoverlayRunning?: boolean;

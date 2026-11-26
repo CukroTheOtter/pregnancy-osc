@@ -23,8 +23,9 @@
   // A short wiggle when a fresh kick arrives.
   const fresh = $derived(!!last && app.now - last.timeMs < 4000);
   const enabled = $derived(!!app.data?.settings.kicks);
-  // The chart shows once there's been a kick in the last day.
-  const recent = $derived(!!last && app.now - last.timeMs < 24 * 3_600_000);
+  // The chart shows the current (or last) VRChat session, or with no session
+  // known yet, once there's been a kick in the last day.
+  const recent = $derived(!!app.status?.vrchatSinceMs || (!!last && app.now - last.timeMs < 24 * 3_600_000));
   // The baby's personality, and whether a WooHoo just woke it up.
   const moods = $derived(!!app.data?.settings.kickMoods);
   const mood = $derived(moodInfo(kickMood(p)));

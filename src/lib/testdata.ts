@@ -74,6 +74,7 @@ export function defaultSettings(): Settings {
     allowedKicks: { weak: true, strong: true, extreme: true },
     kicksWithPartner: false,
     kickMoods: true,
+    kickChart: "line",
     woohooWakes: true,
     autoAddAvatars: true,
     closeToTray: true,

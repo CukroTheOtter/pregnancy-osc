@@ -13,6 +13,8 @@ pub struct Procs {
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Running {
     pub vrchat: bool,
+    /// When VRChat's process started (ms).
+    pub vrchat_started_ms: Option<i64>,
     pub steamvr: bool,
     /// XSOverlay and OVR Toolkit, for notifications in VR (see `vr_notify`).
     pub xsoverlay: bool,
@@ -51,6 +53,10 @@ impl Procs {
             // Under Proton the Windows name shows up too.
             if n == "vrchat.exe" || n == "vrchat" {
                 r.vrchat = true;
+                let t = p.start_time() as i64 * 1000;
+                if t > 0 {
+                    r.vrchat_started_ms = Some(r.vrchat_started_ms.map_or(t, |s| s.min(t)));
+                }
             }
             if n.starts_with("vrserver") || n.starts_with("vrmonitor") {
                 r.steamvr = true;

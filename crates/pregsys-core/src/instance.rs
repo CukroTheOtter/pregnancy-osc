@@ -66,6 +66,10 @@ pub struct InstanceTracker {
     /// the log is read again from the start when the app starts.
     #[serde(skip)]
     pub safe_mode: bool,
+    /// This VRChat run (the Movement chart's session): when it started, and
+    /// when it closed (None while it runs).
+    pub vrchat_since_ms: Option<i64>,
+    pub vrchat_until_ms: Option<i64>,
 }
 
 impl InstanceTracker {
@@ -165,6 +169,19 @@ impl InstanceTracker {
     pub fn vrchat_closed(&mut self, now_ms: i64) {
         self.leave(now_ms);
         self.safe_mode = false;
+        if self.vrchat_since_ms.is_some() {
+            self.vrchat_until_ms = Some(now_ms);
+        }
+    }
+
+    /// VRChat is running, started at `started_ms`. True when that's a new run.
+    pub fn vrchat_running(&mut self, started_ms: i64) -> bool {
+        if self.vrchat_since_ms == Some(started_ms) && self.vrchat_until_ms.is_none() {
+            return false;
+        }
+        self.vrchat_since_ms = Some(started_ms);
+        self.vrchat_until_ms = None;
+        true
     }
 
     fn touch_session(&mut self, p: Person) {
@@ -252,6 +269,19 @@ mod tests {
         t.apply(&JoiningWorld { world_id: "wrld_1".into(), instance: "1~private".into() }, at);
         t.apply(&EnteringRoom { world_name: "Cozy Home".into() }, at);
         t.apply(&join("Me"), at);
+    }
+
+    #[test]
+    fn vrchat_session_starts_and_ends() {
+        let mut t = InstanceTracker::default();
+        t.vrchat_closed(5 * M); // nothing to end yet
+        assert_eq!(t.vrchat_until_ms, None);
+        assert!(t.vrchat_running(10 * M));
+        assert!(!t.vrchat_running(10 * M)); // same run
+        t.vrchat_closed(70 * M);
+        assert_eq!((t.vrchat_since_ms, t.vrchat_until_ms), (Some(10 * M), Some(70 * M)));
+        assert!(t.vrchat_running(90 * M)); // the next run
+        assert_eq!((t.vrchat_since_ms, t.vrchat_until_ms), (Some(90 * M), None));
     }
 
     #[test]

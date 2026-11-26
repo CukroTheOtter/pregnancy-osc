@@ -113,6 +113,9 @@ function instanceKind(i: string | null): InstanceKind | null {
 /** "Show here": the instance where you showed the belly. */
 let shownHere: string | null = null;
 
+// The preview's VRChat "started" 2.5 hours before the page loaded.
+const mockVrchatSince = Date.now() - 2.5 * 3_600_000;
+
 function status(): Status {
   const p = pregnancyFor(data, data.currentAvatarId);
   const here = data.settings.readLogs ? data.instance.instance : null;
@@ -121,6 +124,8 @@ function status(): Status {
   const safety = data.settings.safety;
   return {
     vrchatRunning: true,
+    vrchatSinceMs: mockVrchatSince,
+    vrchatUntilMs: null,
     steamvrRunning: false,
     xsoverlayRunning: false,
     ovrToolkitRunning: false,
