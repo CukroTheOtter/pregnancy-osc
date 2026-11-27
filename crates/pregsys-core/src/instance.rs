@@ -70,7 +70,20 @@ pub struct InstanceTracker {
     /// when it closed (None while it runs).
     pub vrchat_since_ms: Option<i64>,
     pub vrchat_until_ms: Option<i64>,
+    /// Earlier VRChat runs, oldest first (the chart finds an avatar's last one).
+    pub vrchat_runs: Vec<VrchatRun>,
 }
+
+/// One VRChat run. No end when the app closed before VRChat did.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VrchatRun {
+    pub since_ms: i64,
+    pub until_ms: Option<i64>,
+}
+
+/// How many earlier VRChat runs are kept.
+const MAX_RUNS: usize = 200;
 
 impl InstanceTracker {
     /// A new log is read from its start: "who is here" is rebuilt from it.
@@ -81,6 +94,7 @@ impl InstanceTracker {
             local: self.local.take(),
             vrchat_since_ms: self.vrchat_since_ms,
             vrchat_until_ms: self.vrchat_until_ms,
+            vrchat_runs: std::mem::take(&mut self.vrchat_runs),
             ..Default::default()
         };
     }
@@ -188,8 +202,14 @@ impl InstanceTracker {
 
     /// VRChat is running, started at `started_ms`. True when that's a new run.
     pub fn vrchat_running(&mut self, started_ms: i64) -> bool {
-        if self.vrchat_since_ms == Some(started_ms) && self.vrchat_until_ms.is_none() {
-            return false;
+        if self.vrchat_since_ms == Some(started_ms) {
+            // The same run (seen closed by mistake): it carries on.
+            return self.vrchat_until_ms.take().is_some();
+        }
+        if let Some(since_ms) = self.vrchat_since_ms {
+            self.vrchat_runs.push(VrchatRun { since_ms, until_ms: self.vrchat_until_ms });
+            let extra = self.vrchat_runs.len().saturating_sub(MAX_RUNS);
+            self.vrchat_runs.drain(..extra);
         }
         self.vrchat_since_ms = Some(started_ms);
         self.vrchat_until_ms = None;
@@ -294,6 +314,23 @@ mod tests {
         assert_eq!((t.vrchat_since_ms, t.vrchat_until_ms), (Some(10 * M), Some(70 * M)));
         assert!(t.vrchat_running(90 * M)); // the next run
         assert_eq!((t.vrchat_since_ms, t.vrchat_until_ms), (Some(90 * M), None));
+        assert_eq!(t.vrchat_runs, vec![VrchatRun { since_ms: 10 * M, until_ms: Some(70 * M) }]);
+        // The app closed before VRChat did: that run has no end.
+        assert!(t.vrchat_running(200 * M));
+        assert_eq!(t.vrchat_runs[1], VrchatRun { since_ms: 90 * M, until_ms: None });
+        t.new_log();
+        assert_eq!(t.vrchat_runs.len(), 2, "a new log keeps them");
+    }
+
+    #[test]
+    fn only_the_latest_vrchat_runs_are_kept() {
+        let mut t = InstanceTracker::default();
+        for i in 0..(MAX_RUNS as i64 + 10) {
+            t.vrchat_running(i * 100 * M);
+            t.vrchat_closed(i * 100 * M + 50 * M);
+        }
+        assert_eq!(t.vrchat_runs.len(), MAX_RUNS);
+        assert_eq!(t.vrchat_runs[0].since_ms, 9 * 100 * M);
     }
 
     #[test]

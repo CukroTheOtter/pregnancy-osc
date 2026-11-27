@@ -1581,6 +1581,7 @@ impl Engine {
             st.world_name = d.instance.world_name.clone();
             st.vrchat_since_ms = d.instance.vrchat_since_ms;
             st.vrchat_until_ms = d.instance.vrchat_until_ms;
+            st.vrchat_runs = d.instance.vrchat_runs.clone();
             st.others = d.instance.others().into_iter().cloned().collect();
         }
         let snapshot = st.clone();

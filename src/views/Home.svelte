@@ -270,7 +270,7 @@
     </section>
 
     <!-- Only on avatars that can kick (driver.rs send_kick skips the rest). -->
-    {#if !noKicks}<MovementCard {p} />{/if}
+    {#if !noKicks}<MovementCard {p} worn={!viewingOther} />{/if}
 
     <PartnerCard {p} />
 

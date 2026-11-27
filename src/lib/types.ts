@@ -444,6 +444,8 @@ export interface Status {
   /** This (or the last) VRChat run: when it started and when it closed (null while it runs). */
   vrchatSinceMs?: number | null;
   vrchatUntilMs?: number | null;
+  /** Earlier VRChat runs, oldest first (untilMs null: the app closed first). */
+  vrchatRuns?: VrchatRun[];
   steamvrRunning: boolean;
   /** XSOverlay is running, and OVR Toolkit's notification API answers. */
   xsoverlayRunning?: boolean;
@@ -590,4 +592,9 @@ export interface Problem {
   fixes: string[];
   /** A tab that helps. */
   go: "partners" | null;
+}
+
+export interface VrchatRun {
+  sinceMs: number;
+  untilMs: number | null;
 }

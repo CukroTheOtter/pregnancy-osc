@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HOUR_MS, busiest, kickBins, kickHours, smoothPath } from "./kicks";
+import { HOUR_MS, busiest, kickBins, kickHours, pickSession, smoothPath } from "./kicks";
 
 describe("smooth line", () => {
   it("curves through every point", () => {
@@ -63,5 +63,41 @@ describe("kick chart", () => {
     expect(long.binMs).toBe(HOUR_MS / 2);
     expect(long.bins.length).toBeLessThanOrEqual(24);
     expect(new Date(long.bins[0].startMs).getMinutes()).toBe(0);
+  });
+});
+
+describe("which session the chart shows", () => {
+  const H = HOUR_MS;
+  const k = (timeMs: number) => ({ timeMs, strength: "weak" as const });
+  const runs = [
+    { sinceMs: 0, untilMs: 3 * H }, // wore this avatar
+    { sinceMs: 10 * H, untilMs: 12 * H }, // another avatar
+  ];
+  const current = { sinceMs: 20 * H, untilMs: null };
+
+  it("is this session while you wear the avatar", () => {
+    expect(pickSession([k(H)], runs, current, true, true, 21 * H)).toEqual({ fromMs: 20 * H, toMs: 21 * H, live: true });
+  });
+
+  it("is the avatar's own last session when you view another one", () => {
+    expect(pickSession([k(H), k(2 * H)], runs, current, true, false, 21 * H)).toEqual({ fromMs: 0, toMs: 3 * H, live: false });
+    // Worn earlier this session: this one, still going.
+    expect(pickSession([k(H), k(20.5 * H)], runs, current, true, false, 21 * H)).toEqual({ fromMs: 20 * H, toMs: 21 * H, live: true });
+  });
+
+  it("is the avatar's last session after VRChat closes", () => {
+    const closed = { sinceMs: 20 * H, untilMs: 22 * H };
+    expect(pickSession([k(H), k(21 * H)], runs, closed, false, true, 30 * H)).toEqual({ fromMs: 20 * H, toMs: 22 * H, live: false });
+    expect(pickSession([k(H)], runs, closed, false, true, 30 * H)).toEqual({ fromMs: 0, toMs: 3 * H, live: false });
+  });
+
+  it("ends a session with no known end at its last kick", () => {
+    const open = [{ sinceMs: 0, untilMs: null }];
+    expect(pickSession([k(H), k(2 * H)], open, current, true, false, 21 * H)).toEqual({ fromMs: 0, toMs: 2 * H, live: false });
+  });
+
+  it("is none with no kicks in any session", () => {
+    expect(pickSession([k(5 * H)], runs, current, true, false, 21 * H)).toBeNull();
+    expect(pickSession([], [], null, false, true, 21 * H)).toBeNull();
   });
 });

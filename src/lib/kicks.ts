@@ -1,7 +1,7 @@
-// The Movement chart: kicks in this (or the last) VRChat session, or the
-// last 24 hours when there's no session to show.
+// The Movement chart: kicks in this (or the pregnancy's last) VRChat session,
+// or the 24 hours up to its last kick when there's no session to show.
 
-import type { KickStrength } from "./types";
+import type { KickStrength, VrchatRun } from "./types";
 
 export const HOUR_MS = 3_600_000;
 const MIN_MS = 60_000;
@@ -69,4 +69,39 @@ export function busiest(hours: KickHour[]): KickHour | null {
   let best: KickHour | null = null;
   for (const h of hours) if (h.total && (!best || h.total >= best.total)) best = h;
   return best;
+}
+
+export interface KickSession {
+  fromMs: number;
+  toMs: number;
+  /** VRChat is running in it now. */
+  live: boolean;
+}
+
+/**
+ * The session to show: this VRChat run while you wear the avatar, else the
+ * latest run with one of its kicks (null: none). `current` is this (or the
+ * last) run; `runs` the earlier ones. A run with no known end ends at its last
+ * kick (or the next run's start).
+ */
+export function pickSession(
+  kicks: Kick[],
+  runs: VrchatRun[],
+  current: VrchatRun | null,
+  running: boolean,
+  worn: boolean,
+  now: number,
+): KickSession | null {
+  if (current && running && worn) return { fromMs: current.sinceMs, toMs: now, live: true };
+  const all = [...runs, ...(current ? [current] : [])].sort((a, b) => a.sinceMs - b.sinceMs);
+  for (let i = all.length - 1; i >= 0; i--) {
+    const r = all[i];
+    const live = running && r === current;
+    const cap = live ? now : (r.untilMs ?? all[i + 1]?.sinceMs ?? now);
+    const inside = kicks.filter((k) => k.timeMs >= r.sinceMs && k.timeMs <= cap);
+    if (!inside.length) continue;
+    const toMs = live ? now : (r.untilMs ?? inside.at(-1)!.timeMs);
+    return { fromMs: r.sinceMs, toMs, live };
+  }
+  return null;
 }

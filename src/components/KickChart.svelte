@@ -1,12 +1,13 @@
 <script lang="ts">
   import { app, errorToast } from "../lib/app.svelte";
   import { api } from "../lib/api";
-  import { busiest, HOUR_MS, kickBins, kickHours, smoothPath, type KickHour } from "../lib/kicks";
+  import { busiest, HOUR_MS, kickBins, kickHours, pickSession, smoothPath, type KickHour } from "../lib/kicks";
   import type { KickChartStyle, Pregnancy, Settings } from "../lib/types";
 
-  // Belly activity this VRChat session (or the last one once VRChat closes),
-  // as a line, dots or bars (picked here). No session known yet: the last 24 hours.
-  let { p }: { p: Pregnancy } = $props();
+  // Belly activity this VRChat session while you wear the avatar, else its
+  // last session with kicks, as a line, dots or bars (picked here). No such
+  // session: the 24 hours up to its last kick (or now).
+  let { p, worn = true }: { p: Pregnancy; worn?: boolean } = $props();
 
   const STYLES: { k: KickChartStyle; name: string }[] = [
     { k: "line", name: "Line" },
@@ -26,25 +27,31 @@
     }
   }
 
-  const since = $derived(app.status?.vrchatSinceMs ?? null);
-  const live = $derived(!!since && !!app.status?.vrchatRunning);
+  const session = $derived.by(() => {
+    const st = app.status;
+    const since = st?.vrchatSinceMs ?? null;
+    const current = since ? { sinceMs: since, untilMs: st?.vrchatUntilMs ?? null } : null;
+    return pickSession(p.kicks ?? [], st?.vrchatRuns ?? [], current, !!st?.vrchatRunning, worn, app.now);
+  });
+  const live = $derived(!!session?.live);
   const view = $derived.by(() => {
     const kicks = p.kicks ?? [];
-    if (!since) {
-      const bins = kickHours(kicks, app.now);
-      return { bins, binMs: HOUR_MS, from: null, start: bins[0].startMs, to: app.now };
+    if (!session) {
+      const to = worn ? app.now : (kicks.at(-1)?.timeMs ?? app.now);
+      const bins = kickHours(kicks, to);
+      return { bins, binMs: HOUR_MS, from: null, start: bins[0].startMs, to, endsNow: to === app.now };
     }
-    const until = live ? null : (app.status?.vrchatUntilMs ?? null);
-    // A session with no known end (the app closed first) ends at its last kick.
-    const to = live ? app.now : (until ?? kicks.filter((k) => k.timeMs >= since).at(-1)?.timeMs ?? since);
-    const b = kickBins(kicks, since, to);
-    return { ...b, from: since, start: b.bins[0].startMs, to };
+    const b = kickBins(kicks, session.fromMs, session.toMs);
+    return { ...b, from: session.fromMs, start: b.bins[0].startMs, to: session.toMs, endsNow: live };
   });
   const hours = $derived(view.bins);
   const top = $derived(Math.max(1, ...hours.map((h) => h.total)));
   const total = $derived(hours.reduce((s, h) => s + h.total, 0));
   const peak = $derived(busiest(hours));
   const when = $derived(!view.from ? "in 24 h" : live ? "this session" : "last session");
+  // A time, with the day when it isn't today.
+  const dayFmt = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  const at = (ms: number) => (new Date(ms).toDateString() === new Date(app.now).toDateString() ? timeFmt : dayFmt).format(ms);
   const shown = $derived((p.kicks ?? []).filter((k) => k.timeMs >= (view.from ?? view.start) && k.timeMs <= view.to));
   let picked = $state<number | null>(null);
 
@@ -94,7 +101,7 @@
   // Axis labels: a few evenly spaced bars (just the first on a short session).
   const ticks = $derived(hours.length >= 8 ? [0, 1, 2, 3].map((q) => Math.round((q * hours.length) / 4)) : [0]);
   const barWord = $derived(view.binMs >= HOUR_MS ? (view.binMs === HOUR_MS ? "hour" : `${view.binMs / HOUR_MS} hours`) : `${view.binMs / 60_000} minutes`);
-  const label = $derived(view.from ? (live ? "Current session" : "Last session") : "Last 24 hours");
+  const label = $derived(view.from ? (live ? "Current session" : "Last session") : view.endsNow ? "Last 24 hours" : "Last kicks");
 
   function detail(h: KickHour): string {
     if (!h.total) return `${span(h)}: no kicks`;
@@ -108,7 +115,9 @@
   <div class="head small">
     <strong>{label}</strong>
     {#if view.from}
-      <span class="muted">· {live ? `since ${timeFmt.format(view.from)}` : `${timeFmt.format(view.from)} – ${timeFmt.format(view.to)}`}</span>
+      <span class="muted">· {live ? `since ${at(view.from)}` : `${at(view.from)} – ${timeFmt.format(view.to)}`}</span>
+    {:else if !view.endsNow}
+      <span class="muted">· until {at(view.to)}</span>
     {/if}
     {#if live}<span class="live" title="VRChat is running"></span>{/if}
     <span class="grow"></span>
@@ -176,7 +185,7 @@
     </svg>
     <div class="axis muted" aria-hidden="true">
       {#each ticks as i}<span style="left:{(i / hours.length) * 100}%">{fmt(hours[i].startMs)}</span>{/each}
-      {#if hours.length > 2}<span class="end">{live || !view.from ? "now" : fmt(view.to)}</span>{/if}
+      {#if hours.length > 2}<span class="end">{view.endsNow ? "now" : fmt(view.to)}</span>{/if}
     </div>
   </div>
 
@@ -188,7 +197,7 @@
     {:else if live}
       No kicks yet this session.
     {:else}
-      No kicks {view.from ? "last session" : "in the last 24 hours"}.
+      No kicks {view.from ? "last session" : view.endsNow ? "in the last 24 hours" : "yet"}.
     {/if}
   </p>
   <div class="legend muted small" aria-hidden="true">

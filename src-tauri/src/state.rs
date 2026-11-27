@@ -52,6 +52,8 @@ pub struct Status {
     /// This (or the last) VRChat run: when it started and when it closed.
     pub vrchat_since_ms: Option<i64>,
     pub vrchat_until_ms: Option<i64>,
+    /// Earlier VRChat runs, oldest first.
+    pub vrchat_runs: Vec<pregsys_core::instance::VrchatRun>,
     pub steamvr_running: bool,
     /// XSOverlay is running, and OVR Toolkit's notification API answers.
     pub xsoverlay_running: bool,

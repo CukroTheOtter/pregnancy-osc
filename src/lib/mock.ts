@@ -126,6 +126,7 @@ function status(): Status {
     vrchatRunning: true,
     vrchatSinceMs: mockVrchatSince,
     vrchatUntilMs: null,
+    vrchatRuns: [{ sinceMs: mockVrchatSince - 26 * 3_600_000, untilMs: mockVrchatSince - 22 * 3_600_000 }],
     steamvrRunning: false,
     xsoverlayRunning: false,
     ovrToolkitRunning: false,

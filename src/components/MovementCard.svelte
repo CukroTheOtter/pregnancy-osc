@@ -8,7 +8,8 @@
   import { humanDuration, progress, TERM_WEEKS } from "../lib/timeline";
   import type { KickMood, Pregnancy } from "../lib/types";
 
-  let { p }: { p: Pregnancy } = $props();
+  // worn: you wear this avatar now (not just viewing it on Home).
+  let { p, worn = true }: { p: Pregnancy; worn?: boolean } = $props();
 
   const FIRST_KICK_WEEK = 16;
   const LABEL = { weak: "a little kick", strong: "a strong kick", extreme: "a big kick!" } as const;
@@ -81,7 +82,7 @@
     <p class="muted small">Waiting for the first kick… 🥺</p>
   {/if}
   {#if enabled && week >= FIRST_KICK_WEEK && recent}
-    <KickChart {p} />
+    <KickChart {p} {worn} />
   {/if}
 </section>
 
