@@ -1403,11 +1403,7 @@ impl Engine {
         let mut d = self.shared.data.lock().unwrap();
         if poll.new_file {
             // Rebuild "who is here" from the start of the new log, keep history.
-            let history = std::mem::take(&mut d.instance.history);
-            let local = d.instance.local.clone();
-            d.instance = Default::default();
-            d.instance.history = history;
-            d.instance.local = local;
+            d.instance.new_log();
         }
         let mut local_avatar: Option<String> = None; // newest switch line in this batch
         for l in &poll.lines {

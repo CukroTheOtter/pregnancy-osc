@@ -73,6 +73,18 @@ pub struct InstanceTracker {
 }
 
 impl InstanceTracker {
+    /// A new log is read from its start: "who is here" is rebuilt from it.
+    /// History, the local user and the VRChat run (the Movement chart's session) stay.
+    pub fn new_log(&mut self) {
+        *self = Self {
+            history: std::mem::take(&mut self.history),
+            local: self.local.take(),
+            vrchat_since_ms: self.vrchat_since_ms,
+            vrchat_until_ms: self.vrchat_until_ms,
+            ..Default::default()
+        };
+    }
+
     pub fn apply(&mut self, ev: &LogEvent, now_ms: i64) {
         match ev {
             LogEvent::LocalUser { name, user_id } => {
@@ -282,6 +294,17 @@ mod tests {
         assert_eq!((t.vrchat_since_ms, t.vrchat_until_ms), (Some(10 * M), Some(70 * M)));
         assert!(t.vrchat_running(90 * M)); // the next run
         assert_eq!((t.vrchat_since_ms, t.vrchat_until_ms), (Some(90 * M), None));
+    }
+
+    #[test]
+    fn a_new_log_keeps_the_last_vrchat_session() {
+        let mut t = InstanceTracker::default();
+        room(&mut t, M);
+        t.vrchat_running(10 * M);
+        t.vrchat_closed(70 * M);
+        t.new_log();
+        assert_eq!((t.vrchat_since_ms, t.vrchat_until_ms), (Some(10 * M), Some(70 * M)));
+        assert!(t.local.is_some() && t.world_id.is_none() && t.present.is_empty());
     }
 
     #[test]
