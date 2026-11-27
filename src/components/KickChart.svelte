@@ -59,13 +59,15 @@
   const cx = (i: number) => bw * (i + 0.5);
   const yOf = (n: number) => BASE - (n / top) * (BASE - TOP);
   const points = $derived(hours.map((h, i) => [cx(i), yOf(h.total)] as [number, number]));
-  const line = $derived(smoothPath(points));
+  // The line runs edge to edge: level out to the sides from the first and last bar.
+  const edge = (pts: [number, number][]): [number, number][] => [[0, pts[0][1]], ...pts, [width, pts.at(-1)![1]]];
+  const line = $derived(smoothPath(edge(points)));
   // The line's bands, stacked from the floor: little, then strong, then big on top.
-  const close = (d: string) => `${d} L${points.at(-1)![0]},${BASE} L${points[0][0]},${BASE} Z`;
+  const close = (d: string) => `${d} L${width},${BASE} L0,${BASE} Z`;
   const bands = $derived([
     { k: "extreme", d: close(line) },
-    { k: "strong", d: close(smoothPath(hours.map((h, i) => [cx(i), yOf(h.weak + h.strong)]))) },
-    { k: "weak", d: close(smoothPath(hours.map((h, i) => [cx(i), yOf(h.weak)]))) },
+    { k: "strong", d: close(smoothPath(edge(hours.map((h, i) => [cx(i), yOf(h.weak + h.strong)])))) },
+    { k: "weak", d: close(smoothPath(edge(hours.map((h, i) => [cx(i), yOf(h.weak)])))) },
   ]);
   // Bars: one section per strength, little at the bottom.
   const barW = $derived(Math.max(3, Math.min(12, bw - 3)));
@@ -128,7 +130,7 @@
           {#each bands as b (b.k)}<path class="band {b.k} rise" d={b.d} />{/each}
           {#key hours.length}<path class="stroke draw" d={line} pathLength="1" />{/key}
           {#if marked >= 0}<circle class="pt" cx={cx(marked)} cy={yOf(hours[marked].total)} r="4.5" />{/if}
-          {#if live}<circle class="now" cx={points.at(-1)![0]} cy={points.at(-1)![1]} r="5" />{/if}
+          {#if live}<circle class="now" cx={width - 7} cy={points.at(-1)![1]} r="5" />{/if}
         {:else if style === "dots"}
           <line class="track" x1="0" x2={width} y1={(BASE + TOP) / 2} y2={(BASE + TOP) / 2} />
           {#each shown as k, i (k.timeMs)}
