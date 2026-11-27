@@ -327,10 +327,17 @@ impl Engine {
         self.fetch_params_if_due();
         self.update_safety();
 
+        let was_hidden = self.driver.load_hidden();
         let sends = {
             let data = self.shared.data.lock().unwrap();
             self.driver.tick(now, &data)
         };
+        if self.driver.load_hidden() != was_hidden {
+            self.trace.note(
+                "hideWhileLoading",
+                if was_hidden { "Loaded and its belly sent: Hide Belly back to yours" } else { "Switching: belly hidden until the avatar has loaded" },
+            );
+        }
         let last = |key: &str| match sends.iter().rev().find(|s| s.key == key).map(|s| s.value) {
             Some(ParamValue::Float(f)) => Some(f),
             _ => None,

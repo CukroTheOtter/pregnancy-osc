@@ -64,6 +64,8 @@ pub const SYNC_HOLD_MS: i64 = 2_000;
 /// While switching avatars, a saved Hide Belly is sent this often (from the
 /// log's "Switching" line until the new avatar has loaded), so the new
 /// avatar's belly isn't seen during the wait. Sent too early it's lost, so repeat.
+/// A shown belly the app sets is hidden the same way, then shown again once the
+/// avatar has loaded and its belly was sent (so it never shows its old saved size).
 const HIDE_REPEAT_MS: i64 = 500;
 /// After a birth the belly goes down over this long (instead of in one go).
 const BIRTH_SHRINK_MS: i64 = 10_000;
@@ -90,6 +92,7 @@ pub struct DriverState {
     pub need_profile: bool,
     pub auto_hide: bool,
     pub hide_forced: bool,
+    pub load_hidden: bool,
     pub paused: bool,
     pub belly_up: bool,
     pub held_sync: BTreeMap<String, f64>,
@@ -157,6 +160,9 @@ pub struct Driver {
     auto_hide: bool,
     /// Hide Belly was sent on by `auto_hide`: put back (to off if never set) when it ends.
     hide_forced: bool,
+    /// Hide Belly was sent on while an avatar loads (yours was off): shown
+    /// again (your saved value, off if never set) once it has loaded.
+    load_hidden: bool,
     /// After an avatar change: when the second full send is due.
     resend_at_ms: Option<i64>,
     /// A belly above 0 was sent for a pregnancy (survives resyncs), so it's
@@ -223,6 +229,7 @@ impl Driver {
             last_hide_ms: i64::MIN / 2,
             auto_hide: false,
             hide_forced: false,
+            load_hidden: false,
             resend_at_ms: None,
             belly_up: false,
             paused: false,
@@ -455,6 +462,7 @@ impl Driver {
             need_profile: self.need_profile,
             auto_hide: self.auto_hide,
             hide_forced: self.hide_forced,
+            load_hidden: self.load_hidden,
             paused: self.paused,
             belly_up: self.belly_up,
             held_sync: self.held_sync.iter().map(|(name, (v, _))| (name.clone(), *v)).collect(),
@@ -546,13 +554,32 @@ impl Driver {
         }
     }
 
-    /// Sends Hide Belly = true, if that's the saved sync value (or the instance hides it).
+    /// The Hide Belly sync parameter, if the app may send it on this avatar.
+    fn hide_name(&self) -> Option<String> {
+        let def = self.mapping.sync_role(SyncRole::HideBelly)?;
+        (!self.mapping.is_app_param(&def.name) && !self.overrides.values().any(|n| *n == def.name)).then(|| def.name.clone())
+    }
+
+    /// The app sets this avatar's belly (so it would snap from its saved size).
+    fn sets_belly(&self, data: &AppData) -> bool {
+        let aid = self.avatar_id.as_deref();
+        let preg = data.current_pregnancy(aid);
+        preg.is_some_and(|p| !p.timeline.is_paused()) || (preg.is_none() && data.pending_for(aid).is_some()) || self.flatten_left
+    }
+
+    /// Hide Belly is hidden while the avatar loads and shown again after (see `load_hidden`).
+    pub fn load_hidden(&self) -> bool {
+        self.load_hidden
+    }
+
+    /// Sends Hide Belly = true, if that's the saved sync value (or the instance
+    /// hides it, or it's hidden while the avatar loads).
     fn push_hide(&mut self, out: &mut Vec<Send>, data: &AppData) {
         let Some(def) = self.mapping.sync_role(SyncRole::HideBelly) else { return };
         if self.mapping.is_app_param(&def.name) || self.overrides.values().any(|n| *n == def.name) {
             return;
         }
-        if self.auto_hide || data.sync_values.get(&def.name).is_some_and(|&v| v > 0.5) {
+        if self.auto_hide || self.load_hidden || data.sync_values.get(&def.name).is_some_and(|&v| v > 0.5) {
             self.hide_forced |= self.auto_hide;
             out.push(Send { key: format!("sync:{}", def.name), name: def.name.clone(), value: ParamValue::Bool(true) });
         }
@@ -577,8 +604,19 @@ impl Driver {
         }
         // Switching avatars with the belly hidden: keep it hidden while it loads.
         // Hidden by the instance: right away, even mid-load.
+        let switching = self.hide_until_ms.is_some_and(|t| now_ms < t);
+        // Shown, but the app sets it: hide it too, or it shows at the avatar's
+        // own saved size until the app's belly lands.
+        if switching && !self.load_hidden && !self.auto_hide && self.sets_belly(data) {
+            if let Some(name) = self.hide_name() {
+                if data.sync_values.get(&name).is_none_or(|&v| v <= 0.5) {
+                    self.load_hidden = true;
+                    self.last_hide_ms = i64::MIN / 2;
+                }
+            }
+        }
         let hide_now = self.auto_hide && !self.hide_forced;
-        if (hide_now || self.hide_until_ms.is_some_and(|t| now_ms < t)) && now_ms - self.last_hide_ms >= HIDE_REPEAT_MS {
+        if (hide_now || switching) && now_ms - self.last_hide_ms >= HIDE_REPEAT_MS {
             self.last_hide_ms = now_ms;
             self.push_hide(&mut out, data);
         }
@@ -632,6 +670,8 @@ impl Driver {
                 // The instance hides the belly; when it stops, your own Hide Belly comes back.
                 let v = match def.role {
                     Some(SyncRole::HideBelly) if self.auto_hide => Some(1.0),
+                    // Hidden while it loads: shown once it has (below).
+                    Some(SyncRole::HideBelly) if self.load_hidden => None,
                     Some(SyncRole::HideBelly) if std::mem::take(&mut self.hide_forced) => Some(saved.unwrap_or(0.0)),
                     _ => saved,
                 };
@@ -744,6 +784,16 @@ impl Driver {
             self.push(&mut out, "stage", ParamValue::Float(0.0), true);
             self.last_stage_ms = now_ms;
             self.belly_up = false;
+        }
+
+        // Hidden while it loaded: loaded, and its belly sent (this tick at the
+        // latest, just above), so show it again.
+        if self.load_hidden && !switching {
+            self.load_hidden = false;
+            if let (Some(name), false) = (self.hide_name(), self.auto_hide) {
+                let v = data.sync_values.get(&name).is_some_and(|&v| v > 0.5);
+                out.push(Send { key: format!("sync:{name}"), name, value: ParamValue::Bool(v) });
+            }
         }
 
         // Belly movement.
@@ -1112,8 +1162,8 @@ mod tests {
         let data = data_pregnant();
         d.tick(T0, &data);
         d.on_avatar_change("avtr_2", T0);
-        // Still loading: nothing yet, not even the heartbeat.
-        assert!(d.tick(T0 + 10, &data).is_empty());
+        // Still loading: nothing yet, not even the heartbeat (only Hide Belly, so its old belly isn't seen).
+        assert_eq!(names(&d.tick(T0 + 10, &data)), vec!["sync:Pregnancy/HideBelly"]);
         assert!(stage_of(&d.tick(T0 + SYNC_SETTLE_MS, &data)).is_some());
         // Sent once more a little later, in case it was still loading.
         assert!(stage_of(&d.tick(T0 + SYNC_SETTLE_MS + 10, &data)).is_none());
@@ -1306,6 +1356,64 @@ mod tests {
             d.tick(t, &data);
         }
         assert_eq!(hide_of(&d.tick(60_000, &data)), None);
+    }
+
+    #[test]
+    fn a_shown_belly_is_hidden_while_switching_until_its_size_is_sent() {
+        let mut data = data_pregnant();
+        data.sync_values.insert("Pregnancy/HideBelly".into(), 0.0);
+        let mut d = Driver::new(Mapping::default());
+        d.on_avatar_change("avtr_a", T0);
+        d.set_avatar_params(vec![("Pregnancy/Stage".into(), Some(0.0)), ("Pregnancy/HideBelly".into(), Some(0.0))], T0 + 2_000);
+        for t in (T0..T0 + 15_000).step_by(100) {
+            d.tick(t, &data);
+        }
+        assert!(!d.load_hidden());
+        // The log says you're switching: hidden right away.
+        d.on_switch_start(T0 + 30_000, T0 + 30_000);
+        assert_eq!(hide_of(&d.tick(T0 + 30_000, &data)), Some(ParamValue::Bool(true)));
+        // VRChat reports B's own saved values just before the change: not yours.
+        assert_eq!(d.on_sync_param("Pregnancy/HideBelly", 0.0, T0 + 30_900), SyncReport::Ignored);
+        d.on_avatar_change("avtr_b", T0 + 31_000);
+        let list = vec![("Pregnancy/Stage".into(), Some(0.2)), ("Pregnancy/HideBelly".into(), Some(0.0))];
+        let mut stage_at = None;
+        let mut shown_at = None;
+        for t in (T0 + 31_000..T0 + 60_000).step_by(100) {
+            if t == T0 + 40_000 {
+                assert!(d.set_avatar_params(list.clone(), t), "B has loaded");
+            }
+            let out = d.tick(t, &data);
+            if stage_of(&out).is_some() && t >= T0 + 40_000 {
+                stage_at.get_or_insert(t);
+            }
+            match hide_of(&out) {
+                Some(ParamValue::Bool(false)) => {
+                    assert!(shown_at.is_none(), "shown once");
+                    let i = out.iter().position(|s| s.name == "Pregnancy/HideBelly").unwrap();
+                    assert!(stage_at.is_some() || out[..i].iter().any(|s| s.key == "stage"), "its size goes first");
+                    shown_at = Some(t);
+                }
+                Some(_) => assert!(shown_at.is_none() && t < T0 + 41_500, "hidden only while it loads ({t})"),
+                None => {}
+            }
+            if t < T0 + 41_500 {
+                assert!(d.load_hidden(), "still hidden at {t}");
+            }
+        }
+        assert_eq!(shown_at, Some(T0 + 41_500), "shown 1.5 s after loading");
+        assert!(stage_at.is_some_and(|t| t < T0 + 41_500), "its size was sent first");
+        // Your choice stays: the app's hide was never remembered.
+        assert!(d.take_sync_saves(T0 + 60_000, SYNC_HOLD_MS).is_empty());
+    }
+
+    #[test]
+    fn an_avatar_without_a_pregnancy_isnt_hidden_while_switching() {
+        let mut d = Driver::new(Mapping::default());
+        let data = AppData::new();
+        d.on_avatar_change("avtr_a", 0);
+        for t in (0..5_000).step_by(100) {
+            assert!(hide_of(&d.tick(t, &data)).is_none(), "its belly is its own ({t})");
+        }
     }
 
     #[test]
