@@ -155,6 +155,10 @@
   const currentSpeed = $derived<Speed>(
     p ? { mode: p.timeline.mode, speed: p.timeline.speed, customMs: p.timeline.mode === "custom" ? p.timeline.durationMs : null } : startSpeed,
   );
+
+  async function quit() {
+    if (await confirmAsk({ title: "Quit Pregnancy OSC?", text: "Your avatar's belly stays where it is and its own counter carries on.", ok: "Quit" })) api.quitApp();
+  }
 </script>
 
 <div class="page">
@@ -322,9 +326,18 @@
       VRChat isn't running. The app links up on its own when it starts.
     {/if}
   </p>
+
+  <div class="quit">
+    <button class="danger small" onclick={quit}>Quit app</button>
+  </div>
 </div>
 
 <style>
+  .quit {
+    display: flex;
+    justify-content: center;
+    margin-top: 4px;
+  }
   .no-system {
     display: flex;
     flex-direction: column;
