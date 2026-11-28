@@ -14,7 +14,7 @@ A small, cute desktop app that runs your avatar's pregnancy from outside VRChat:
    - Tap any picture to copy or save it.
 7. **Partners.** WooHoos, pregnancies and kids with everyone you've been with, and who you're pregnant with right now. **💞 My partners** sit at the top: add them with ＋ Add partner, or 💞 Make partner on anyone listed. With **Only my partners** on (Settings > Detecting WooHoos), a WooHoo with anyone else stays in the history as "Not a partner" and starts nothing.
 8. **Avatars.** One pregnancy on every avatar, or one each. Put avatars in groups (shown like folders on a phone) to share a pregnancy.
-9. **Me.** Your stats and achievements, and a share card to show them off.
+9. **Me.** Your stats, a calendar of everything that happened, and achievements, with a share card to show them off.
 
 That's it for now. More gets added step by step. Built but parked features (x-ray belly, species, Gene Lab, the old scans and journal pages) are in [later/](later/README.md).
 
@@ -25,26 +25,49 @@ The pregnancy is stored as a **start time**, never a current size, so it's right
 
 <table>
   <tr>
-    <td><img src="docs/screenshots/home.png" alt="Home: twins at week 24, due date and the 24-hour kick chart" width="280"></td>
-    <td><img src="docs/screenshots/journal.png" alt="Journal: a note with a rare scan of a baby waving, a craving and the week 20 scan" width="280"></td>
-    <td><img src="docs/screenshots/partners.png" alt="Partners: one of your partners and who you're pregnant with right now" width="280"></td>
+    <td><img src="docs/screenshots/home.png" alt="Home: twins at week 23, due date, Hide belly and the other parent" width="280"></td>
+    <td><img src="docs/screenshots/me.png" alt="Me: your stats and the calendar" width="280"></td>
+    <td><img src="docs/screenshots/partners.png" alt="Partners: your partners at the top, with WooHoos, pregnancies and kids" width="280"></td>
   </tr>
   <tr>
     <td align="center"><b>Home</b></td>
-    <td align="center"><b>Journal</b></td>
+    <td align="center"><b>Me</b></td>
     <td align="center"><b>Partners</b></td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/avatars.png" alt="Avatars: groups shown as folders, one open with its avatars" width="280"></td>
-    <td><img src="docs/screenshots/me.png" alt="Me: stats and achievements" width="280"></td>
-    <td><img src="docs/screenshots/settings.png" alt="Settings: VRChat link, safety, chatbox, WooHoo detection and more" width="280"></td>
+    <td><img src="docs/screenshots/avatars.png" alt="Avatars: one pregnancy per avatar, groups shown as folders" width="280"></td>
+    <td><img src="docs/screenshots/settings.png" alt="Settings: VRChat link, Safety, Chatbox, Detecting WooHoos and more" width="280"></td>
+    <td><img src="docs/screenshots/privacy.png" alt="Privacy mode: everyone gets a made-up name and the 🙈 Private pill shows" width="280"></td>
   </tr>
   <tr>
     <td align="center"><b>Avatars</b></td>
-    <td align="center"><b>Me</b></td>
     <td align="center"><b>Settings</b></td>
+    <td align="center"><b>Privacy mode</b></td>
   </tr>
 </table>
+
+### New lately
+
+<table>
+  <tr>
+    <td><img src="docs/screenshots/movement.png" alt="Movement: the kick chart for this VRChat session as a line, with the baby's personality" width="420"></td>
+    <td><img src="docs/screenshots/journal.png" alt="Journal: a note, the week 20 scan of twins with readouts, first kick and a craving" width="420"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Movement chart</b><br>This VRChat session as a line, dots or bars. Every baby has its own personality.</td>
+    <td align="center"><b>Journal</b><br>Your notes, toony scans with fake readouts, first kicks and cravings.</td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/calendar.png" alt="Calendar: pregnancy weeks as bars across days, with WooHoos, trophies and journal entries" width="420"></td>
+    <td><img src="docs/screenshots/achievements.png" alt="Achievements: unlocked and locked, with rarity from Common to Legendary" width="420"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Calendar</b><br>Pregnancies, WooHoos, journal entries and trophies by day. Filter and export.</td>
+    <td align="center"><b>Achievements</b><br>From Common to Legendary, with surprises to find. Share card on Me.</td>
+  </tr>
+</table>
+
+Also new: 🥚 egg-laying sonas (lay eggs that hatch later), litter mode (up to 8), fertile hours, **Hide belly** and Safe Mode support, and **Only my partners**.
 
 ---
 
