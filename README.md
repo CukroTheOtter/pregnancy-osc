@@ -46,29 +46,6 @@ The pregnancy is stored as a **start time**, never a current size, so it's right
   </tr>
 </table>
 
-### New lately
-
-<table>
-  <tr>
-    <td><img src="docs/screenshots/movement.png" alt="Movement: the kick chart for this VRChat session as a line, with the baby's personality" width="420"></td>
-    <td><img src="docs/screenshots/journal.png" alt="Journal: a note, the week 20 scan of twins with readouts, first kick and a craving" width="420"></td>
-  </tr>
-  <tr>
-    <td align="center"><b>Movement chart</b><br>This VRChat session as a line, dots or bars. Every baby has its own personality.</td>
-    <td align="center"><b>Journal</b><br>Your notes, toony scans with fake readouts, first kicks and cravings.</td>
-  </tr>
-  <tr>
-    <td><img src="docs/screenshots/calendar.png" alt="Calendar: pregnancy weeks as bars across days, with WooHoos, trophies and journal entries" width="420"></td>
-    <td><img src="docs/screenshots/achievements.png" alt="Achievements: unlocked and locked, with rarity from Common to Legendary" width="420"></td>
-  </tr>
-  <tr>
-    <td align="center"><b>Calendar</b><br>Pregnancies, WooHoos, journal entries and trophies by day. Filter and export.</td>
-    <td align="center"><b>Achievements</b><br>From Common to Legendary, with surprises to find. Share card on Me.</td>
-  </tr>
-</table>
-
-Also new: 🥚 egg-laying sonas (lay eggs that hatch later), litter mode (up to 8), fertile hours, **Hide belly** and Safe Mode support, and **Only my partners**.
-
 ---
 
 ## Install and run
